@@ -2,15 +2,17 @@
 import { ref, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
-defineOptions({ name: 'DetailView' })
+defineOptions({ name: 'MediaDetailHub' })
 import { ruleService, type RuleSchema, type MediaDetail, type MediaItem } from '@/utils/ruleService'
-import { ArrowLeft, AlertCircle, RefreshCw, Compass } from '@lucide/vue'
-import VideoDetail from './components/VideoDetail.vue'
-import ImageDetail from './components/ImageDetail.vue'
-import TextDetail from './components/TextDetail.vue'
+import { useMediaContext } from '@/stores/mediaContext'
+import { ArrowLeft, AlertCircle, RefreshCw } from '@lucide/vue'
+import VideoPlayer from './components/VideoPlayer.vue'
+import ImageGallery from './components/ImageGallery.vue'
+import NovelReader from './components/NovelReader.vue'
 
 const route = useRoute()
 const router = useRouter()
+const mediaContext = useMediaContext()
 
 const rule = ref<RuleSchema | null>(null)
 const detail = ref<MediaDetail | null>(null)
@@ -19,13 +21,10 @@ const executing = ref(false)
 const errorMsg = ref('')
 
 const loadDetail = async () => {
-  loading.value = true
-  executing.value = true
   errorMsg.value = ''
-  detail.value = null
 
   const ruleId = Number(route.query.ruleId)
-  const key = (route.query.key as string) || (route.query.href as string) || (route.query.url as string)
+  const key = route.query.key as string
 
   if (!ruleId || !key) {
     errorMsg.value = '缺少必要的请求参数 (ruleId 或 key)'
@@ -34,31 +33,41 @@ const loadDetail = async () => {
     return
   }
 
+  // 获取预热数据
+  const preheat = mediaContext.getContext(ruleId, key)
+  if (preheat && !detail.value) {
+    detail.value = {
+      title: preheat.title || '',
+      cover: preheat.cover || '',
+      desc: preheat.desc || '',
+      tags: preheat.tags || []
+    }
+  }
+
+  if (!detail.value) {
+    loading.value = true
+  }
+  executing.value = true
+
   try {
     const ruleRes = ruleService.getRuleById(ruleId)
     rule.value = ruleRes
 
     if (!rule.value) {
-      errorMsg.value = '对应的解析规则未找到，可能已被删除'
+      errorMsg.value = `规则 [ID:${ruleId}] 不存在`
       loading.value = false
       executing.value = false
       return
     }
 
-    const itemContext: Partial<MediaItem> = {
-      key,
-      title: route.query.title as string,
-      cover: route.query.cover as string
-    }
-
     const res = await ruleService.runDetail(rule.value, {
       key,
-      item: itemContext
+      item: preheat
     })
 
     detail.value = res
   } catch (error: any) {
-    errorMsg.value = '抓取媒体详情失败: ' + (error.response?.data?.message || error.message || error)
+    errorMsg.value = error.message || String(error)
   } finally {
     loading.value = false
     executing.value = false
@@ -66,18 +75,20 @@ const loadDetail = async () => {
 }
 
 const goToRelated = (item: MediaItem) => {
-  router.push({
-    path: '/rules/detail',
-    query: {
-      ruleId: route.query.ruleId,
-      key: item.key,
-      title: item.title,
-      cover: item.cover
-    }
-  })
+  const ruleId = Number(route.query.ruleId)
+  if (ruleId && item.key) {
+    mediaContext.setContext(ruleId, item.key, item)
+    router.push({
+      path: '/media/detail',
+      query: {
+        ruleId,
+        key: item.key
+      }
+    })
+  }
 }
 
-watch([() => route.query.key, () => route.query.href, () => route.query.ruleId], () => {
+watch([() => route.query.key, () => route.query.ruleId], () => {
   loadDetail()
 })
 
@@ -88,7 +99,7 @@ onMounted(() => {
 
 <template>
   <div class="space-y-6 max-w-7xl mx-auto pb-12">
-    <!-- 顶部操作栏 (mori-box 风格) -->
+    <!-- 顶部操作栏 -->
     <div class="glass-panel rounded-2xl p-4 sm:p-5 flex items-center justify-between shadow-sm">
       <div class="flex items-center gap-3 min-w-0">
         <n-button
@@ -104,10 +115,10 @@ onMounted(() => {
         </n-button>
         <div class="min-w-0">
           <h1 class="text-base sm:text-lg font-black tracking-tight text-zinc-900 dark:text-white truncate">
-            {{ detail?.title || (route.query.title as string) || '媒体详情播放' }}
+            {{ detail?.title || '详情' }}
           </h1>
           <p class="text-xs text-zinc-500 dark:text-zinc-400" v-if="rule">
-            来源: {{ rule.name }} • {{ rule.type === 'video' ? '视频' : rule.type === 'picture' ? '图片' : '小说' }}
+            来源: {{ rule.name }}
           </p>
         </div>
       </div>
@@ -122,22 +133,21 @@ onMounted(() => {
         title="重新解析"
       >
         <template #icon>
-          <RefreshCw class="w-3.5 h-3.5" />
+          <RefreshCw class="w-3.5 h-3.5" :class="{ 'animate-spin': executing }" />
         </template>
+        <span>刷新</span>
       </n-button>
     </div>
 
     <!-- 主展示面板 -->
     <div>
-      <!-- 加载状态 -->
-      <div v-if="loading" class="flex flex-col items-center justify-center py-28 gap-3">
+      <div v-if="loading && !detail" class="flex flex-col items-center justify-center py-28 gap-3">
         <n-spin size="large" />
-        <span class="text-zinc-400 text-sm">沙箱正在解析媒体播放与正文数据...</span>
+        <span class="text-zinc-400 text-sm">正在加载媒体数据...</span>
       </div>
 
-      <!-- 错误状态 -->
       <div
-        v-else-if="errorMsg"
+        v-else-if="errorMsg && !detail"
         class="glass-panel rounded-2xl p-8 max-w-md mx-auto my-12 text-center flex flex-col items-center justify-center space-y-3 border-rose-500/30 bg-rose-500/5"
       >
         <AlertCircle class="w-10 h-10 text-rose-500" />
@@ -145,35 +155,34 @@ onMounted(() => {
         <p class="text-xs text-zinc-500 dark:text-zinc-400">{{ errorMsg }}</p>
         <n-button
           type="error"
-          ghost
-          class="!rounded-xl !font-bold mt-3"
+          size="small"
+          class="!rounded-xl mt-2"
           @click="loadDetail"
         >
           重新尝试
         </n-button>
       </div>
 
-      <!-- 媒体内容面板 (多态分发) -->
       <div v-else-if="detail" class="w-full">
         <!-- 1. 视频播放器与选集 -->
-        <VideoDetail
-          v-if="detail.media?.type === 'video' || rule?.type === 'video'"
+        <VideoPlayer
+          v-if="rule?.type === 'video'"
           :detail="detail"
           :rule="rule || undefined"
           @select="goToRelated"
         />
 
         <!-- 2. 图集画廊 -->
-        <ImageDetail
-          v-else-if="detail.media?.type === 'picture' || rule?.type === 'picture'"
-          :images="detail.media?.images || []"
+        <ImageGallery
+          v-else-if="rule?.type === 'picture'"
+          :images="detail.images || []"
           :title="detail.title"
           :desc="detail.desc"
         />
 
         <!-- 3. 小说阅读器与章节 -->
-        <TextDetail
-          v-else-if="detail.media?.type === 'novel' || rule?.type === 'novel'"
+        <NovelReader
+          v-else-if="rule?.type === 'novel'"
           :detail="detail"
           :rule="rule || undefined"
         />

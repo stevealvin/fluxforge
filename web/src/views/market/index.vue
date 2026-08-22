@@ -83,7 +83,8 @@ const defaultSites: SiteSource[] = [
   }
 ]
 
-const STORAGE_KEY = 'flux-view-market-sites'
+const STORAGE_KEY = 'fluxforge-market-sites'
+const LEGACY_STORAGE_KEY = 'flux-view-market-sites'
 
 const sites = ref<SiteSource[]>([])
 const searchQuery = ref('')
@@ -101,7 +102,7 @@ const newSiteForm = ref({
 const categories = ['全部', '综合', '影视', '小说', '社区']
 
 const loadSites = () => {
-  const customJson = localStorage.getItem(STORAGE_KEY)
+  const customJson = localStorage.getItem(STORAGE_KEY) || localStorage.getItem(LEGACY_STORAGE_KEY)
   if (customJson) {
     try {
       const customSites = JSON.parse(customJson)
@@ -115,14 +116,15 @@ const loadSites = () => {
 }
 
 const filteredSites = computed(() => {
-  return sites.value.filter(site => {
+  return sites.value.filter((site) => {
     const matchCategory = selectedCategory.value === '全部' || site.category === selectedCategory.value
     const query = searchQuery.value.toLowerCase().trim()
-    const matchSearch = !query || 
-      site.name.toLowerCase().includes(query) || 
-      site.description.toLowerCase().includes(query) || 
+    const matchSearch =
+      !query ||
+      site.name.toLowerCase().includes(query) ||
+      site.description.toLowerCase().includes(query) ||
       site.url.toLowerCase().includes(query) ||
-      site.tags.some(t => t.toLowerCase().includes(query))
+      site.tags.some((t) => t.toLowerCase().includes(query))
     return matchCategory && matchSearch
   })
 })
@@ -175,7 +177,7 @@ const handleAddSite = () => {
     isCustom: true
   }
 
-  const customJson = localStorage.getItem(STORAGE_KEY)
+  const customJson = localStorage.getItem(STORAGE_KEY) || localStorage.getItem(LEGACY_STORAGE_KEY)
   const currentCustom: SiteSource[] = customJson ? JSON.parse(customJson) : []
   currentCustom.push(newSite)
   localStorage.setItem(STORAGE_KEY, JSON.stringify(currentCustom))
@@ -193,11 +195,11 @@ const handleAddSite = () => {
 }
 
 const removeCustomSite = (id: string, name: string) => {
-  const customJson = localStorage.getItem(STORAGE_KEY)
+  const customJson = localStorage.getItem(STORAGE_KEY) || localStorage.getItem(LEGACY_STORAGE_KEY)
   if (!customJson) return
   try {
     let currentCustom: SiteSource[] = JSON.parse(customJson)
-    currentCustom = currentCustom.filter(s => s.id !== id)
+    currentCustom = currentCustom.filter((s) => s.id !== id)
     localStorage.setItem(STORAGE_KEY, JSON.stringify(currentCustom))
     message.success(`已删除自定义站点「${name}」`)
     loadSites()
@@ -206,10 +208,14 @@ const removeCustomSite = (id: string, name: string) => {
 
 const getCategoryIcon = (category: string) => {
   switch (category) {
-    case '影视': return Video
-    case '小说': return BookOpen
-    case '社区': return Code
-    default: return Globe
+    case '影视':
+      return Video
+    case '小说':
+      return BookOpen
+    case '社区':
+      return Code
+    default:
+      return Globe
   }
 }
 
@@ -322,9 +328,11 @@ onMounted(() => {
               <span
                 v-if="site.badge"
                 class="px-2 py-0.5 text-[9px] font-black rounded-full border flex-shrink-0"
-                :class="site.isCustom
-                  ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20'
-                  : 'bg-emerald-600/10 text-emerald-600 dark:text-emerald-400 border-emerald-600/20'"
+                :class="
+                  site.isCustom
+                    ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20'
+                    : 'bg-emerald-600/10 text-emerald-600 dark:text-emerald-400 border-emerald-600/20'
+                "
               >
                 {{ site.badge }}
               </span>
@@ -418,7 +426,7 @@ onMounted(() => {
                 { label: '影视', value: '影视' },
                 { label: '小说', value: '小说' },
                 { label: '漫画', value: '漫画' },
-                { label: '社区', value: '社区' },
+                { label: '社区', value: '社区' }
               ]"
             />
           </div>

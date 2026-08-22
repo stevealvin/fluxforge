@@ -11,7 +11,7 @@ const props = defineProps<{
 
 const activeChapterKey = ref<string>('')
 const activeChapterTitle = ref<string>('')
-const chapterContent = ref<string>(props.detail.media?.content || '')
+const chapterContent = ref<string>(props.detail.content || '')
 const readingFontSize = ref<'small' | 'medium' | 'large'>('medium')
 const readingTheme = ref<'default' | 'sepia' | 'dark'>('default')
 const parsing = ref(false)
@@ -26,7 +26,7 @@ const selectChapter = async (ch: MediaEpisode, autoScroll = true) => {
   activeChapterKey.value = ch.key
   activeChapterTitle.value = ch.title
   errorMsg.value = ''
-  
+
   if (props.rule) {
     parsing.value = true
     try {
@@ -86,7 +86,7 @@ const nextChapter = () => {
               作者: {{ detail.author }}
             </span>
           </div>
-          <p v-if="detail.desc" class="text-xs text-slate-600 dark:text-slate-300 leading-relaxed line-clamp-3">
+          <p v-if="detail.desc" class="text-xs text-slate-600 dark:text-slate-300 leading-relaxed whitespace-pre-line break-words">
             {{ detail.desc }}
           </p>
         </div>
@@ -248,9 +248,11 @@ const nextChapter = () => {
             v-for="item in group.items"
             :key="item.key"
             class="glass-panel glass-panel-hover rounded-xl p-3 cursor-pointer transition-all border"
-            :class="activeChapterKey === item.key
-              ? 'bg-emerald-600 text-white border-emerald-500 shadow-md shadow-emerald-600/30'
-              : 'text-zinc-700 dark:text-zinc-200'"
+            :class="
+              activeChapterKey === item.key
+                ? 'bg-emerald-600 text-white border-emerald-500 shadow-md shadow-emerald-600/30'
+                : 'text-zinc-700 dark:text-zinc-200'
+            "
             @click="selectChapter(item)"
           >
             <span class="text-xs font-semibold line-clamp-1">

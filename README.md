@@ -1,4 +1,4 @@
-# 🌊 FluxView (流光视界)
+# 🌊 FluxForge (流光视界)
 
 > **轻量级、沙箱规则驱动的跨媒体聚合浏览与播放平台**
 
@@ -6,9 +6,9 @@
 
 ## 📖 项目简介
 
-**FluxView (流光视界)** 是一款现代化的全栈多媒体聚合浏览平台。项目采用 **Monorepo** 架构，前端基于 Vue 3 + Tailwind CSS 4 + Naive UI + Pinia，后端依托 Hono.js 与 Node.js VM 沙箱构建。
+**FluxForge (流光视界)** 是一款现代化的全栈多媒体聚合浏览平台。项目采用 **Monorepo** 架构，前端基于 Vue 3 + Tailwind CSS 4 + Naive UI + Pinia，后端依托 Hono.js 与 Node.js VM 沙箱构建。
 
-FluxView 的核心在于其**沙箱 JavaScript 动态规则引擎**。如同“流光”般顺畅无缝，FluxView 打破了不同内容平台之间的界限，通过简短的规则脚本即可将视频、图集、小说等海量媒体源集中在一个纯净、优雅且无广告的视界中展示与播放。
+FluxForge 的核心在于其**沙箱 JavaScript 动态规则引擎**。如同“流光”般顺畅无缝，FluxForge 打破了不同内容平台之间的界限，通过简短的规则脚本即可将视频、图集、小说等海量媒体源集中在一个纯净、优雅且无广告的视界中展示与播放。
 
 ---
 

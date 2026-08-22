@@ -22,10 +22,10 @@ const modelValue = defineModel<string>()
 const emit = defineEmits(['change'])
 
 const codeStyle = computed(() => {
-  let style = { height: props.height }
-  Number.isInteger(props.height) && (style.height = `${props.height}px`)
-  Number.isNaN(props.height) && (style.height = props.height)
-  return style
+  if (typeof props.height === 'number') {
+    return { height: `${props.height}px` }
+  }
+  return { height: props.height || '100%' }
 })
 
 const codeRef = useTemplateRef('codeRef')

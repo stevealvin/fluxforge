@@ -37,24 +37,26 @@ const pathTitleMap: Record<string, string> = {
   '/picture': '图集画廊',
   '/novel': '小说书库',
   '/rules': '规则管理',
+  '/market': '规则集市',
   '/rules/market': '规则集市',
   '/rules/edit': '规则编辑',
-  '/rules/discovery': '规则发现',
-  '/rules/detail': '媒体详情',
+  '/media/detail': '媒体详情',
+  '/rules/detail': '媒体详情'
 }
 
 // 路径与组件 Name 映射表
 const nameMap: Record<string, string> = {
   '/': 'HomeView',
   '/search': 'SearchView',
-  '/video': 'ModuleView',
-  '/picture': 'ModuleView',
-  '/novel': 'ModuleView',
+  '/video': 'MediaDiscoveryView',
+  '/picture': 'MediaDiscoveryView',
+  '/novel': 'MediaDiscoveryView',
   '/rules': 'RulesView',
+  '/market': 'MarketView',
   '/rules/market': 'MarketView',
   '/rules/edit': 'EditView',
-  '/rules/discovery': 'DiscoveryView',
-  '/rules/detail': 'DetailView',
+  '/media/detail': 'MediaDetailHub',
+  '/rules/detail': 'MediaDetailHub'
 }
 
 function addTab(route: RouteLocationNormalized) {
@@ -65,7 +67,7 @@ function addTab(route: RouteLocationNormalized) {
 
   // 格式化标签标题
   let title = (route.meta?.title as string) || ''
-  title = title.replace(' - FluxView', '').trim()
+  title = title.replace(' - FluxForge', '').replace(' - FluxView', '').trim()
 
   if (route.query.q) {
     title = `搜索: ${route.query.q}`

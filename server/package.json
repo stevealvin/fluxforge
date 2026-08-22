@@ -12,9 +12,11 @@
   },
   "dependencies": {
     "@hono/node-server": "^2.0.4",
+    "@supabase/supabase-js": "^2.112.3",
     "axios": "^1.17.0",
     "better-sqlite3": "^12.10.0",
     "cheerio": "^1.2.0",
+    "dotenv": "^17.4.2",
     "hono": "^4.12.25"
   },
   "devDependencies": {

@@ -2,8 +2,9 @@
 import { ref, onMounted, watch, computed } from 'vue'
 import { useRouter } from 'vue-router'
 
-defineOptions({ name: 'ModuleView' })
-import { ruleService, type RuleSchema, type MediaItem } from '@/utils/ruleService'
+defineOptions({ name: 'MediaDiscoveryView' })
+import { ruleService, ruleHasDetail, type RuleSchema, type MediaItem } from '@/utils/ruleService'
+import { useMediaContext } from '@/stores/mediaContext'
 import {
   Compass,
   AlertCircle,
@@ -14,14 +15,20 @@ import {
   Image as ImageIcon,
   Play,
   Layers,
-  ChevronRight
+  ChevronRight,
+  Download,
+  Copy,
+  ExternalLink
 } from '@lucide/vue'
+import { useMessage } from 'naive-ui'
 
 const props = defineProps<{
   type: string
 }>()
 
 const router = useRouter()
+const message = useMessage()
+const mediaContext = useMediaContext()
 
 const rules = ref<RuleSchema[]>([])
 const activeRuleId = ref<number | null>(null)
@@ -36,6 +43,10 @@ const loading = ref(true)
 const executing = ref(false)
 const errorMsg = ref('')
 const searchQuery = ref('')
+
+// 壁纸类无详情大图原地预览状态
+const previewModalVisible = ref(false)
+const previewCurrentItem = ref<MediaItem | null>(null)
 
 const activeIcon = computed(() => {
   if (props.type === '视频' || props.type === 'video') return Video
@@ -59,11 +70,11 @@ const loadRules = async () => {
   items.value = []
   searchQuery.value = ''
   currentPage.value = 1
-  
+
   try {
     const matchedRules = ruleService.getEnabledRulesByType(props.type)
     rules.value = matchedRules
-    
+
     if (rules.value.length > 0) {
       activeRuleId.value = rules.value[0].id
       activeRule.value = rules.value[0]
@@ -101,10 +112,10 @@ const handleCategoryChange = async (cat: string) => {
 
 const fetchDiscovery = async (page = 1) => {
   if (!activeRule.value) return
-  
+
   executing.value = true
   errorMsg.value = ''
-  
+
   try {
     const res = await ruleService.runDiscovery(activeRule.value, {
       category: activeCategory.value,
@@ -149,17 +160,45 @@ const filteredItems = computed(() => {
   )
 })
 
-const goToDetail = (item: MediaItem) => {
+const handleCardClick = (item: MediaItem) => {
   if (!activeRule.value) return
+
+  // 1. 如果该规则没有 detail 解析方法 (如壁纸类) -> 原地唤起全屏高清大图预览
+  if (!ruleHasDetail(activeRule.value)) {
+    previewCurrentItem.value = item
+    previewModalVisible.value = true
+    return
+  }
+
+  // 2. 如果具备 detail 方法 (如写真套图、影视、小说) -> 注入预热上下文并路由跳转
+  mediaContext.setContext(activeRule.value.id, item.key, item)
   router.push({
-    path: '/rules/detail',
+    path: '/media/detail',
     query: {
       ruleId: activeRule.value.id,
-      key: item.key,
-      title: item.title,
-      cover: item.cover
+      key: item.key
     }
   })
+}
+
+const copyImageUrl = (url?: string) => {
+  if (!url) return
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(url)
+    message.success('已复制图片直链至剪贴板')
+  }
+}
+
+const downloadImage = (url?: string, title?: string) => {
+  if (!url) return
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `${title || 'wallpaper'}.jpg`
+  a.target = '_blank'
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  message.success('已启动原图下载')
 }
 
 watch(
@@ -200,134 +239,125 @@ onMounted(() => {
         <!-- 页面内即时检索框与刷新 -->
         <div class="flex items-center gap-2 w-full sm:w-auto">
           <div class="relative flex-1 sm:w-60">
-            <Search class="absolute left-3 top-2.5 w-3.5 h-3.5 text-zinc-400" />
             <input
               v-model="searchQuery"
               type="text"
-              placeholder="在当前页面流中快速筛选..."
-              class="w-full pl-8 pr-3 py-1.5 bg-emerald-50/60 dark:bg-white/[0.04] hover:bg-emerald-100/50 dark:hover:bg-white/[0.07] focus:bg-white dark:focus:bg-zinc-900 border border-emerald-200/60 dark:border-white/10 rounded-xl text-xs outline-none text-zinc-800 dark:text-zinc-100 placeholder-zinc-400 transition-all"
+              placeholder="在当前列表中快速过滤..."
+              class="w-full pl-8 pr-3 py-1.5 bg-zinc-100/70 dark:bg-white/[0.04] hover:bg-zinc-200/50 dark:hover:bg-white/[0.07] focus:bg-white dark:focus:bg-zinc-900 border border-zinc-200/60 dark:border-white/10 rounded-xl text-xs outline-none text-zinc-800 dark:text-zinc-100 placeholder-zinc-400 transition-all"
             />
+            <Search class="absolute left-2.5 top-2 w-3.5 h-3.5 text-zinc-400" />
           </div>
 
           <n-button
-            size="small"
             secondary
+            size="small"
             class="!rounded-xl"
             :loading="executing"
             @click="fetchDiscovery(1)"
-            title="刷新当前流"
+            title="重新解析流"
           >
             <template #icon>
-              <RefreshCw class="w-3.5 h-3.5" />
+              <RefreshCw class="w-3.5 h-3.5" :class="{ 'animate-spin': executing }" />
             </template>
           </n-button>
         </div>
       </div>
 
-      <!-- 规则切换标签栏 (Segmented Pill Tabs) -->
-      <div v-if="rules.length > 0" class="pt-3 border-t border-emerald-100/50 dark:border-white/5 space-y-3">
-        <div class="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
-          <n-button
+      <!-- 第一排：规则源选择切换器 Pills -->
+      <div v-if="rules.length > 0" class="pt-2 border-t border-zinc-200/50 dark:border-white/5 space-y-3">
+        <div class="flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5">
+          <span class="text-xs font-bold text-zinc-400 whitespace-nowrap mr-1 flex items-center gap-1">
+            <Layers class="w-3.5 h-3.5" />
+            <span>规则源:</span>
+          </span>
+          <button
             v-for="rule in rules"
             :key="rule.id"
-            size="small"
-            :type="activeRuleId === rule.id ? 'primary' : 'default'"
-            :secondary="activeRuleId !== rule.id"
-            class="!rounded-xl !font-bold flex-shrink-0"
             @click="handleRuleChange(rule.id)"
+            class="px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all duration-200 cursor-pointer border flex-shrink-0"
+            :class="
+              activeRuleId === rule.id
+                ? 'bg-emerald-600 text-white border-emerald-500 shadow-md shadow-emerald-600/25'
+                : 'bg-zinc-100 dark:bg-white/[0.04] text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-white/[0.08] border-zinc-200/60 dark:border-white/5'
+            "
           >
             {{ rule.name }}
-          </n-button>
+          </button>
         </div>
 
-        <!-- 子分类切换标签 (如果有) -->
-        <div v-if="subCategories.length > 0" class="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
-          <n-button
+        <!-- 第二排：子分类选择标签 (如有) -->
+        <div v-if="subCategories.length > 0" class="flex items-center gap-1.5 overflow-x-auto no-scrollbar pt-1">
+          <span class="text-[11px] text-zinc-400 whitespace-nowrap mr-1">分类:</span>
+          <button
             v-for="cat in subCategories"
             :key="cat"
-            size="tiny"
-            :type="activeCategory === cat ? 'primary' : 'default'"
-            :secondary="activeCategory !== cat"
-            :quaternary="activeCategory !== cat"
-            class="!rounded-lg flex-shrink-0"
             @click="handleCategoryChange(cat)"
+            class="px-2.5 py-1 rounded-lg text-[11px] font-medium whitespace-nowrap transition-all duration-200 cursor-pointer"
+            :class="
+              activeCategory === cat
+                ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-300 font-bold border border-emerald-200/50 dark:border-emerald-800/40'
+                : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-white/5'
+            "
           >
             {{ cat }}
-          </n-button>
+          </button>
         </div>
       </div>
     </div>
 
-    <!-- 主体流式展示区 -->
+    <!-- 主展示区 -->
     <div>
-      <!-- 初始加载状态 -->
-      <div v-if="loading" class="flex flex-col items-center justify-center py-24 gap-3">
-        <n-spin size="large" />
-        <span class="text-zinc-400 text-sm">正在加载规则列表...</span>
-      </div>
-
-      <!-- 空规则提示 -->
+      <!-- 异常状态 -->
       <div
-        v-else-if="rules.length === 0"
-        class="glass-panel rounded-2xl p-16 text-center max-w-md mx-auto my-12 flex flex-col items-center justify-center space-y-3"
-      >
-        <AlertCircle class="w-10 h-10 text-amber-500" />
-        <h3 class="text-sm font-bold text-zinc-800 dark:text-zinc-200">暂无已启用的{{ props.type }}规则</h3>
-        <p class="text-xs text-zinc-500 dark:text-zinc-400">请前往「规则管理」创建或启用对应的媒体规则。</p>
-        <n-button
-          type="primary"
-          class="!rounded-xl !font-bold mt-2"
-          @click="router.push('/rules')"
-        >
-          前往规则管理
-        </n-button>
-      </div>
-
-      <!-- 解析执行中（首次骨架屏） -->
-      <div v-else-if="executing && items.length === 0" class="flex flex-col items-center justify-center py-24 gap-3">
-        <n-spin size="large" />
-        <span class="text-zinc-400 text-sm">沙箱正在解析媒体流数据...</span>
-      </div>
-
-      <!-- 解析错误 -->
-      <div
-        v-else-if="errorMsg"
+        v-if="errorMsg"
         class="glass-panel rounded-2xl p-8 max-w-md mx-auto my-12 text-center flex flex-col items-center justify-center space-y-3 border-rose-500/30 bg-rose-500/5"
       >
         <AlertCircle class="w-10 h-10 text-rose-500" />
-        <h3 class="text-sm font-bold text-rose-600 dark:text-rose-400">媒体流解析异常</h3>
+        <h3 class="text-sm font-bold text-rose-600 dark:text-rose-400">解析异常</h3>
         <p class="text-xs text-zinc-500 dark:text-zinc-400">{{ errorMsg }}</p>
         <n-button
           type="error"
-          ghost
-          class="!rounded-xl !font-bold mt-3"
+          size="small"
+          class="!rounded-xl mt-2"
           @click="fetchDiscovery(1)"
         >
           重新尝试
         </n-button>
       </div>
 
-      <!-- 媒体内容卡片网格 (Netflix / Apple 质感) -->
+      <!-- 空规则源提示 -->
+      <div
+        v-else-if="rules.length === 0 && !loading"
+        class="glass-panel rounded-2xl p-16 text-center max-w-md mx-auto my-12 flex flex-col items-center justify-center space-y-3"
+      >
+        <Compass class="w-10 h-10 text-zinc-400" />
+        <h3 class="text-sm font-bold text-zinc-800 dark:text-zinc-200">未找到启用的{{ props.type }}规则</h3>
+        <p class="text-xs text-zinc-500 dark:text-zinc-400">请前往「规则管理」启用或新建对应的{{ props.type }}规则源。</p>
+        <n-button
+          type="primary"
+          size="small"
+          class="!rounded-xl mt-2"
+          @click="router.push('/rules')"
+        >
+          前往规则管理
+        </n-button>
+      </div>
+
+      <!-- 卡片网格展示流 -->
       <div v-else class="space-y-6">
         <div
-          v-if="filteredItems.length === 0"
-          class="glass-panel rounded-2xl p-12 text-center max-w-sm mx-auto my-8 space-y-2"
-        >
-          <p class="text-xs text-zinc-500 dark:text-zinc-400">未找到符合搜索条件的卡片</p>
-        </div>
-
-        <div
-          v-else
           class="grid gap-3 sm:gap-4.5"
-          :class="props.type === '视频' || props.type === 'video'
-            ? 'grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5'
-            : 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6'"
+          :class="
+            props.type === '视频' || props.type === 'video'
+              ? 'grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5'
+              : 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6'
+          "
         >
           <div
             v-for="(item, idx) in filteredItems"
             :key="item.key || idx"
-            class="group relative flex flex-col rounded-2xl overflow-hidden bg-white/70 dark:bg-white/[0.03] backdrop-blur-md border border-emerald-100/60 dark:border-white/5 hover:-translate-y-1.5 transition-all duration-300 cursor-pointer shadow-2xs hover:shadow-xl hover:shadow-emerald-500/10 active:scale-98"
-            @click="goToDetail(item)"
+            class="group relative flex flex-col rounded-2xl overflow-hidden bg-white/70 dark:bg-white/[0.03] backdrop-blur-md border border-zinc-200/60 dark:border-white/5 hover:-translate-y-1.5 transition-all duration-300 cursor-pointer shadow-2xs hover:shadow-xl hover:shadow-emerald-500/10 active:scale-98"
+            @click="handleCardClick(item)"
           >
             <!-- 封面图容器 -->
             <div class="w-full relative overflow-hidden bg-zinc-200 dark:bg-zinc-900" :class="coverAspectClass">
@@ -343,26 +373,20 @@ onMounted(() => {
                 <component :is="activeIcon" class="w-8 h-8" />
               </div>
 
-              <!-- 悬浮阴影渐变 -->
+              <!-- 悬浮蒙层 -->
               <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-end p-2.5">
-                <span class="text-white text-[11px] font-bold line-clamp-1">点击查看详情</span>
+                <span class="text-white text-[11px] font-bold line-clamp-1">
+                  {{ !ruleHasDetail(activeRule) ? '点击全屏预览大图' : '点击查看详情' }}
+                </span>
               </div>
 
-              <!-- 角标 Tag (如 4K, 连载, 更新至第X集) -->
+              <!-- 角标 Tag -->
               <span
                 v-if="item.badge"
-                class="absolute top-2 left-2 px-2 py-0.5 rounded-lg text-[9px] font-bold bg-black/60 backdrop-blur-md text-white border border-white/10"
+                class="absolute top-2 right-2 px-2 py-0.5 rounded-lg text-[9px] font-bold bg-black/60 backdrop-blur-md text-white border border-white/10"
               >
                 {{ item.badge }}
               </span>
-
-              <!-- 播放指示图标 (视频类) -->
-              <div
-                v-if="props.type === '视频' || props.type === 'video'"
-                class="absolute right-2 bottom-2 w-7 h-7 rounded-full bg-black/50 backdrop-blur-md text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-              >
-                <Play class="w-3.5 h-3.5 fill-current ml-0.5" />
-              </div>
             </div>
 
             <!-- 卡片文本信息 -->
@@ -377,28 +401,67 @@ onMounted(() => {
           </div>
         </div>
 
-        <!-- 加载更多按钮 (若有下一页) -->
-        <div v-if="hasMore" class="flex justify-center pt-6">
+        <!-- 加载更多按钮 -->
+        <div v-if="hasMore" class="flex justify-center pt-4">
           <n-button
             secondary
-            class="!rounded-xl !font-bold px-6"
+            class="!rounded-xl !px-6"
             :loading="executing"
             @click="loadNextPage"
           >
-            {{ executing ? '正在加载下一页...' : '加载更多内容' }}
+            <span>{{ executing ? '正在加载下一页...' : '加载更多内容' }}</span>
           </n-button>
         </div>
       </div>
     </div>
+
+    <!-- 壁纸类无详情全屏大图预览弹窗 (Modal Lightbox) -->
+    <n-modal
+      v-model:show="previewModalVisible"
+      preset="card"
+      class="max-w-4xl !rounded-2xl overflow-hidden"
+      :title="previewCurrentItem?.title || '全屏大图预览'"
+    >
+      <div class="space-y-4">
+        <div class="w-full max-h-[75vh] flex items-center justify-center bg-black/5 dark:bg-black/30 rounded-xl overflow-hidden">
+          <img
+            :src="previewCurrentItem?.cover || previewCurrentItem?.key"
+            referrerpolicy="no-referrer"
+            class="max-w-full max-h-[75vh] object-contain rounded-xl shadow-lg"
+          />
+        </div>
+
+        <div class="flex items-center justify-between pt-2 border-t border-zinc-200/50 dark:border-white/10">
+          <span class="text-xs text-zinc-500 dark:text-zinc-400 truncate max-w-[60%]">
+            {{ previewCurrentItem?.desc || previewCurrentItem?.title }}
+          </span>
+
+          <div class="flex items-center gap-2">
+            <n-button
+              secondary
+              size="small"
+              class="!rounded-xl"
+              @click="copyImageUrl(previewCurrentItem?.cover || previewCurrentItem?.key)"
+            >
+              <template #icon><Copy class="w-3.5 h-3.5" /></template>
+              <span>复制直链</span>
+            </n-button>
+
+            <n-button
+              type="primary"
+              size="small"
+              class="!rounded-xl"
+              @click="downloadImage(previewCurrentItem?.cover || previewCurrentItem?.key, previewCurrentItem?.title)"
+            >
+              <template #icon><Download class="w-3.5 h-3.5" /></template>
+              <span>下载原图</span>
+            </n-button>
+          </div>
+        </div>
+      </div>
+    </n-modal>
   </div>
 </template>
 
 <style scoped>
-.no-scrollbar::-webkit-scrollbar {
-  display: none;
-}
-.no-scrollbar {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
-}
 </style>

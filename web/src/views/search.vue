@@ -3,7 +3,8 @@ import { ref, onMounted, watch, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 defineOptions({ name: 'SearchView' })
-import { ruleService, type RuleSchema, type MediaItem } from '@/utils/ruleService'
+import { ruleService, ruleHasDetail, type RuleSchema, type MediaItem } from '@/utils/ruleService'
+import { useMediaContext } from '@/stores/mediaContext'
 import {
   ArrowLeft,
   Search,
@@ -14,11 +15,16 @@ import {
   Play,
   Video,
   Image as ImageIcon,
-  BookOpen
+  BookOpen,
+  Copy,
+  Download
 } from '@lucide/vue'
+import { useMessage } from 'naive-ui'
 
 const route = useRoute()
 const router = useRouter()
+const message = useMessage()
+const mediaContext = useMediaContext()
 
 const searchKeyword = ref('')
 const searchResults = ref<(MediaItem & { ruleId: number; ruleName: string; ruleType: string })[]>([])
@@ -27,6 +33,10 @@ const searched = ref(false)
 const errorMsg = ref('')
 const activeRuleRequests = ref(0)
 const totalRuleRequests = ref(0)
+
+// 原地大图预览状态
+const previewModalVisible = ref(false)
+const previewCurrentItem = ref<MediaItem | null>(null)
 
 let lastSearchedQuery = ''
 
@@ -45,13 +55,13 @@ const initSearch = () => {
 const performSearch = async (query: string) => {
   if (!query.trim()) return
   if (query === lastSearchedQuery && searchResults.value.length > 0) return
-  
+
   lastSearchedQuery = query
   loading.value = true
   searched.value = true
   errorMsg.value = ''
   searchResults.value = []
-  
+
   try {
     const allRules = ruleService.getRules()
     const enabledRules = allRules.filter((r) => r.enabled === 1 || (r.enabled as any) === true)
@@ -70,7 +80,7 @@ const performSearch = async (query: string) => {
     enabledRules.forEach(async (rule: RuleSchema) => {
       try {
         const searchRes = await ruleService.runSearch(rule, { keyword: query })
-        
+
         if (searchRes.items && searchRes.items.length > 0) {
           const mapped = searchRes.items.map((item) => ({
             ...item,
@@ -104,16 +114,45 @@ const handleSearchSubmit = () => {
   })
 }
 
-const goToDetail = (item: any) => {
+const handleCardClick = (item: MediaItem & { ruleId: number; ruleName: string; ruleType: string }) => {
+  const rule = ruleService.getRuleById(item.ruleId)
+
+  // 1. 若规则没有 detail 方法 (如壁纸) -> 原地全屏预览
+  if (rule && !ruleHasDetail(rule)) {
+    previewCurrentItem.value = item
+    previewModalVisible.value = true
+    return
+  }
+
+  // 2. 注入上下文并路由跳转
+  mediaContext.setContext(item.ruleId, item.key, item)
   router.push({
-    path: '/rules/detail',
+    path: '/media/detail',
     query: {
       ruleId: item.ruleId,
-      key: item.key || item.href || item.url,
-      title: item.title,
-      cover: item.cover
+      key: item.key
     }
   })
+}
+
+const copyImageUrl = (url?: string) => {
+  if (!url) return
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(url)
+    message.success('已复制图片直链至剪贴板')
+  }
+}
+
+const downloadImage = (url?: string, title?: string) => {
+  if (!url) return
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `${title || 'image'}.jpg`
+  a.target = '_blank'
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  message.success('已启动原图下载')
 }
 
 const getItemIcon = (ruleType: string) => {
@@ -166,19 +205,21 @@ onMounted(() => {
         </div>
 
         <!-- 搜索输入框 -->
-        <div class="w-full sm:w-80 relative">
-          <input
-            v-model="searchKeyword"
-            type="text"
-            placeholder="输入搜索关键词，回车发起检索..."
-            @keyup.enter="handleSearchSubmit"
-            class="w-full pl-9 pr-14 py-2.5 bg-emerald-50/60 dark:bg-white/[0.04] hover:bg-emerald-100/50 dark:hover:bg-white/[0.07] focus:bg-white dark:focus:bg-zinc-900 border border-emerald-200/60 dark:border-white/10 rounded-xl text-xs outline-none text-zinc-800 dark:text-zinc-100 placeholder-zinc-400 transition-all shadow-inner focus:border-emerald-500/50 focus:ring-2 focus:ring-emerald-500/20"
-          />
-          <Search class="absolute left-3 top-3 w-4 h-4 text-zinc-400" />
+        <div class="w-full sm:w-80 relative flex items-center gap-2">
+          <div class="relative flex-1">
+            <input
+              v-model="searchKeyword"
+              type="text"
+              placeholder="输入搜索关键词，回车检索..."
+              @keyup.enter="handleSearchSubmit"
+              class="w-full pl-9 pr-3 py-2 bg-zinc-100/70 dark:bg-white/[0.04] hover:bg-zinc-200/50 dark:hover:bg-white/[0.07] focus:bg-white dark:focus:bg-zinc-900 border border-zinc-200/60 dark:border-white/10 rounded-xl text-xs outline-none text-zinc-800 dark:text-zinc-100 placeholder-zinc-400 transition-all shadow-inner"
+            />
+            <Search class="absolute left-3 top-2.5 w-4 h-4 text-zinc-400" />
+          </div>
           <n-button
             type="primary"
             size="small"
-            class="!absolute !right-1.5 !top-1.5 !rounded-lg !font-bold"
+            class="!rounded-xl"
             @click="handleSearchSubmit"
           >
             搜索
@@ -192,9 +233,9 @@ onMounted(() => {
           <span>正在并发检索各大规则源...</span>
           <span class="font-mono">{{ totalRuleRequests - activeRuleRequests }} / {{ totalRuleRequests }} 个源完成</span>
         </div>
-        <div class="w-full bg-emerald-50 dark:bg-white/5 h-1.5 rounded-full overflow-hidden">
+        <div class="w-full bg-zinc-100 dark:bg-white/5 h-1.5 rounded-full overflow-hidden">
           <div
-            class="bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500 h-full transition-all duration-300 rounded-full"
+            class="bg-gradient-to-r from-emerald-500 to-teal-400 h-full transition-all duration-300 rounded-full"
             :style="{ width: `${((totalRuleRequests - activeRuleRequests) / totalRuleRequests) * 100}%` }"
           />
         </div>
@@ -243,8 +284,8 @@ onMounted(() => {
           <div
             v-for="(item, idx) in searchResults"
             :key="item.key || idx"
-            class="group relative flex flex-col rounded-2xl overflow-hidden bg-white/70 dark:bg-white/[0.03] backdrop-blur-md border border-emerald-100/60 dark:border-white/5 hover:-translate-y-1.5 transition-all duration-300 cursor-pointer shadow-2xs hover:shadow-xl hover:shadow-emerald-500/10 active:scale-98"
-            @click="goToDetail(item)"
+            class="group relative flex flex-col rounded-2xl overflow-hidden bg-white/70 dark:bg-white/[0.03] backdrop-blur-md border border-zinc-200/60 dark:border-white/5 hover:-translate-y-1.5 transition-all duration-300 cursor-pointer shadow-2xs hover:shadow-xl hover:shadow-emerald-500/10 active:scale-98"
+            @click="handleCardClick(item)"
           >
             <!-- 封面图容器 -->
             <div
@@ -265,7 +306,7 @@ onMounted(() => {
 
               <!-- 悬浮蒙层 -->
               <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-end p-2.5">
-                <span class="text-white text-[11px] font-bold line-clamp-1">点击查看详情</span>
+                <span class="text-white text-[11px] font-bold line-clamp-1">点击查看</span>
               </div>
 
               <!-- 规则来源 Badge -->
@@ -295,6 +336,52 @@ onMounted(() => {
         </div>
       </div>
     </div>
+
+    <!-- 壁纸类无详情全屏大图预览弹窗 -->
+    <n-modal
+      v-model:show="previewModalVisible"
+      preset="card"
+      class="max-w-4xl !rounded-2xl overflow-hidden"
+      :title="previewCurrentItem?.title || '全屏大图预览'"
+    >
+      <div class="space-y-4">
+        <div class="w-full max-h-[75vh] flex items-center justify-center bg-black/5 dark:bg-black/30 rounded-xl overflow-hidden">
+          <img
+            :src="previewCurrentItem?.cover || previewCurrentItem?.key"
+            referrerpolicy="no-referrer"
+            class="max-w-full max-h-[75vh] object-contain rounded-xl shadow-lg"
+          />
+        </div>
+
+        <div class="flex items-center justify-between pt-2 border-t border-zinc-200/50 dark:border-white/10">
+          <span class="text-xs text-zinc-500 dark:text-zinc-400 truncate max-w-[60%]">
+            {{ previewCurrentItem?.desc || previewCurrentItem?.title }}
+          </span>
+
+          <div class="flex items-center gap-2">
+            <n-button
+              secondary
+              size="small"
+              class="!rounded-xl"
+              @click="copyImageUrl(previewCurrentItem?.cover || previewCurrentItem?.key)"
+            >
+              <template #icon><Copy class="w-3.5 h-3.5" /></template>
+              <span>复制直链</span>
+            </n-button>
+
+            <n-button
+              type="primary"
+              size="small"
+              class="!rounded-xl"
+              @click="downloadImage(previewCurrentItem?.cover || previewCurrentItem?.key, previewCurrentItem?.title)"
+            >
+              <template #icon><Download class="w-3.5 h-3.5" /></template>
+              <span>下载原图</span>
+            </n-button>
+          </div>
+        </div>
+      </div>
+    </n-modal>
   </div>
 </template>
 

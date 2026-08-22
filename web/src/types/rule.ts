@@ -1,5 +1,5 @@
 /**
- * FluxView 标准媒体与规则契约模型
+ * FluxForge 标准媒体与规则契约模型
  */
 
 export type MediaType = 'video' | 'picture' | 'novel'
@@ -11,7 +11,7 @@ export type RuleAction = 'discovery' | 'search' | 'detail' | 'parse'
  */
 export interface RuleSchema {
   id: number
-  name: string                  // 规则名称 (如: "全面屏壁纸", "JAVMENU")
+  name: string                  // 规则名称 (如: "全面屏超清壁纸", "JAVMENU")
   type: MediaType               // 媒体大类
   version: string               // 语义化版本号
   author: string                // 作者
@@ -59,28 +59,23 @@ export interface MediaGroup {
 }
 
 /**
- * 媒体具体内容载荷 (适用于详情页或 parse 返回的最终流数据)
- */
-export interface MediaPayload {
-  type?: MediaType              // 媒体类型 ('video' | 'picture' | 'novel')
-  url?: string                  // 视频播放直链 / M3U8 / MP4
-  headers?: Record<string, string> // 播放器/图片需要的请求头 (如 Referer)
-  images?: string[]             // 图集画廊包含的完整大图 URL 列表
-  content?: string              // 小说/文章纯文本正文
-}
-
-/**
- * 通用媒体详情结构 (detail 方法返回的数据标准)
+ * 通用媒体详情结构 (detail 方法返回的扁平化标准)
  */
 export interface MediaDetail {
   title: string                 // 主标题
   cover?: string                // 封面大图
-  desc?: string                 // 完整正文剧情介绍/详情描述 (支持 HTML 或纯文本)
+  desc?: string                 // 完整正文剧情介绍/详情描述 (支持换行)
   tags?: string[]               // 分类标签
   author?: string               // 作者 / 演员 / 导演
   rating?: string | number      // 评分
+
+  // 扁平化媒体内容 (直接挂载在顶层)
+  playUrl?: string              // 视频播放直链 / M3U8 / MP4
+  images?: string[]             // 图集画廊包含的完整大图 URL 列表 / 剧照
+  content?: string              // 小说/长文本正文内容
+  headers?: Record<string, string> // 播放器/图片需要的请求头 (如 Referer)
+
   groups?: MediaGroup[]         // 选集 / 章节分组
-  media?: MediaPayload          // 直接附带的媒体内容 (如已有播放地址或图集)
   recommendations?: MediaItem[] // 相关相似推荐列表
   extra?: Record<string, any>   // 扩展数据
 }
@@ -99,14 +94,17 @@ export interface DiscoveryResult {
  * 搜索页返回结果 (search 方法返回的数据标准)
  */
 export interface SearchResult {
-  items: MediaItem[]            // 搜索结果列表
-  hasMore?: boolean             // 是否有下一页
+  items: MediaItem[]            // 搜索结果卡片列表
+  hasMore?: boolean             // 是否有更多分页
+  total?: number                // 结果总数 (可选)
 }
 
 /**
- * 章节/分集直链解析结果 (parse 方法返回的数据标准)
+ * 动态分集/直链解析结果 (parse 方法返回的数据标准)
  */
-export interface ParseResult extends MediaPayload {
-  success?: boolean
-  error?: string
+export interface ParseResult {
+  playUrl?: string              // 最终解析出的视频/音频播放直链
+  type?: MediaType              // 解析内容类型
+  content?: string              // 小说章节纯文本正文
+  headers?: Record<string, string> // 自定义防盗链请求头
 }

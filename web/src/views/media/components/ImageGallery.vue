@@ -26,7 +26,7 @@ const getImageUrl = (img: any): string => {
       <h2 v-if="title" class="text-base sm:text-lg font-black text-slate-900 dark:text-white">
         {{ title }}
       </h2>
-      <p v-if="desc" class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+      <p v-if="desc" class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed whitespace-pre-line break-words">
         {{ desc }}
       </p>
     </div>

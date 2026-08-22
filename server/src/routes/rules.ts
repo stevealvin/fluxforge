@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { db } from '../db.js';
+import { ruleDb } from '../db.js';
 import vm from 'node:vm';
 import { createRequire } from 'node:module';
 import axios from 'axios';
@@ -12,87 +12,10 @@ const rules = new Hono();
 const DEFAULT_USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36';
 
-// 更新/插入 (upsert) 辅助函数
-function saveRule(data: any) {
-  const fields = [
-    'name',
-    'type',
-    'version',
-    'author',
-    'description',
-    'icon',
-    'base_url',
-    'enabled',
-    'headers',
-    'code',
-    'discovery_code',
-    'search_code',
-    'detail_code',
-  ];
-
-  let enabled = 1;
-  if (data.enabled !== undefined) {
-    enabled = data.enabled === true || data.enabled === 1 || data.enabled === '1' ? 1 : 0;
-  }
-
-  let headersStr = '';
-  if (data.headers) {
-    headersStr = typeof data.headers === 'string' ? data.headers : JSON.stringify(data.headers);
-  }
-
-  if (data.id) {
-    const id = Number(data.id);
-    const updateFields: string[] = [];
-    const values: any[] = [];
-
-    for (const field of fields) {
-      if (data[field] !== undefined) {
-        updateFields.push(`${field} = ?`);
-        if (field === 'enabled') {
-          values.push(enabled);
-        } else if (field === 'headers') {
-          values.push(headersStr);
-        } else {
-          values.push(data[field]);
-        }
-      }
-    }
-
-    updateFields.push(`updated_at = CURRENT_TIMESTAMP`);
-    values.push(id);
-
-    const sql = `UPDATE rules SET ${updateFields.join(', ')} WHERE id = ?`;
-    db.prepare(sql).run(...values);
-    return db.prepare('SELECT * FROM rules WHERE id = ?').get(id);
-  } else {
-    const insertFields: string[] = [];
-    const placeholders: string[] = [];
-    const values: any[] = [];
-
-    for (const field of fields) {
-      if (data[field] !== undefined) {
-        insertFields.push(field);
-        placeholders.push('?');
-        if (field === 'enabled') {
-          values.push(enabled);
-        } else if (field === 'headers') {
-          values.push(headersStr);
-        } else {
-          values.push(data[field]);
-        }
-      }
-    }
-
-    const sql = `INSERT INTO rules (${insertFields.join(', ')}) VALUES (${placeholders.join(', ')})`;
-    const result = db.prepare(sql).run(...values);
-    return db.prepare('SELECT * FROM rules WHERE id = ?').get(result.lastInsertRowid);
-  }
-}
-
 // GET / -> 获取所有规则列表
-rules.get('/', (c) => {
+rules.get('/', async (c) => {
   try {
-    const data = db.prepare('SELECT * FROM rules ORDER BY id DESC').all();
+    const data = await ruleDb.getAllRules();
     return c.json({ data, total: data.length });
   } catch (error: any) {
     return c.json({ message: error.message }, 500);
@@ -100,12 +23,12 @@ rules.get('/', (c) => {
 });
 
 // GET /:id -> 获取单条规则详情
-rules.get('/:id', (c) => {
+rules.get('/:id', async (c) => {
   try {
-    const id = Number(c.req.param('id'));
-    const rule = db.prepare('SELECT * FROM rules WHERE id = ?').get(id);
+    const id = c.req.param('id');
+    const rule = await ruleDb.getRuleById(id);
     if (!rule) {
-      return c.json({ message: 'Rule not found' }, 404);
+      return c.json({ message: `Rule [ID:${id}] not found` }, 404);
     }
     return c.json(rule);
   } catch (error: any) {
@@ -117,14 +40,14 @@ rules.get('/:id', (c) => {
 rules.post('/', async (c) => {
   try {
     const body = await c.req.json();
-    const result = saveRule(body);
+    const result = await ruleDb.saveRule(body);
     return c.json(result);
   } catch (error: any) {
     return c.json({ message: error.message }, 500);
   }
 });
 
-// POST /edit -> 通过请求体或 query 中的 id 编辑规则
+// POST /edit -> 编辑规则
 rules.post('/edit', async (c) => {
   try {
     const body = await c.req.json();
@@ -132,21 +55,67 @@ rules.post('/edit', async (c) => {
     if (!id) {
       return c.json({ message: 'Missing id' }, 400);
     }
-    const result = saveRule({ ...body, id });
+    const result = await ruleDb.saveRule({ ...body, id });
     return c.json(result);
   } catch (error: any) {
     return c.json({ message: error.message }, 500);
   }
 });
 
-// DELETE /:id -> 通过路径中的 id 删除规则
+// DELETE /:id -> 删除规则
 rules.delete('/:id', async (c) => {
   try {
-    const id = Number(c.req.param('id'));
-    db.prepare('DELETE FROM rules WHERE id = ?').run(id);
+    const id = c.req.param('id');
+    await ruleDb.deleteRule(id);
     return c.json({ success: true });
   } catch (error: any) {
     return c.json({ message: error.message }, 500);
+  }
+});
+
+// PATCH /:id/toggle -> 切换规则启用状态
+rules.patch('/:id/toggle', async (c) => {
+  try {
+    const id = c.req.param('id');
+    const body = await c.req.json();
+    const enabled = body.enabled ? 1 : 0;
+    await ruleDb.toggleRuleEnabled(id, enabled);
+    return c.json({ success: true, enabled });
+  } catch (error: any) {
+    return c.json({ message: error.message }, 500);
+  }
+});
+
+// POST /fetch-html -> 快速抓取目标网页源码 (辅助 AI 规则生成)
+rules.post('/fetch-html', async (c) => {
+  try {
+    const body = await c.req.json();
+    const targetUrl = body.url;
+    if (!targetUrl || !targetUrl.startsWith('http')) {
+      return c.json({ message: '请提供有效的 HTTP/HTTPS 目标网址' }, 400);
+    }
+
+    const res = await axios.get(targetUrl, {
+      headers: {
+        'User-Agent': DEFAULT_USER_AGENT,
+        ...(body.headers || {})
+      },
+      timeout: 15000,
+      responseType: 'text'
+    });
+
+    return c.json({
+      url: targetUrl,
+      status: res.status,
+      html: String(res.data)
+    });
+  } catch (error: any) {
+    return c.json(
+      {
+        message: '抓取网页源码失败: ' + (error.message || String(error))
+      },
+      500
+    );
   }
 });
 
@@ -156,13 +125,15 @@ rules.delete('/:id', async (c) => {
 function transformESMToCJS(code: string): string {
   let runCode = code.trim();
 
-  // 1. 提取并转换顶层 import 语句
+  // 1. 转换顶层 import 语句
   const importRegex = /^\s*import\s+[\s\S]*?from\s+['"][^'"]+['"];?/gm;
   const imports: string[] = [];
-  let cleanCode = runCode.replace(importRegex, (match: string) => {
-    imports.push(match.trim());
-    return '';
-  }).trim();
+  let cleanCode = runCode
+    .replace(importRegex, (match: string) => {
+      imports.push(match.trim());
+      return '';
+    })
+    .trim();
 
   const processedImports = imports.map((imp) => {
     let converted = imp;
@@ -188,30 +159,24 @@ function transformESMToCJS(code: string): string {
   // 2. 转换 export default 语法
   if (cleanCode.includes('export default')) {
     cleanCode = cleanCode
-      // 具名 / 匿名 异步函数 export default async function
       .replace(
         /export\s+default\s+async\s+function\s*([\w]+)?\s*\(\s*([\w\s,]*)\s*\)/g,
         'module.exports = async function $1 ($2)'
       )
-      // 具名 / 匿名 普通函数 export default function
       .replace(
         /export\s+default\s+function\s*([\w]+)?\s*\(\s*([\w\s,]*)\s*\)/g,
         'module.exports = function $1 ($2)'
       )
-      // 箭头函数 export default async (...) =>
       .replace(
         /export\s+default\s+async\s*\(?\s*([\w\s,]*)\s*\)?\s*=>/g,
         'module.exports = async ($1) =>'
       )
-      // 箭头函数 export default (...) =>
       .replace(
         /export\s+default\s*\(?\s*([\w\s,]*)\s*\)?\s*=>/g,
         'module.exports = ($1) =>'
       )
-      // 对象导出 export default { ... }
       .replace(/export\s+default\s+/g, 'module.exports = ');
   } else if (!cleanCode.includes('module.exports') && !cleanCode.includes('exports.')) {
-    // 原始自执行函数或对象表达式
     cleanCode = `module.exports = ${cleanCode}`;
   }
 
@@ -226,14 +191,27 @@ function transformESMToCJS(code: string): string {
 async function executeSandbox(c: any) {
   try {
     const reqBody = await c.req.json();
-    let { code, action, params, context } = reqBody;
+    let { code, ruleId, action, params } = reqBody;
 
+    // 1. 如果传了 ruleId，从数据库读取规则
+    if (ruleId) {
+      const rule = await ruleDb.getRuleById(ruleId);
+      if (!rule) {
+        return c.json({ message: `Rule [ID:${ruleId}] not found in database` }, 404);
+      }
+      code = rule.code;
+      if (rule.baseUrl) {
+        params = { ...params, baseUrl: rule.baseUrl };
+      }
+    }
+
+    // 2. 校验代码存在
     if (!code) {
-      return c.json({ message: 'Missing rule code' }, 400);
+      return c.json({ message: 'Missing rule code or ruleId' }, 400);
     }
 
     const targetAction: string = action || 'discovery';
-    const targetParams = params || context || {};
+    const targetParams = params || {};
 
     const runCode = transformESMToCJS(code);
 
@@ -253,61 +231,51 @@ async function executeSandbox(c: any) {
       Buffer,
       URL,
       URLSearchParams,
-      console,
       ua: DEFAULT_USER_AGENT,
-      userAgent: DEFAULT_USER_AGENT,
-      module: { exports: {} as any },
-      exports: {} as any,
+      params: targetParams,
+      module: { exports: {} },
+      exports: {},
+      console: {
+        log: (...args: any[]) => console.log('[Rule Sandbox]', ...args),
+        warn: (...args: any[]) => console.warn('[Rule Sandbox]', ...args),
+        error: (...args: any[]) => console.error('[Rule Sandbox]', ...args)
+      }
     };
 
-    const result = await vm.runInNewContext(
-      `(async () => {
-        ${runCode}
+    vm.createContext(vmContext);
 
-        const actionName = ${JSON.stringify(targetAction)};
-        const ctx = ${JSON.stringify(targetParams)};
+    // 编译并在沙箱运行
+    const script = new vm.Script(runCode, { filename: 'rule-sandbox.js' });
+    script.runInContext(vmContext, { timeout: 30000 });
 
-        let exp = module.exports;
-        if (exp && exp.default) {
-          exp = exp.default;
-        }
+    const exported: any = vmContext.module.exports || vmContext.exports;
 
-        // 1. 标准模式：导出包含具体方法（discovery, search, detail, parse）的对象
-        if (exp && typeof exp === 'object') {
-          if (typeof exp[actionName] === 'function') {
-            return await exp[actionName](ctx);
-          }
-          // 兜底：若请求特定 action 不存在但有通用 run 方法
-          if (typeof exp['run'] === 'function') {
-            return await exp['run'](ctx);
-          }
-        }
+    let result: any = null;
 
-        // 2. 兼容模式：直接导出了单个执行函数
-        if (typeof exp === 'function') {
-          return await exp(ctx);
-        }
-
-        // 3. 直接返回了静态对象
-        if (exp !== undefined && exp !== null) {
-          return exp;
-        }
-
-        return null;
-      })()`,
-      vmContext,
-      {
-        timeout: 90000, // 90秒安全超时
+    if (typeof exported === 'function') {
+      result = await exported(targetParams);
+    } else if (exported && typeof exported === 'object') {
+      if (typeof exported[targetAction] === 'function') {
+        result = await exported[targetAction](targetParams);
+      } else if (typeof exported.default === 'function') {
+        result = await exported.default(targetParams);
+      } else {
+        throw new Error(`Rule does not export method "${targetAction}"`);
       }
-    );
+    } else {
+      result = exported;
+    }
 
     return c.json(result);
   } catch (error: any) {
-    const stack = error.stack
-      ?.split('\n')
-      .filter((line: string) => !line.includes('vm.js') && !line.includes('node:vm'))
-      .join('\n');
-    return c.json({ message: error.message, stack }, 500);
+    console.error('❌ [Sandbox Execution Error]:', error);
+    return c.json(
+      {
+        message: error.message || 'Rule execution failed',
+        stack: error.stack
+      },
+      500
+    );
   }
 }
 

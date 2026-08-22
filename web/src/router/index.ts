@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import type { RouteRecordRaw } from 'vue-router'
 
 const routes: RouteRecordRaw[] = [
+  // 1. 首页 / 仪表盘
   {
     path: '/',
     component: () => import('../views/home.vue')
@@ -10,45 +11,57 @@ const routes: RouteRecordRaw[] = [
     path: '/gallery',
     component: () => import('../views/gallery.vue')
   },
+
+  // 2. 规则管理与开发中心 (Rules Hub)
   {
     path: '/rules',
     component: () => import('../views/rules/index.vue')
   },
   {
-    path: '/rules/market',
-    component: () => import('../views/rules/market.vue')
-  },
-  {
     path: '/rules/edit',
     component: () => import('../views/rules/edit.vue')
   },
+
+  // 3. 规则生态集市 (Market Hub)
   {
-    path: '/rules/discovery',
-    component: () => import('../views/rules/discovery.vue')
+    path: '/market',
+    component: () => import('../views/market/index.vue')
   },
   {
-    path: '/rules/detail',
-    component: () => import('../views/rules/detail.vue')
+    path: '/rules/market',
+    redirect: '/market'
   },
-  {
-    path: '/search',
-    component: () => import('../views/search.vue')
-  },
+
+  // 4. 多媒体消费流中心 (Media Hub)
   {
     path: '/video',
-    component: () => import('../views/module-view.vue'),
+    component: () => import('../views/media/index.vue'),
     props: { type: '视频' }
   },
   {
     path: '/picture',
-    component: () => import('../views/module-view.vue'),
+    component: () => import('../views/media/index.vue'),
     props: { type: '图片' }
   },
   {
     path: '/novel',
-    component: () => import('../views/module-view.vue'),
+    component: () => import('../views/media/index.vue'),
     props: { type: '小说' }
   },
+  {
+    path: '/media/detail',
+    component: () => import('../views/media/detail.vue')
+  },
+  {
+    path: '/rules/detail',
+    redirect: (to) => ({ path: '/media/detail', query: to.query })
+  },
+
+  // 5. 全网聚合搜索
+  {
+    path: '/search',
+    component: () => import('../views/search.vue')
+  }
 ]
 
 const router = createRouter({

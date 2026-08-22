@@ -26,6 +26,9 @@ dist-ssr/
 *.class
 *.pyc
 .agents/
+.env
+.env.*
+!.env.example
 
 # Vue auto-generated types
 auto-imports.d.ts

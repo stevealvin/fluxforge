@@ -39,8 +39,16 @@ const handleSearch = () => {
   }
 }
 
-const goToSource = (id: number) => {
-  router.push({ path: '/rules/discovery', query: { id } })
+const goToSource = (rule: any) => {
+  if (rule.type === 'video' || rule.type === '视频') {
+    router.push('/video')
+  } else if (rule.type === 'picture' || rule.type === '图片') {
+    router.push('/picture')
+  } else if (rule.type === 'novel' || rule.type === '小说') {
+    router.push('/novel')
+  } else {
+    router.push('/rules')
+  }
 }
 
 const getTypeIcon = (type: string) => {
@@ -82,7 +90,7 @@ onMounted(() => {
       </div>
 
       <h1 class="text-3xl sm:text-5xl font-black tracking-tight text-zinc-900 dark:text-white">
-        流光视界 · <span class="gradient-flux font-['Plus_Jakarta_Sans','Outfit']">FluxView</span>
+        流光视界 · <span class="gradient-flux font-['Plus_Jakarta_Sans','Outfit']">FluxForge</span>
       </h1>
 
       <p class="text-sm sm:text-base text-zinc-600 dark:text-zinc-400 max-w-xl mx-auto font-normal">
@@ -183,7 +191,7 @@ onMounted(() => {
         <div
           v-for="rule in rules"
           :key="rule.id"
-          @click="goToSource(rule.id)"
+          @click="goToSource(rule)"
           class="glass-card rounded-2xl p-5 flex flex-col justify-between cursor-pointer group"
         >
           <div class="space-y-3">

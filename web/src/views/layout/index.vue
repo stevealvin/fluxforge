@@ -17,14 +17,17 @@ import {
   Store,
   X,
   MoreHorizontal,
-  Sparkles
+  Sparkles,
+  Settings
 } from '@lucide/vue'
+import SettingsModal from '@/components/SettingsModal.vue'
 
 const route = useRoute()
 const router = useRouter()
 const themeStore = useThemeStore()
 const isCollapsed = ref(false)
 const tabsStore = useTabsStore()
+const showSettingsModal = ref(false)
 
 const toggleCollapse = () => {
   isCollapsed.value = !isCollapsed.value
@@ -75,7 +78,7 @@ const navMedia = [
 
 const navRules = [
   { label: '规则管理', icon: FileBraces, path: '/rules' },
-  { label: '规则集市', icon: Store, path: '/rules/market' },
+  { label: '规则集市', icon: Store, path: '/market' }
 ]
 </script>
 
@@ -84,7 +87,7 @@ const navRules = [
     <!-- 极光光斑动效背景 (Aurora Ambient Glow) -->
     <!-- Desktop Left Sidebar (微拟态侧边栏) -->
     <aside
-      class="hidden lg:flex flex-col flex-shrink-0 sticky top-0 h-screen p-3 justify-between"
+      class="hidden lg:flex flex-col flex-shrink-0 sticky top-0 h-screen p-2.5 justify-between transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] overflow-hidden"
       :class="[
         isCollapsed ? 'w-16' : 'w-60',
         themeStore.isDark
@@ -93,27 +96,35 @@ const navRules = [
       ]"
     >
       <div class="space-y-5">
-        <!-- 品牌 Logo 头部 -->
-        <div class="flex items-center py-1 px-1 overflow-hidden">
+        <!-- 品牌 Logo 头部 (固定几何插槽，零位移) -->
+        <div class="flex items-center h-11 overflow-hidden">
           <n-tooltip :disabled="!isCollapsed" trigger="hover" placement="right">
             <template #trigger>
-              <router-link to="/" class="flex items-center space-x-2.5 group min-w-0 overflow-hidden">
-                <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-emerald-600 via-teal-500 to-cyan-500 flex items-center justify-center shadow-lg shadow-emerald-500/25 group-hover:scale-105 transition-transform flex-shrink-0">
-                  <Sparkles class="w-5 h-5 text-white animate-pulse" />
+              <router-link
+                to="/"
+                class="flex items-center group w-full h-full min-w-0 overflow-hidden select-none"
+              >
+                <div class="w-11 h-11 shrink-0 flex items-center justify-center">
+                  <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-emerald-600 via-teal-500 to-cyan-500 flex items-center justify-center shadow-lg shadow-emerald-500/25 group-hover:scale-105 transition-transform shrink-0">
+                    <Sparkles class="w-5 h-5 text-white animate-pulse" />
+                  </div>
                 </div>
-                <div class="text-lg font-black tracking-tight gradient-flux font-['Plus_Jakarta_Sans','Outfit'] whitespace-nowrap">
-                  FluxView
-                </div>
+                <span
+                  class="text-lg font-black tracking-tight gradient-flux font-['Plus_Jakarta_Sans','Outfit'] whitespace-nowrap overflow-hidden transition-all duration-300"
+                  :class="isCollapsed ? 'opacity-0 max-w-0 pointer-events-none' : 'opacity-100 max-w-xs ml-1.5'"
+                >
+                  FluxForge
+                </span>
               </router-link>
             </template>
-            FluxView 首页
+            FluxForge 首页
           </n-tooltip>
         </div>
 
         <!-- 导航组 1：发现检索 -->
         <div class="space-y-1">
           <div
-            class="px-2.5 text-[10px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500 whitespace-nowrap overflow-hidden transition-all duration-300"
+            class="px-3 text-[10px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500 whitespace-nowrap overflow-hidden transition-all duration-300"
             :class="isCollapsed ? 'max-h-0 opacity-0 mb-0' : 'max-h-6 opacity-100 mb-1'"
           >
             发现检索
@@ -122,15 +133,22 @@ const navRules = [
             <template #trigger>
               <router-link
                 :to="item.path"
-                class="flex items-center space-x-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all relative group overflow-hidden whitespace-nowrap"
+                class="flex items-center w-full h-10 rounded-xl text-xs font-semibold transition-colors relative group overflow-hidden select-none"
                 :class="[
                   $route.path === item.path
                     ? (themeStore.isDark ? 'bg-emerald-500/20 text-emerald-300 shadow-xs border border-emerald-500/30' : 'bg-emerald-600 text-white shadow-md shadow-emerald-500/25')
                     : (themeStore.isDark ? 'text-zinc-400 hover:text-white hover:bg-white/[0.06]' : 'text-zinc-600 hover:text-zinc-900 hover:bg-emerald-50/60')
                 ]"
               >
-                <component :is="item.icon" class="w-4 h-4 flex-shrink-0" />
-                <span class="whitespace-nowrap">{{ item.label }}</span>
+                <div class="w-11 h-10 shrink-0 flex items-center justify-center">
+                  <component :is="item.icon" class="w-4 h-4" />
+                </div>
+                <span
+                  class="whitespace-nowrap overflow-hidden transition-all duration-300 text-xs font-semibold"
+                  :class="isCollapsed ? 'opacity-0 max-w-0 pointer-events-none' : 'opacity-100 max-w-xs ml-0.5'"
+                >
+                  {{ item.label }}
+                </span>
                 <span
                   v-if="$route.path === item.path"
                   class="absolute left-0 top-2 bottom-2 w-1 rounded-r bg-emerald-500"
@@ -144,7 +162,7 @@ const navRules = [
         <!-- 导航组 2：媒体分类 -->
         <div class="space-y-1">
           <div
-            class="px-2.5 text-[10px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500 whitespace-nowrap overflow-hidden transition-all duration-300"
+            class="px-3 text-[10px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500 whitespace-nowrap overflow-hidden transition-all duration-300"
             :class="isCollapsed ? 'max-h-0 opacity-0 mb-0' : 'max-h-6 opacity-100 mb-1'"
           >
             媒体流
@@ -153,15 +171,22 @@ const navRules = [
             <template #trigger>
               <router-link
                 :to="item.path"
-                class="flex items-center space-x-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all relative group overflow-hidden whitespace-nowrap"
+                class="flex items-center w-full h-10 rounded-xl text-xs font-semibold transition-colors relative group overflow-hidden select-none"
                 :class="[
                   $route.path === item.path
                     ? (themeStore.isDark ? 'bg-emerald-500/20 text-emerald-300 shadow-xs border border-emerald-500/30' : 'bg-emerald-600 text-white shadow-md shadow-emerald-500/25')
                     : (themeStore.isDark ? 'text-zinc-400 hover:text-white hover:bg-white/[0.06]' : 'text-zinc-600 hover:text-zinc-900 hover:bg-emerald-50/60')
                 ]"
               >
-                <component :is="item.icon" class="w-4 h-4 flex-shrink-0" />
-                <span class="whitespace-nowrap">{{ item.label }}</span>
+                <div class="w-11 h-10 shrink-0 flex items-center justify-center">
+                  <component :is="item.icon" class="w-4 h-4" />
+                </div>
+                <span
+                  class="whitespace-nowrap overflow-hidden transition-all duration-300 text-xs font-semibold"
+                  :class="isCollapsed ? 'opacity-0 max-w-0 pointer-events-none' : 'opacity-100 max-w-xs ml-0.5'"
+                >
+                  {{ item.label }}
+                </span>
                 <span
                   v-if="$route.path === item.path"
                   class="absolute left-0 top-2 bottom-2 w-1 rounded-r bg-emerald-500"
@@ -175,7 +200,7 @@ const navRules = [
         <!-- 导航组 3：规则引擎 -->
         <div class="space-y-1">
           <div
-            class="px-2.5 text-[10px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500 whitespace-nowrap overflow-hidden transition-all duration-300"
+            class="px-3 text-[10px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500 whitespace-nowrap overflow-hidden transition-all duration-300"
             :class="isCollapsed ? 'max-h-0 opacity-0 mb-0' : 'max-h-6 opacity-100 mb-1'"
           >
             规则引擎
@@ -184,15 +209,22 @@ const navRules = [
             <template #trigger>
               <router-link
                 :to="item.path"
-                class="flex items-center space-x-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all relative group overflow-hidden whitespace-nowrap"
+                class="flex items-center w-full h-10 rounded-xl text-xs font-semibold transition-colors relative group overflow-hidden select-none"
                 :class="[
                   (item.path === '/rules' ? ($route.path === '/rules' || $route.path.startsWith('/rules/edit') || $route.path.startsWith('/rules/discovery') || $route.path.startsWith('/rules/detail')) : $route.path === item.path)
                     ? (themeStore.isDark ? 'bg-emerald-500/20 text-emerald-300 shadow-xs border border-emerald-500/30' : 'bg-emerald-600 text-white shadow-md shadow-emerald-500/25')
                     : (themeStore.isDark ? 'text-zinc-400 hover:text-white hover:bg-white/[0.06]' : 'text-zinc-600 hover:text-zinc-900 hover:bg-emerald-50/60')
                 ]"
               >
-                <component :is="item.icon" class="w-4 h-4 flex-shrink-0" />
-                <span class="whitespace-nowrap">{{ item.label }}</span>
+                <div class="w-11 h-10 shrink-0 flex items-center justify-center">
+                  <component :is="item.icon" class="w-4 h-4" />
+                </div>
+                <span
+                  class="whitespace-nowrap overflow-hidden transition-all duration-300 text-xs font-semibold"
+                  :class="isCollapsed ? 'opacity-0 max-w-0 pointer-events-none' : 'opacity-100 max-w-xs ml-0.5'"
+                >
+                  {{ item.label }}
+                </span>
                 <span
                   v-if="(item.path === '/rules' ? ($route.path === '/rules' || $route.path.startsWith('/rules/edit') || $route.path.startsWith('/rules/discovery') || $route.path.startsWith('/rules/detail')) : $route.path === item.path)"
                   class="absolute left-0 top-2 bottom-2 w-1 rounded-r bg-emerald-500"
@@ -204,18 +236,46 @@ const navRules = [
         </div>
       </div>
 
-      <!-- 底部控制区（主题切换 & 折叠控制） -->
+      <!-- 底部控制区（设置、主题切换 & 折叠控制） -->
       <div class="space-y-1 pt-2 border-t border-emerald-100/60 dark:border-white/[0.06]">
+        <!-- 系统设置 -->
+        <n-tooltip :disabled="!isCollapsed" trigger="hover" placement="right">
+          <template #trigger>
+            <div
+              @click="showSettingsModal = true"
+              class="flex items-center w-full h-10 rounded-xl text-xs font-semibold cursor-pointer overflow-hidden transition-colors select-none text-zinc-600 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white hover:bg-emerald-50/80 dark:hover:bg-white/[0.06]"
+            >
+              <div class="w-11 h-10 shrink-0 flex items-center justify-center">
+                <Settings class="w-4 h-4 text-cyan-500" />
+              </div>
+              <span
+                class="whitespace-nowrap overflow-hidden transition-all duration-300 text-xs font-semibold"
+                :class="isCollapsed ? 'opacity-0 max-w-0 pointer-events-none' : 'opacity-100 max-w-xs ml-0.5'"
+              >
+                系统设置
+              </span>
+            </div>
+          </template>
+          系统设置 (AI 模型与偏好)
+        </n-tooltip>
+
         <!-- 主题切换行 -->
         <n-tooltip :disabled="!isCollapsed" trigger="hover" placement="right">
           <template #trigger>
             <div
               @click="themeStore.toggleTheme()"
-              class="flex items-center space-x-3 px-3 py-2.5 rounded-xl text-xs font-semibold cursor-pointer overflow-hidden whitespace-nowrap transition-all text-zinc-600 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white hover:bg-emerald-50/80 dark:hover:bg-white/[0.06]"
+              class="flex items-center w-full h-10 rounded-xl text-xs font-semibold cursor-pointer overflow-hidden transition-colors select-none text-zinc-600 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white hover:bg-emerald-50/80 dark:hover:bg-white/[0.06]"
             >
-              <Sun v-if="themeStore.isDark" class="w-4 h-4 text-amber-400 flex-shrink-0" />
-              <Moon v-else class="w-4 h-4 text-emerald-600 flex-shrink-0" />
-              <span class="whitespace-nowrap">{{ themeStore.isDark ? '浅色模式' : '深色模式' }}</span>
+              <div class="w-11 h-10 shrink-0 flex items-center justify-center">
+                <Sun v-if="themeStore.isDark" class="w-4 h-4 text-amber-400" />
+                <Moon v-else class="w-4 h-4 text-emerald-600" />
+              </div>
+              <span
+                class="whitespace-nowrap overflow-hidden transition-all duration-300 text-xs font-semibold"
+                :class="isCollapsed ? 'opacity-0 max-w-0 pointer-events-none' : 'opacity-100 max-w-xs ml-0.5'"
+              >
+                {{ themeStore.isDark ? '浅色模式' : '深色模式' }}
+              </span>
             </div>
           </template>
           切换为{{ themeStore.isDark ? '翠影极光浅色' : '幻夜极光深色' }}主题
@@ -226,11 +286,18 @@ const navRules = [
           <template #trigger>
             <div
               @click="toggleCollapse"
-              class="flex items-center space-x-3 px-3 py-2.5 rounded-xl text-xs font-semibold cursor-pointer overflow-hidden whitespace-nowrap transition-all text-zinc-600 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white hover:bg-emerald-50/80 dark:hover:bg-white/[0.06]"
+              class="flex items-center w-full h-10 rounded-xl text-xs font-semibold cursor-pointer overflow-hidden transition-colors select-none text-zinc-600 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white hover:bg-emerald-50/80 dark:hover:bg-white/[0.06]"
             >
-              <ChevronsRight v-if="isCollapsed" class="w-4 h-4 flex-shrink-0" />
-              <ChevronsLeft v-else class="w-4 h-4 flex-shrink-0" />
-              <span class="whitespace-nowrap">{{ isCollapsed ? '展开侧边栏' : '收起侧边栏' }}</span>
+              <div class="w-11 h-10 shrink-0 flex items-center justify-center">
+                <ChevronsRight v-if="isCollapsed" class="w-4 h-4" />
+                <ChevronsLeft v-else class="w-4 h-4" />
+              </div>
+              <span
+                class="whitespace-nowrap overflow-hidden transition-all duration-300 text-xs font-semibold"
+                :class="isCollapsed ? 'opacity-0 max-w-0 pointer-events-none' : 'opacity-100 max-w-xs ml-0.5'"
+              >
+                {{ isCollapsed ? '展开侧边栏' : '收起侧边栏' }}
+              </span>
             </div>
           </template>
           {{ isCollapsed ? '展开侧边栏' : '收起侧边栏' }}
@@ -251,7 +318,7 @@ const navRules = [
             <div class="w-6 h-6 rounded-lg bg-gradient-to-tr from-emerald-600 to-teal-500 flex items-center justify-center shadow-xs">
               <Sparkles class="w-3.5 h-3.5 text-white" />
             </div>
-            <span class="text-xs font-black tracking-tight gradient-flux font-['Plus_Jakarta_Sans']">FluxView</span>
+            <span class="text-xs font-black tracking-tight gradient-flux font-['Plus_Jakarta_Sans']">FluxForge</span>
           </router-link>
         </div>
 
@@ -339,14 +406,15 @@ const navRules = [
         </div>
       </header>
 
-      <!-- 主视图渲染区 (KeepAlive 缓存容器) -->
-      <main class="flex-1 overflow-y-auto overflow-x-hidden relative p-4 sm:p-6">
+      <!-- 主视图渲染区 (KeepAlive 缓存容器，全局弹性自适应) -->
+      <main class="flex-1 flex flex-col min-h-0 min-w-0 overflow-y-auto p-4 sm:p-6 relative">
         <router-view v-slot="{ Component, route }">
           <transition name="fade-slide" mode="out-in">
             <keep-alive :include="tabsStore.cachedTabNames.value">
               <component
                 :is="Component"
                 :key="tabsStore.openFullPaths.value.includes(route.fullPath) ? route.fullPath : route.fullPath + '_fresh'"
+                class="w-full flex-1 flex flex-col min-h-0"
               />
             </keep-alive>
           </transition>
@@ -374,6 +442,9 @@ const navRules = [
         </router-link>
       </nav>
     </div>
+
+    <!-- 全局系统设置模态弹窗 -->
+    <SettingsModal v-model:show="showSettingsModal" />
   </div>
 </template>
 

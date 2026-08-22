@@ -2,7 +2,7 @@
 
 ## Project overview
 
-FluxView (流光视界) — 轻量级、沙箱规则驱动的跨媒体聚合浏览与播放平台（全栈 Monorepo 架构）。
+FluxForge (流光视界) — 轻量级、沙箱规则驱动的跨媒体聚合浏览与播放平台（全栈 Monorepo 架构）。
 - **server**: 基于 Hono.js + Node.js VM 沙箱的高性能规则执行微服务，内置 `better-sqlite3`、`cheerio` 与 `axios` 爬虫解析沙箱环境。
 - **web**: 基于 Vue 3 + Naive UI (`naive-ui`) + Tailwind CSS 4 + Pinia 的现代化高质感跨媒体浏览与播放系统，支持极夜曜黑与纯净视界浅色双主题，支持多标签页无缝切换、实时规则调试与 Monaco Code Editor 沙箱。
 

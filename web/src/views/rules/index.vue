@@ -168,7 +168,7 @@ const exportAllRules = () => {
     return
   }
   const dateStr = new Date().toISOString().slice(0, 10)
-  exportRules(list.value, `flux_view_rules_all_${dateStr}.json`)
+  exportRules(list.value, `fluxforge_rules_all_${dateStr}.json`)
 }
 
 const triggerFileInput = () => {
@@ -206,21 +206,16 @@ const processImportJson = (jsonString: string) => {
 
     let successCount = 0
     ruleArray.forEach((item: any) => {
-      if (item && item.name) {
-        let mappedType: any = item.type || 'video'
-        if (item.type === '视频') mappedType = 'video'
-        if (item.type === '图片') mappedType = 'picture'
-        if (item.type === '小说') mappedType = 'novel'
-
+      if (item && item.name && item.code) {
         ruleService.saveRule({
           name: item.name,
-          type: mappedType,
+          type: item.type || 'video',
           version: item.version || '1.0.0',
-          author: item.author || '管理员',
+          author: item.author || '',
           description: item.description || '',
-          baseUrl: item.baseUrl || item.base_url || '',
-          code: item.code || item.discovery_code || '',
-          enabled: item.enabled !== undefined ? (item.enabled ? 1 : 0) : 1
+          baseUrl: item.baseUrl || '',
+          code: item.code,
+          enabled: item.enabled ? 1 : 0
         })
         successCount++
       }
