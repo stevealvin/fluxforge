@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed, useTemplateRef, watch, onMounted, onBeforeUnmount } from 'vue'
 import * as monaco from 'monaco-editor'
 import loader from '@monaco-editor/loader'
 import { addExtraLibFromFetch, addExtraLibs } from './util'
@@ -134,7 +135,7 @@ defineExpose({
   // 获取编辑器内容
   getValue: () => editor?.getValue() || '',
   // 设置编辑器内容
-  setValue: (value) => editor?.setValue(value),
+  setValue: (value: string) => editor?.setValue(value),
   // 焦点
   focus: () => editor?.focus(),
   // 格式化代码
