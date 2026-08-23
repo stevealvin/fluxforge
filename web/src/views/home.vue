@@ -97,27 +97,32 @@ onMounted(() => {
         轻量高效的多源聚合浏览空间，将跨站视频、图集画廊与小说源集中呈现在纯净视界。
       </p>
 
-      <!-- 聚合全局搜索框 -->
+      <!-- 聚合全局搜索框 (使用 Naive UI 原生 n-input 与 slot) -->
       <div class="max-w-2xl w-full mx-auto pt-4">
-        <div class="glass-panel rounded-2xl p-2 shadow-xl shadow-emerald-600/5 focus-within:shadow-emerald-600/15 focus-within:border-emerald-500/50 transition-all border border-emerald-100/60 dark:border-white/[0.08]">
-          <div class="flex items-center gap-2">
-            <Search class="w-5 h-5 text-zinc-400 dark:text-zinc-500 ml-2.5 flex-shrink-0" />
-            <input
-              v-model="searchKeyword"
-              type="text"
-              placeholder="搜索全网视频、图片、小说资源..."
-              class="w-full bg-transparent border-none outline-none text-zinc-800 dark:text-zinc-100 placeholder-zinc-400 text-sm py-2 px-1"
-              @keyup.enter="handleSearch"
-            />
+        <n-input
+          v-model:value="searchKeyword"
+          size="large"
+          round
+          clearable
+          placeholder="搜索全网视频、图片、小说资源..."
+          class="text-left shadow-sm border border-emerald-100/50 dark:border-white/10"
+          @keyup.enter="handleSearch"
+        >
+          <template #prefix>
+            <Search class="w-4 h-4 text-zinc-400 dark:text-zinc-500 mr-1.5 shrink-0" />
+          </template>
+          <template #suffix>
             <n-button
               type="primary"
-              class="!rounded-xl !font-bold flex-shrink-0"
+              round
+              size="small"
+              class="!font-bold -mr-1.5 px-4 shadow-sm"
               @click="handleSearch"
             >
               聚合搜索
             </n-button>
-          </div>
-        </div>
+          </template>
+        </n-input>
       </div>
     </div>
 
@@ -156,49 +161,61 @@ onMounted(() => {
         </div>
       </div>
 
-      <!-- 加载中骨架 -->
+      <!-- 加载中骨架 (使用 Naive UI 原生 n-card 与 n-skeleton) -->
       <div v-if="loading" class="grid gap-4 grid-cols-1 sm:grid-cols-2 md:grid-cols-3">
-        <div v-for="n in 6" :key="n" class="glass-panel rounded-2xl p-5 space-y-3">
-          <div class="h-5 w-24 bg-emerald-100/60 dark:bg-zinc-800/40 rounded-lg animate-pulse"></div>
-          <div class="h-4 w-full bg-emerald-100/40 dark:bg-zinc-800/20 rounded-md animate-pulse"></div>
-          <div class="h-4 w-2/3 bg-emerald-100/40 dark:bg-zinc-800/20 rounded-md animate-pulse"></div>
-        </div>
+        <n-card v-for="n in 6" :key="n" size="small">
+          <div class="space-y-3 py-1">
+            <div class="flex items-center gap-3">
+              <n-skeleton width="36px" height="36px" :sharp="false" class="rounded-xl shrink-0" />
+              <div class="flex-1 space-y-1.5">
+                <n-skeleton text style="width: 50%" />
+                <n-skeleton text style="width: 30%" />
+              </div>
+            </div>
+            <n-skeleton text :repeat="2" />
+          </div>
+        </n-card>
       </div>
 
-      <!-- 空白无数据源提示 -->
-      <div
+      <!-- 空白无数据源提示 (使用 Naive UI 原生 n-card 与 n-empty) -->
+      <n-card
         v-else-if="rules.length === 0"
-        class="glass-panel rounded-2xl p-12 text-center flex flex-col items-center justify-center space-y-3 border border-emerald-100/60 dark:border-white/[0.08]"
+        size="large"
+        class="text-center py-6"
       >
-        <div class="w-12 h-12 rounded-2xl bg-amber-500/10 text-amber-500 flex items-center justify-center border border-amber-500/20">
-          <ShieldAlert class="w-6 h-6" />
+        <div class="flex flex-col items-center justify-center space-y-3">
+          <div class="w-12 h-12 rounded-2xl bg-amber-500/10 text-amber-500 flex items-center justify-center border border-amber-500/20">
+            <ShieldAlert class="w-6 h-6" />
+          </div>
+          <h3 class="text-sm font-bold text-zinc-800 dark:text-zinc-100">暂无启用的规则源</h3>
+          <p class="text-xs text-zinc-500 dark:text-zinc-400 max-w-sm">
+            尚未启用任何规则。请前往规则管理中心导入或开启解析规则。
+          </p>
+          <n-button
+            type="primary"
+            class="!rounded-xl !font-bold mt-2"
+            @click="router.push('/rules')"
+          >
+            前往配置规则
+          </n-button>
         </div>
-        <h3 class="text-sm font-bold text-zinc-800 dark:text-zinc-100">暂无启用的规则源</h3>
-        <p class="text-xs text-zinc-500 dark:text-zinc-400 max-w-sm">
-          尚未启用任何规则。请前往规则管理中心导入或开启解析规则。
-        </p>
-        <n-button
-          type="primary"
-          class="!rounded-xl !font-bold mt-2"
-          @click="router.push('/rules')"
-        >
-          前往配置规则
-        </n-button>
-      </div>
+      </n-card>
 
-      <!-- 数据源卡片网格 (微拟态悬浮卡片) -->
+      <!-- 数据源卡片网格 (采用 Naive UI 原生 n-card 组件及 hoverable 属性) -->
       <div v-else class="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
-        <div
+        <n-card
           v-for="rule in rules"
           :key="rule.id"
+          hoverable
+          size="small"
+          class="cursor-pointer group flex flex-col justify-between"
           @click="goToSource(rule)"
-          class="glass-card rounded-2xl p-5 flex flex-col justify-between cursor-pointer group"
         >
           <div class="space-y-3">
             <!-- 卡片顶部：图标、规则名与分类 Tag -->
             <div class="flex items-start justify-between gap-3">
               <div class="flex items-center gap-3">
-                <div class="w-10 h-10 rounded-xl bg-emerald-500/10 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center border border-emerald-500/20 group-hover:scale-105 transition-transform">
+                <div class="w-10 h-10 rounded-xl bg-emerald-500/10 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center border border-emerald-500/20 group-hover:scale-105 transition-transform shrink-0">
                   <component :is="getTypeIcon(rule.type)" class="w-5 h-5" />
                 </div>
                 <div>
@@ -211,7 +228,7 @@ onMounted(() => {
 
               <!-- 类型角标 -->
               <span
-                class="px-2.5 py-0.5 text-[10px] font-bold rounded-full border"
+                class="px-2.5 py-0.5 text-[10px] font-bold rounded-full border shrink-0"
                 :class="getTypeBadgeColor(rule.type)"
               >
                 {{ rule.type === 'video' ? '视频' : rule.type === 'picture' ? '图集' : rule.type === 'novel' ? '小说' : rule.type }}
@@ -224,17 +241,19 @@ onMounted(() => {
             </p>
           </div>
 
-          <!-- 卡片底部作者与动作进入按键 -->
-          <div class="pt-4 mt-4 border-t border-emerald-100/50 dark:border-white/5 flex items-center justify-between text-xs">
-            <span class="text-zinc-400 dark:text-zinc-500 text-[11px] font-medium">
-              作者: {{ rule.author || '官方预置' }}
-            </span>
-            <div class="flex items-center gap-1 font-bold text-emerald-600 dark:text-emerald-400 group-hover:translate-x-1 transition-transform">
-              <span>探索发现</span>
-              <ArrowRight class="w-3.5 h-3.5" />
+          <!-- 卡片操作区 (通过 n-card 原生 action 插槽呈现) -->
+          <template #action>
+            <div class="flex items-center justify-between text-xs py-0.5">
+              <span class="text-zinc-400 dark:text-zinc-500 text-[11px] font-medium">
+                作者: {{ rule.author || '官方预置' }}
+              </span>
+              <div class="flex items-center gap-1 font-bold text-emerald-600 dark:text-emerald-400 group-hover:translate-x-1 transition-transform">
+                <span>探索发现</span>
+                <ArrowRight class="w-3.5 h-3.5" />
+              </div>
             </div>
-          </div>
-        </div>
+          </template>
+        </n-card>
       </div>
     </div>
   </div>

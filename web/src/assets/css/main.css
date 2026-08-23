@@ -31,10 +31,10 @@
   --color-card-hover-bg: #ffffff;
   --color-hover: rgba(5, 150, 105, 0.05);
 
-  /* 漫反射拟态阴影 */
-  --shadow-panel: 0 4px 20px -2px rgba(5, 150, 105, 0.06), 0 2px 6px -1px rgba(0, 0, 0, 0.02);
-  --shadow-card: 0 2px 12px -2px rgba(5, 150, 105, 0.05);
-  --shadow-card-hover: 0 12px 28px -4px rgba(5, 150, 105, 0.14);
+  /* 漫反射拟态阴影 (纯净无边框) */
+  --shadow-panel: 0 4px 20px -2px rgba(0, 0, 0, 0.05), 0 2px 6px -1px rgba(0, 0, 0, 0.02);
+  --shadow-card: 0 2px 12px -2px rgba(0, 0, 0, 0.04);
+  --shadow-card-hover: 0 12px 28px -4px rgba(0, 0, 0, 0.10);
 
   /* 多维流光渐变 */
   --gradient-flux: linear-gradient(135deg, #059669 0%, #0d9488 50%, #10b981 100%);
@@ -58,10 +58,10 @@
   --color-card-hover-bg: rgba(18, 42, 35, 0.88);
   --color-hover: rgba(16, 185, 129, 0.08);
 
-  /* 漫反射拟态阴影 */
-  --shadow-panel: 0 8px 30px -4px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(52, 211, 153, 0.15);
-  --shadow-card: 0 4px 20px -2px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(52, 211, 153, 0.12);
-  --shadow-card-hover: 0 14px 35px -5px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(52, 211, 153, 0.3);
+  /* 漫反射拟态阴影 (纯净无边框) */
+  --shadow-panel: 0 8px 30px -4px rgba(0, 0, 0, 0.55);
+  --shadow-card: 0 4px 20px -2px rgba(0, 0, 0, 0.4);
+  --shadow-card-hover: 0 14px 35px -5px rgba(0, 0, 0, 0.65);
 
   /* 多维流光渐变 */
   --gradient-flux: linear-gradient(135deg, #34d399 0%, #2dd4bf 50%, #6ee7b7 100%);
@@ -78,7 +78,18 @@
   }
 }
 
-/* 🌟 流光视界·无边框玻璃拟态面板 (以面代线，柔和漫反射阴影) */
+/* 🌟 全局增强 Naive UI Card 组件 (常态漫反射阴影、毛玻璃与悬浮动效) */
+.n-card {
+  box-shadow: var(--shadow-card);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.25s ease !important;
+}
+
+.n-card.n-card--hoverable:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-card-hover) !important;
+}
 .glass-panel {
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
