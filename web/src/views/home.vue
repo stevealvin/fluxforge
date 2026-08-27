@@ -24,7 +24,7 @@ const loading = ref(true)
 const loadRules = async () => {
   loading.value = true
   try {
-    const allRules = ruleService.getRules()
+    const allRules = await ruleService.getRules()
     rules.value = allRules.filter((r: any) => r.enabled === 1 || r.enabled === true)
   } catch (error) {
     console.error('Failed to load rules:', error)

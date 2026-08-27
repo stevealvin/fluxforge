@@ -63,7 +63,7 @@ const performSearch = async (query: string) => {
   searchResults.value = []
 
   try {
-    const allRules = ruleService.getRules()
+    const allRules = await ruleService.getRules()
     const enabledRules = allRules.filter((r) => r.enabled === 1 || (r.enabled as any) === true)
 
     if (enabledRules.length === 0) {
@@ -114,8 +114,8 @@ const handleSearchSubmit = () => {
   })
 }
 
-const handleCardClick = (item: MediaItem & { ruleId: number; ruleName: string; ruleType: string }) => {
-  const rule = ruleService.getRuleById(item.ruleId)
+const handleCardClick = async (item: MediaItem & { ruleId: number; ruleName: string; ruleType: string }) => {
+  const rule = await ruleService.getRuleById(item.ruleId)
 
   // 1. 若规则没有 detail 方法 (如壁纸) -> 原地全屏预览
   if (rule && !ruleHasDetail(rule)) {

@@ -11,7 +11,8 @@ import {
   CheckCircle2,
   AlertCircle,
   Sparkles,
-  Zap
+  Zap,
+  RefreshCw
 } from '@lucide/vue'
 
 const props = defineProps<{
@@ -29,6 +30,9 @@ const activeTab = ref<'ai' | 'about'>('ai')
 const testing = ref(false)
 const testStatus = ref<{ success?: boolean; message?: string } | null>(null)
 
+const fetchingModels = ref(false)
+const remoteModelsMap = ref<Record<string, string[]>>({})
+
 // 本地表单状态
 const form = ref({
   provider: aiStore.provider,
@@ -45,7 +49,12 @@ const presetOptions = computed(() => {
   }))
 })
 
-const currentPresetModels = computed(() => {
+// 模型列表：若已通过接口获取则展示获取到的列表，否则展示该协议默认的 2 个最新主流模型
+const availableModels = computed(() => {
+  const customList = remoteModelsMap.value[form.value.provider]
+  if (customList && customList.length > 0) {
+    return customList.map((m) => ({ label: m, value: m }))
+  }
   const preset = AI_PRESETS[form.value.provider]
   return preset?.models?.map((m) => ({ label: m, value: m })) || []
 })
@@ -56,6 +65,32 @@ const handleProviderChange = (val: string) => {
   if (preset) {
     form.value.baseUrl = preset.baseUrl
     form.value.model = preset.defaultModel
+  }
+}
+
+// 动态通过接口从厂商拉取模型列表
+const handleFetchModels = async () => {
+  if (!form.value.baseUrl) {
+    message.warning('请先填写 API 接口地址 (Base URL)')
+    return
+  }
+
+  fetchingModels.value = true
+  try {
+    const list = await aiStore.fetchRemoteModels(form.value)
+    if (list && list.length > 0) {
+      remoteModelsMap.value[form.value.provider] = list
+      if (!list.includes(form.value.model)) {
+        form.value.model = list[0]
+      }
+      message.success(`成功从接口拉取 ${list.length} 个模型！`)
+    } else {
+      message.warning('未能获取到有效模型列表')
+    }
+  } catch (err: any) {
+    message.error(err.message || '获取模型列表失败')
+  } finally {
+    fetchingModels.value = false
   }
 }
 
@@ -138,7 +173,7 @@ const handleSave = () => {
         <div class="space-y-1.5">
           <label class="text-xs font-bold text-zinc-700 dark:text-zinc-300 flex items-center gap-1.5">
             <Zap class="w-3.5 h-3.5 text-emerald-500" />
-            <span>模型厂商 / 预设模板</span>
+            <span>API 协议类型 / 模型厂商</span>
           </label>
           <n-select
             v-model:value="form.provider"
@@ -146,6 +181,9 @@ const handleSave = () => {
             @update:value="handleProviderChange"
             class="!rounded-xl"
           />
+          <p v-if="AI_PRESETS[form.provider]?.desc" class="text-[11px] text-zinc-400 leading-relaxed">
+            {{ AI_PRESETS[form.provider].desc }}
+          </p>
         </div>
 
         <!-- Base URL -->
@@ -156,7 +194,7 @@ const handleSave = () => {
           </label>
           <n-input
             v-model:value="form.baseUrl"
-            placeholder="例如: https://api.deepseek.com/v1"
+            :placeholder="AI_PRESETS[form.provider]?.baseUrl || '例如: https://api.openai.com/v1'"
             class="!rounded-xl font-mono text-xs"
           />
         </div>
@@ -177,29 +215,40 @@ const handleSave = () => {
           <p class="text-[11px] text-zinc-400">密钥仅安全保存在您本地浏览器的 localStorage 中，绝不会上传第三方服务器。</p>
         </div>
 
-        <!-- 模型名称 -->
+        <!-- 模型名称 (可选择、可直接输入) -->
         <div class="space-y-1.5">
           <label class="text-xs font-bold text-zinc-700 dark:text-zinc-300 flex items-center justify-between">
             <span class="flex items-center gap-1.5">
               <Bot class="w-3.5 h-3.5 text-cyan-500" />
               <span>模型名称 (Model)</span>
             </span>
+            <span class="text-[11px] font-normal text-zinc-400">支持下拉选择或直接键入自定义模型</span>
           </label>
-          <div class="flex gap-2">
-            <n-input
+          <div class="flex items-center gap-2">
+            <n-select
               v-model:value="form.model"
-              placeholder="例如: deepseek-chat, gpt-4o-mini"
+              :options="availableModels"
+              filterable
+              tag
+              :placeholder="`请选择或输入模型名称，默认: ${AI_PRESETS[form.provider]?.defaultModel || 'gpt-4o-mini'}`"
               class="!rounded-xl font-mono text-xs flex-1"
             />
-            <!-- 如果有推荐模型可选下拉快捷填充 -->
-            <n-dropdown
-              v-if="currentPresetModels.length > 0"
-              trigger="click"
-              :options="currentPresetModels"
-              @select="(val) => (form.model = val)"
+
+            <!-- 获取模型按钮 (实时通过 API 接口拉取) -->
+            <n-button
+              size="small"
+              secondary
+              type="primary"
+              :loading="fetchingModels"
+              class="!rounded-xl !font-bold shrink-0"
+              @click="handleFetchModels"
+              title="根据当前 API 接口实时获取可用模型列表"
             >
-              <n-button size="small" secondary class="!rounded-xl">推荐模型</n-button>
-            </n-dropdown>
+              <template #icon>
+                <RefreshCw class="w-3.5 h-3.5" :class="{ 'animate-spin': fetchingModels }" />
+              </template>
+              <span>获取模型</span>
+            </n-button>
           </div>
         </div>
 

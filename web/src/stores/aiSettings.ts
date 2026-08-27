@@ -4,7 +4,7 @@ import axios from 'axios'
 import type { MediaType } from '@/types/rule'
 
 export interface AiConfig {
-  provider: string
+  provider: 'openai' | 'gemini' | 'claude' | string
   baseUrl: string
   apiKey: string
   model: string
@@ -13,50 +13,44 @@ export interface AiConfig {
 
 const STORAGE_KEY = 'fluxforge-ai-settings'
 
-export const AI_PRESETS: Record<string, { label: string; baseUrl: string; defaultModel: string; models: string[] }> = {
-  deepseek: {
-    label: 'DeepSeek 官方',
-    baseUrl: 'https://api.deepseek.com/v1',
-    defaultModel: 'deepseek-chat',
-    models: ['deepseek-chat', 'deepseek-reasoner']
-  },
+/**
+ * 仅保留 API 协议本质不同的主流厂商类型：
+ * 1. OpenAI 兼容协议 (涵盖 OpenAI, DeepSeek, 阿里百炼, 硅基流动, Ollama, LM Studio, OneAPI 等)
+ * 2. Google Gemini 协议 (Generative Language API)
+ * 3. Anthropic Claude 协议 (Messages API)
+ */
+export const AI_PRESETS: Record<
+  string,
+  { label: string; desc: string; baseUrl: string; defaultModel: string; models: string[] }
+> = {
   openai: {
-    label: 'OpenAI 官方',
+    label: 'OpenAI / 兼容协议',
+    desc: '标准 ChatCompletions 接口，支持 OpenAI、DeepSeek、阿里通义、硅基流动、Ollama、OneAPI 等',
     baseUrl: 'https://api.openai.com/v1',
     defaultModel: 'gpt-4o-mini',
-    models: ['gpt-4o-mini', 'gpt-4o', 'o3-mini']
+    models: ['gpt-4o', 'gpt-4o-mini']
   },
-  siliconflow: {
-    label: '硅基流动 (SiliconFlow)',
-    baseUrl: 'https://api.siliconflow.cn/v1',
-    defaultModel: 'deepseek-ai/DeepSeek-V3',
-    models: ['deepseek-ai/DeepSeek-V3', 'deepseek-ai/DeepSeek-R1', 'Qwen/Qwen2.5-Coder-32B-Instruct']
+  gemini: {
+    label: 'Google Gemini 协议',
+    desc: 'Google 原生 Generative Language REST 协议，支持 Gemini 1.5/2.0 全系列',
+    baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+    defaultModel: 'gemini-2.0-flash',
+    models: ['gemini-2.0-flash', 'gemini-1.5-pro']
   },
-  dashscope: {
-    label: '阿里百炼 (DashScope)',
-    baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
-    defaultModel: 'qwen-plus',
-    models: ['qwen-plus', 'qwen-max', 'qwen-turbo']
-  },
-  ollama: {
-    label: 'Ollama 本地模型',
-    baseUrl: 'http://localhost:11434/v1',
-    defaultModel: 'qwen2.5-coder',
-    models: ['qwen2.5-coder', 'deepseek-r1:14b', 'llama3.2']
-  },
-  custom: {
-    label: '自定义 OpenAI 兼容接口',
-    baseUrl: '',
-    defaultModel: '',
-    models: []
+  claude: {
+    label: 'Anthropic Claude 协议',
+    desc: 'Anthropic 原生 Messages 接口，支持 Claude 3.5 Sonnet / Haiku / Opus',
+    baseUrl: 'https://api.anthropic.com/v1',
+    defaultModel: 'claude-3-5-sonnet-20241022',
+    models: ['claude-3-5-sonnet-20241022', 'claude-3-5-haiku-20241022']
   }
 }
 
 export const useAiSettingsStore = defineStore('aiSettings', () => {
-  const provider = ref<string>('deepseek')
-  const baseUrl = ref<string>('https://api.deepseek.com/v1')
+  const provider = ref<string>('openai')
+  const baseUrl = ref<string>('https://api.openai.com/v1')
   const apiKey = ref<string>('')
-  const model = ref<string>('deepseek-chat')
+  const model = ref<string>('gpt-4o-mini')
   const temperature = ref<number>(0.1)
 
   // 从 localStorage 加载配置
@@ -65,10 +59,10 @@ export const useAiSettingsStore = defineStore('aiSettings', () => {
       const raw = localStorage.getItem(STORAGE_KEY)
       if (raw) {
         const saved = JSON.parse(raw)
-        provider.value = saved.provider || 'deepseek'
-        baseUrl.value = saved.baseUrl || 'https://api.deepseek.com/v1'
+        provider.value = saved.provider || 'openai'
+        baseUrl.value = saved.baseUrl || 'https://api.openai.com/v1'
         apiKey.value = saved.apiKey || ''
-        model.value = saved.model || 'deepseek-chat'
+        model.value = saved.model || 'gpt-4o-mini'
         temperature.value = saved.temperature ?? 0.1
       }
     } catch (e) {
@@ -94,7 +88,7 @@ export const useAiSettingsStore = defineStore('aiSettings', () => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
   }
 
-  // 选择预设厂商
+  // 选择厂商预设
   const applyPreset = (key: string) => {
     const preset = AI_PRESETS[key]
     if (preset) {
@@ -104,14 +98,71 @@ export const useAiSettingsStore = defineStore('aiSettings', () => {
     }
   }
 
-  // 测试连接
+  // 测试连接 (按不同 API 协议分发)
   const testConnection = async (): Promise<{ success: boolean; message: string }> => {
     if (!baseUrl.value) {
       return { success: false, message: '请先填写 API 接口地址 (Base URL)' }
     }
 
+    const cleanBase = baseUrl.value.replace(/\/+$/, '')
+    const currentProvider = provider.value
+
     try {
-      const targetUrl = `${baseUrl.value.replace(/\/+$/, '')}/chat/completions`
+      // 1. Google Gemini 协议
+      if (currentProvider === 'gemini') {
+        const url = `${cleanBase}/models/${model.value}:generateContent`
+        const headers: Record<string, string> = {
+          'Content-Type': 'application/json'
+        }
+        if (apiKey.value) {
+          headers['x-goog-api-key'] = apiKey.value
+        }
+
+        const res = await axios.post(
+          url,
+          {
+            contents: [{ role: 'user', parts: [{ text: 'Ping' }] }],
+            generationConfig: { maxOutputTokens: 10 }
+          },
+          { headers, timeout: 15000 }
+        )
+
+        if (res.status === 200 && res.data?.candidates?.length > 0) {
+          return { success: true, message: `连接成功！Gemini [${model.value}] 响应正常。` }
+        }
+        return { success: false, message: `响应格式不符合预期: ${JSON.stringify(res.data)}` }
+      }
+
+      // 2. Anthropic Claude 协议
+      if (currentProvider === 'claude') {
+        const url = `${cleanBase}/messages`
+        const headers: Record<string, string> = {
+          'Content-Type': 'application/json',
+          'anthropic-version': '2023-06-01',
+          'anthropic-dangerous-direct-browser-access': 'true'
+        }
+        if (apiKey.value) {
+          headers['x-api-key'] = apiKey.value
+        }
+
+        const res = await axios.post(
+          url,
+          {
+            model: model.value,
+            max_tokens: 10,
+            messages: [{ role: 'user', content: 'Ping' }]
+          },
+          { headers, timeout: 15000 }
+        )
+
+        if (res.status === 200 && res.data?.content?.length > 0) {
+          return { success: true, message: `连接成功！Claude [${model.value}] 响应正常。` }
+        }
+        return { success: false, message: `响应格式不符合预期: ${JSON.stringify(res.data)}` }
+      }
+
+      // 3. 默认 OpenAI / 兼容协议
+      const url = `${cleanBase}/chat/completions`
       const headers: Record<string, string> = {
         'Content-Type': 'application/json'
       }
@@ -120,7 +171,7 @@ export const useAiSettingsStore = defineStore('aiSettings', () => {
       }
 
       const res = await axios.post(
-        targetUrl,
+        url,
         {
           model: model.value,
           messages: [{ role: 'user', content: 'Ping' }],
@@ -130,16 +181,20 @@ export const useAiSettingsStore = defineStore('aiSettings', () => {
       )
 
       if (res.status === 200 && res.data?.choices?.length > 0) {
-        return { success: true, message: `连接成功！模型 [${model.value}] 响应正常。` }
+        return { success: true, message: `连接成功！OpenAI兼容模型 [${model.value}] 响应正常。` }
       }
       return { success: false, message: `响应异常: ${JSON.stringify(res.data)}` }
     } catch (error: any) {
-      const msg = error.response?.data?.error?.message || error.message || String(error)
+      const msg =
+        error.response?.data?.error?.message ||
+        error.response?.data?.message ||
+        error.message ||
+        String(error)
       return { success: false, message: `连接测试失败: ${msg}` }
     }
   }
 
-  // 生成规则代码
+  // 生成规则代码 (按不同 API 协议分发)
   const generateRuleCode = async (params: {
     targetUrl: string
     mediaType: MediaType | string
@@ -192,31 +247,139 @@ ${params.htmlSnippet.slice(0, 15000)}
 - 只输出标准、完整、无语法错误的 JavaScript 代码。
 - 不要包含任何解释性文字或 Markdown 外部说明，直接输出代码内容（可以包裹在 \`\`\`javascript 内）。`
 
-    const targetUrl = `${baseUrl.value.replace(/\/+$/, '')}/chat/completions`
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json'
+    const userPrompt = `请根据以上 HTML 片段生成完整的 ${params.mediaType} 解析规则代码。`
+    const cleanBase = baseUrl.value.replace(/\/+$/, '')
+    const currentProvider = provider.value
+
+    let rawOutput = ''
+
+    // 1. Google Gemini 协议
+    if (currentProvider === 'gemini') {
+      const url = `${cleanBase}/models/${model.value}:generateContent`
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      if (apiKey.value) headers['x-goog-api-key'] = apiKey.value
+
+      const res = await axios.post(
+        url,
+        {
+          systemInstruction: { parts: [{ text: systemPrompt }] },
+          contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
+          generationConfig: { temperature: temperature.value }
+        },
+        { headers, timeout: 60000 }
+      )
+      rawOutput = res.data?.candidates?.[0]?.content?.parts?.[0]?.text || ''
     }
-    if (apiKey.value) {
-      headers['Authorization'] = `Bearer ${apiKey.value}`
+    // 2. Anthropic Claude 协议
+    else if (currentProvider === 'claude') {
+      const url = `${cleanBase}/messages`
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      }
+      if (apiKey.value) headers['x-api-key'] = apiKey.value
+
+      const res = await axios.post(
+        url,
+        {
+          model: model.value,
+          max_tokens: 4096,
+          system: systemPrompt,
+          messages: [{ role: 'user', content: userPrompt }],
+          temperature: temperature.value
+        },
+        { headers, timeout: 60000 }
+      )
+      rawOutput = res.data?.content?.[0]?.text || ''
+    }
+    // 3. OpenAI / 兼容协议
+    else {
+      const url = `${cleanBase}/chat/completions`
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      if (apiKey.value) headers['Authorization'] = `Bearer ${apiKey.value}`
+
+      const res = await axios.post(
+        url,
+        {
+          model: model.value,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt }
+          ],
+          temperature: temperature.value
+        },
+        { headers, timeout: 60000 }
+      )
+      rawOutput = res.data?.choices?.[0]?.message?.content || ''
     }
 
-    const res = await axios.post(
-      targetUrl,
-      {
-        model: model.value,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: `请根据以上 HTML 片段生成完整的 ${params.mediaType} 解析规则代码。` }
-        ],
-        temperature: temperature.value
-      },
-      { headers, timeout: 60000 }
-    )
-
-    let code = res.data?.choices?.[0]?.message?.content || ''
     // 去除 markdown 标记
-    code = code.replace(/^```(?:javascript|js)?\n/i, '').replace(/```$/i, '').trim()
+    let code = rawOutput.replace(/^```(?:javascript|js)?\n/i, '').replace(/```$/i, '').trim()
     return code
+  }
+
+  // 动态从 API 接口获取可用模型列表
+  const fetchRemoteModels = async (overrideConfig?: Partial<AiConfig>): Promise<string[]> => {
+    const currentProvider = overrideConfig?.provider || provider.value
+    const currentBaseUrl = (overrideConfig?.baseUrl || baseUrl.value).replace(/\/+$/, '')
+    const currentApiKey = overrideConfig?.apiKey !== undefined ? overrideConfig.apiKey : apiKey.value
+
+    if (!currentBaseUrl) {
+      throw new Error('请先填写 API 接口地址 (Base URL)')
+    }
+
+    try {
+      // 1. Google Gemini 协议
+      if (currentProvider === 'gemini') {
+        const url = `${currentBaseUrl}/models`
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+        if (currentApiKey) headers['x-goog-api-key'] = currentApiKey
+
+        const res = await axios.get(url, { headers, timeout: 15000 })
+        const list = res.data?.models || []
+        const modelNames: string[] = list
+          .map((m: any) => (m.name || '').replace(/^models\//, ''))
+          .filter((name: string) => name && !name.includes('embedding') && !name.includes('aqa'))
+        return modelNames.length > 0 ? modelNames : AI_PRESETS.gemini.models
+      }
+
+      // 2. Anthropic Claude 协议
+      if (currentProvider === 'claude') {
+        const url = `${currentBaseUrl}/models`
+        const headers: Record<string, string> = {
+          'Content-Type': 'application/json',
+          'anthropic-version': '2023-06-01',
+          'anthropic-dangerous-direct-browser-access': 'true'
+        }
+        if (currentApiKey) headers['x-api-key'] = currentApiKey
+
+        const res = await axios.get(url, { headers, timeout: 15000 })
+        const list = res.data?.data || []
+        const modelNames: string[] = list.map((m: any) => m.id).filter(Boolean)
+        return modelNames.length > 0 ? modelNames : AI_PRESETS.claude.models
+      }
+
+      // 3. OpenAI / 兼容协议
+      const url = `${currentBaseUrl}/models`
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      if (currentApiKey) headers['Authorization'] = `Bearer ${currentApiKey}`
+
+      const res = await axios.get(url, { headers, timeout: 15000 })
+      const list = res.data?.data || (Array.isArray(res.data) ? res.data : [])
+      const modelNames: string[] = list
+        .map((m: any) => m.id || m.name || (typeof m === 'string' ? m : ''))
+        .filter(Boolean)
+
+      return modelNames.length > 0 ? modelNames : AI_PRESETS.openai.models
+    } catch (error: any) {
+      const msg =
+        error.response?.data?.error?.message ||
+        error.response?.data?.message ||
+        error.message ||
+        String(error)
+      throw new Error(`获取模型列表失败: ${msg}`)
+    }
   }
 
   loadSettings()
@@ -231,6 +394,8 @@ ${params.htmlSnippet.slice(0, 15000)}
     saveSettings,
     applyPreset,
     testConnection,
-    generateRuleCode
+    generateRuleCode,
+    fetchRemoteModels
   }
 })
+

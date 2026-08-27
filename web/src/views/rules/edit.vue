@@ -97,10 +97,10 @@ export default {
 
 const submitLoading = ref(false)
 
-const loadData = () => {
+const loadData = async () => {
   const id = route.query.id
   if (!id) return
-  const result = ruleService.getRuleById(id as string)
+  const result = await ruleService.getRuleById(id as string)
   if (result) {
     form.value = { ...result }
   }
@@ -124,17 +124,18 @@ const onSubmit = async () => {
 
   submitLoading.value = true
   try {
-    const saved = ruleService.saveRule(form.value)
+    const saved = await ruleService.saveRule(form.value)
     message.success('保存规则成功')
-    if (!route.query.id && saved.id) {
+    if (!route.query.id && saved?.id) {
       router.replace(`/rules/edit?id=${saved.id}`)
     } else {
-      loadData()
+      await loadData()
     }
   } catch (error: any) {
     message.error('保存失败: ' + error.message)
+  } finally {
+    submitLoading.value = false
   }
-  submitLoading.value = false
 }
 
 const openTestWorkbench = () => {
@@ -356,11 +357,11 @@ onUnmounted(() => {
           </div>
 
           <n-form ref="formRef" :model="form" class="space-y-3 shrink-0">
-            <n-form-item label="规则标识名称 *" path="name" :rule="{ required: true, message: '请输入规则名称' }">
+            <n-form-item label="规则标识名称" path="name" :rule="{ required: true, message: '请输入规则名称' }">
               <n-input v-model:value="form.name" clearable placeholder="如: 全面屏超清壁纸, JAVMENU" class="!rounded-xl text-xs" />
             </n-form-item>
 
-            <n-form-item label="媒体类型 *" path="type" :rule="{ required: true, message: '请选择规则媒体类型' }">
+            <n-form-item label="媒体类型" path="type" :rule="{ required: true, message: '请选择规则媒体类型' }">
               <n-select
                 v-model:value="form.type"
                 :options="[

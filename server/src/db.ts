@@ -2,26 +2,36 @@ import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import fs from 'node:fs';
 import dotenv from 'dotenv';
-import { createClient } from '@supabase/supabase-js';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// 仅在本地开发存在 server/.env 时加载 (Vercel 等云端平台直接读取注入的环境变量)
+// 服务端严格只加载服务端根目录下的 .env 文件 (server/.env)
 const serverEnvPath = resolve(__dirname, '../.env');
 if (fs.existsSync(serverEnvPath)) {
   dotenv.config({ path: serverEnvPath });
 }
 
-// 固定读取 2 个核心远程环境变量
-const supabaseUrl = process.env.SUPABASE_URL || '';
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+/**
+ * 获取 Supabase SDK 客户端实例 (禁用无用 Session 轮询以保障服务端高并发稳定性)
+ */
+function getSupabase(): SupabaseClient {
+  const supabaseUrl = (process.env.SUPABASE_URL || '').replace(/\/+$/, '');
+  const supabaseKey =
+    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY || '';
 
-if (!supabaseUrl || !supabaseKey) {
-  console.error('❌ [Supabase] 环境变量缺失: 请确保 SUPABASE_URL 与 SUPABASE_SERVICE_ROLE_KEY 已配置');
+  if (!supabaseUrl || !supabaseKey) {
+    throw new Error('❌ [Supabase] 环境变量缺失: 请确保 SUPABASE_URL 与 SUPABASE_SERVICE_ROLE_KEY 已配置');
+  }
+
+  return createClient(supabaseUrl, supabaseKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false
+    }
+  });
 }
-
-const supabase = createClient(supabaseUrl, supabaseKey);
 
 /**
  * 格式化 Supabase 行记录为标准前端对象
@@ -48,6 +58,7 @@ export const ruleDb = {
    * 获取全部规则列表
    */
   async getAllRules(): Promise<any[]> {
+    const supabase = getSupabase();
     const { data, error } = await supabase
       .from('flux_rules')
       .select('*')
@@ -65,6 +76,7 @@ export const ruleDb = {
    * 根据 ID 获取单条规则详情
    */
   async getRuleById(id: number | string): Promise<any | null> {
+    const supabase = getSupabase();
     const { data, error } = await supabase
       .from('flux_rules')
       .select('*')
@@ -83,6 +95,8 @@ export const ruleDb = {
    * 保存规则 (新增 / 更新)
    */
   async saveRule(data: any): Promise<any> {
+    const supabase = getSupabase();
+    const now = new Date().toISOString();
     const payload = {
       name: data.name || '',
       type: data.type || 'video',
@@ -91,8 +105,8 @@ export const ruleDb = {
       description: data.description || '',
       base_url: data.baseUrl || data.base_url || '',
       code: data.code || '',
-      enabled: data.enabled !== undefined ? (data.enabled ? 1 : 0) : 1,
-      updated_at: new Date().toISOString()
+      enabled: data.enabled !== undefined ? (Number(data.enabled) === 1 ? 1 : 0) : 1,
+      updated_at: now
     };
 
     if (data.id) {
@@ -101,17 +115,17 @@ export const ruleDb = {
         .update(payload)
         .eq('id', Number(data.id))
         .select('*')
-        .single();
+        .maybeSingle();
 
       if (error) {
         console.error(`❌ [Supabase] 更新规则 [ID:${data.id}] 失败:`, error.message);
         throw error;
       }
-      return formatRuleRow(updated);
+      return formatRuleRow(updated || { ...payload, id: Number(data.id) });
     } else {
       const { data: inserted, error } = await supabase
         .from('flux_rules')
-        .insert([{ ...payload, created_at: new Date().toISOString() }])
+        .insert([{ ...payload, created_at: now }])
         .select('*')
         .single();
 
@@ -127,6 +141,7 @@ export const ruleDb = {
    * 删除规则
    */
   async deleteRule(id: number | string): Promise<boolean> {
+    const supabase = getSupabase();
     const { error } = await supabase
       .from('flux_rules')
       .delete()
@@ -143,10 +158,11 @@ export const ruleDb = {
    * 切换规则启用状态
    */
   async toggleRuleEnabled(id: number | string, enabled: number): Promise<boolean> {
+    const supabase = getSupabase();
     const { error } = await supabase
       .from('flux_rules')
       .update({
-        enabled: enabled ? 1 : 0,
+        enabled: Number(enabled) === 1 ? 1 : 0,
         updated_at: new Date().toISOString()
       })
       .eq('id', Number(id));

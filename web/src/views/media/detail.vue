@@ -50,7 +50,7 @@ const loadDetail = async () => {
   executing.value = true
 
   try {
-    const ruleRes = ruleService.getRuleById(ruleId)
+    const ruleRes = await ruleService.getRuleById(ruleId)
     rule.value = ruleRes
 
     if (!rule.value) {

@@ -48,10 +48,10 @@ const showImportModal = ref(false)
 const importText = ref('')
 const fileInputRef = ref<HTMLInputElement | null>(null)
 
-const loadData = () => {
+const loadData = async () => {
   loading.value = true
   try {
-    let data = ruleService.getRules()
+    let data = await ruleService.getRules()
 
     if (form.value.name.trim()) {
       const searchName = form.value.name.toLowerCase().trim()
@@ -84,10 +84,10 @@ const onGoto = (row: RuleSchema) => {
   router.push(`/rules/edit?id=${row.id}`)
 }
 
-const toggleRule = (row: RuleSchema, val: boolean) => {
+const toggleRule = async (row: RuleSchema, val: boolean) => {
   try {
     const nextVal = val ? 1 : 0
-    ruleService.toggleRuleEnabled(row.id, nextVal)
+    await ruleService.toggleRuleEnabled(row.id, nextVal)
     row.enabled = nextVal
     message.success(val ? `已启用规则: ${row.name}` : `已禁用规则: ${row.name}`)
   } catch (error) {
@@ -96,24 +96,23 @@ const toggleRule = (row: RuleSchema, val: boolean) => {
   }
 }
 
-const deleteRule = (row: RuleSchema) => {
+const deleteRule = async (row: RuleSchema) => {
   try {
-    ruleService.deleteRule(row.id)
+    await ruleService.deleteRule(row.id)
     message.success(`已成功删除规则: ${row.name}`)
-    loadData()
+    await loadData()
   } catch (error) {
     console.error('Failed to delete rule:', error)
     message.error('删除规则失败')
   }
 }
 
-const resetDefaults = () => {
+const resetDefaults = async () => {
   try {
-    ruleService.resetToSeedRules()
-    message.success('已成功重置为官方预置规则')
-    loadData()
+    await loadData()
+    message.success('已从云端同步最新规则')
   } catch (e: any) {
-    message.error('重置失败: ' + e.message)
+    message.error('刷新失败: ' + e.message)
   }
 }
 
@@ -194,7 +193,7 @@ const handleFileChange = (e: Event) => {
   reader.readAsText(file)
 }
 
-const processImportJson = (jsonString: string) => {
+const processImportJson = async (jsonString: string) => {
   try {
     const parsed = JSON.parse(jsonString)
     const ruleArray = Array.isArray(parsed) ? parsed : [parsed]
@@ -205,9 +204,9 @@ const processImportJson = (jsonString: string) => {
     }
 
     let successCount = 0
-    ruleArray.forEach((item: any) => {
+    for (const item of ruleArray) {
       if (item && item.name && item.code) {
-        ruleService.saveRule({
+        await ruleService.saveRule({
           name: item.name,
           type: item.type || 'video',
           version: item.version || '1.0.0',
@@ -219,12 +218,12 @@ const processImportJson = (jsonString: string) => {
         })
         successCount++
       }
-    })
+    }
 
     message.success(`成功导入 ${successCount} 个规则`)
     showImportModal.value = false
     importText.value = ''
-    loadData()
+    await loadData()
   } catch (error: any) {
     message.error('导入规则失败: ' + error.message)
   }
@@ -353,19 +352,24 @@ loadData()
             />
           </div>
 
-          <!-- 筛选按钮 -->
+          <!-- 查询按钮 -->
           <n-button
             type="primary"
             class="!rounded-xl !font-bold"
+            :loading="loading"
             @click="onSearch"
           >
-            筛选
+            <template #icon>
+              <SearchIcon class="w-3.5 h-3.5" />
+            </template>
+            <span>查询</span>
           </n-button>
 
           <!-- 重置按钮 -->
           <n-button
             quaternary
             class="!rounded-xl !font-semibold"
+            :disabled="loading"
             @click="onReset"
           >
             重置
@@ -378,14 +382,48 @@ loadData()
       </div>
     </div>
 
-    <!-- 规则卡片网格列表 (mori-box 风格) -->
+    <!-- 规则卡片网格列表 (加载中骨架 / 无数据提示 / 规则卡片) -->
     <div class="space-y-4">
-      <div v-if="list.length === 0" class="glass-panel rounded-2xl p-16 text-center max-w-md mx-auto my-12 flex flex-col items-center justify-center space-y-3">
+      <!-- 1. 加载中骨架动画 (使用 Naive UI 原生 n-card 与 n-skeleton) -->
+      <div v-if="loading" class="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
+        <n-card v-for="n in 6" :key="n" size="small" class="h-full flex flex-col justify-between">
+          <div class="space-y-3 py-1">
+            <div class="flex items-start justify-between gap-3">
+              <div class="flex items-center gap-3 flex-1 min-w-0">
+                <n-skeleton width="40px" height="40px" :sharp="false" class="rounded-xl shrink-0" />
+                <div class="flex-1 space-y-1.5 min-w-0">
+                  <n-skeleton text style="width: 60%" />
+                  <n-skeleton text style="width: 35%" />
+                </div>
+              </div>
+              <n-skeleton width="32px" height="18px" round class="shrink-0" />
+            </div>
+            <div class="space-y-1.5 pt-1">
+              <n-skeleton text :repeat="2" />
+            </div>
+            <n-skeleton text style="width: 45%" />
+          </div>
+          <template #action>
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <n-skeleton circle width="24px" height="24px" />
+                <n-skeleton circle width="24px" height="24px" />
+                <n-skeleton circle width="24px" height="24px" />
+              </div>
+              <n-skeleton width="64px" height="24px" :sharp="false" class="rounded-lg" />
+            </div>
+          </template>
+        </n-card>
+      </div>
+
+      <!-- 2. 无数据空白提示 -->
+      <div v-else-if="list.length === 0" class="glass-panel rounded-2xl p-16 text-center max-w-md mx-auto my-12 flex flex-col items-center justify-center space-y-3">
         <Compass class="w-10 h-10 text-zinc-400" />
         <h3 class="text-sm font-bold text-zinc-800 dark:text-zinc-200">没有找到规则</h3>
         <p class="text-xs text-zinc-500 dark:text-zinc-400">可以点击上方“新建规则”或“重置预置”导入规则。</p>
       </div>
 
+      <!-- 3. 真实规则卡片网格 -->
       <div v-else class="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
         <div
           v-for="rule in list"

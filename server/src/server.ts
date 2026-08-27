@@ -7,12 +7,10 @@ import { serve } from '@hono/node-server';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// 加载 server/.env 环境变量
+// 服务端严格只加载服务端根目录下的 .env 文件 (server/.env)
 const serverEnvPath = resolve(__dirname, '../.env');
 if (fs.existsSync(serverEnvPath)) {
   dotenv.config({ path: serverEnvPath });
-} else {
-  dotenv.config();
 }
 
 import { app } from './index.js';

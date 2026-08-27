@@ -72,7 +72,7 @@ const loadRules = async () => {
   currentPage.value = 1
 
   try {
-    const matchedRules = ruleService.getEnabledRulesByType(props.type)
+    const matchedRules = await ruleService.getEnabledRulesByType(props.type)
     rules.value = matchedRules
 
     if (rules.value.length > 0) {

@@ -38,11 +38,19 @@ const init = async () => {
   const monaco: typeof import('monaco-editor') = await loader.init()
 
   const uri = monaco.Uri.parse(`file:///${props.modelId}.ts`)
-  model = monaco.editor.createModel(
-    modelValue.value || '',
-    'javascript',
-    uri
-  )
+  const existingModel = monaco.editor.getModel(uri)
+  if (existingModel) {
+    model = existingModel
+    if (modelValue.value !== undefined && model.getValue() !== modelValue.value) {
+      model.setValue(modelValue.value || '')
+    }
+  } else {
+    model = monaco.editor.createModel(
+      modelValue.value || '',
+      'javascript',
+      uri
+    )
+  }
   
   editor = monaco.editor.create(codeRef.value!, {
     model,

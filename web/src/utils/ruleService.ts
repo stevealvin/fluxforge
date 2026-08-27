@@ -1,4 +1,3 @@
-import seedRules from './rules_seed.json'
 import http from './http'
 import type {
   RuleSchema,
@@ -21,176 +20,72 @@ export const ruleHasDetail = (rule?: RuleSchema | null): boolean => {
   return /\bdetail\s*[\(:]/.test(rule.code)
 }
 
-const STORAGE_KEY = 'fluxforge-rules'
-
 export const ruleService = {
   /**
-   * 初始化规则库
+   * 从服务端获取全部规则列表
    */
-  initRules(): void {
-    if (!localStorage.getItem(STORAGE_KEY)) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(seedRules))
-    }
-  },
-
-  /**
-   * 从后端同步最新规则列表
-   */
-  async syncRemoteRules(): Promise<RuleSchema[]> {
+  async getRules(): Promise<RuleSchema[]> {
     try {
       const res: any = await http.get('/rules')
-      const remoteList = res?.data || []
-      if (Array.isArray(remoteList) && remoteList.length > 0) {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(remoteList))
-        return remoteList
-      }
+      return res?.data || []
     } catch (e) {
-      console.warn('同步远程规则失败:', e)
-    }
-    return this.getRules()
-  },
-
-  /**
-   * 获取所有规则
-   */
-  getRules(): RuleSchema[] {
-    this.initRules()
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return []
-    try {
-      return JSON.parse(raw) as RuleSchema[]
-    } catch {
+      console.error('获取规则列表失败:', e)
       return []
     }
   },
 
   /**
-   * 根据 ID 查询单条规则
+   * 根据 ID 从服务端查询单条规则
    */
-  getRuleById(id: number | string): RuleSchema | null {
-    const rules = this.getRules()
-    return rules.find((r) => String(r.id) === String(id)) || null
+  async getRuleById(id: number | string): Promise<RuleSchema | null> {
+    try {
+      const res: any = await http.get(`/rules/${id}`)
+      return res || null
+    } catch (e) {
+      console.error(`获取规则 [ID:${id}] 失败:`, e)
+      return null
+    }
   },
 
   /**
-   * 根据类型筛选启用的规则
+   * 根据媒体类型筛选启用的规则
    */
-  getEnabledRulesByType(type: MediaType | string): RuleSchema[] {
-    const rules = this.getRules()
+  async getEnabledRulesByType(type: MediaType | string): Promise<RuleSchema[]> {
+    const rules = await this.getRules()
     return rules.filter((r) => {
       const matchType =
         r.type === type ||
         (type === '视频' && r.type === 'video') ||
         (type === '图片' && r.type === 'picture') ||
         (type === '小说' && r.type === 'novel')
-      return matchType && r.enabled === 1
+      return matchType && Number(r.enabled) === 1
     })
   },
 
   /**
    * 保存规则 (新增 / 更新)
    */
-  saveRule(data: Partial<RuleSchema> & { id?: number | string }): RuleSchema {
-    const rules = this.getRules()
-    const now = new Date().toISOString()
-
-    let savedRule: RuleSchema
-
-    if (data.id) {
-      const idToFind = String(data.id)
-      const index = rules.findIndex((r) => String(r.id) === idToFind)
-
-      if (index !== -1) {
-        savedRule = {
-          ...rules[index],
-          ...data,
-          id: Number(data.id),
-          enabled: data.enabled ? 1 : 0,
-          updated_at: now
-        }
-        rules[index] = savedRule
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(rules))
-      } else {
-        throw new Error(`Rule [ID:${data.id}] not found`)
-      }
-    } else {
-      const nextId = rules.length > 0 ? Math.max(...rules.map((r) => Number(r.id) || 0)) + 1 : 1
-      savedRule = {
-        id: nextId,
-        name: data.name || '',
-        type: data.type || 'video',
-        version: data.version || '1.0.0',
-        author: data.author || '管理员',
-        description: data.description || '',
-        baseUrl: data.baseUrl || '',
-        enabled: data.enabled ? 1 : 0,
-        code: data.code || '',
-        created_at: now,
-        updated_at: now
-      }
-      rules.push(savedRule)
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(rules))
-    }
-
-    // 后台同步写入后端
-    http.post('/rules', savedRule).catch((err) => {
-      console.warn('同步规则至后端失败:', err)
-    })
-
-    return savedRule
+  async saveRule(data: Partial<RuleSchema> & { id?: number | string }): Promise<RuleSchema> {
+    const res: any = await http.post('/rules', data)
+    return res
   },
 
   /**
    * 删除规则
    */
-  deleteRule(id: number | string): boolean {
-    const rules = this.getRules()
-    const idToFind = String(id)
-    const filtered = rules.filter((r) => String(r.id) !== idToFind)
-
-    if (filtered.length < rules.length) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(filtered))
-      http.delete(`/rules/${id}`).catch((err) => {
-        console.warn('后端删除规则失败:', err)
-      })
-      return true
-    }
-    return false
+  async deleteRule(id: number | string): Promise<boolean> {
+    const res: any = await http.delete(`/rules/${id}`)
+    return Boolean(res?.success)
   },
 
   /**
    * 切换启用状态
    */
-  toggleRuleEnabled(id: number | string, enabled: boolean | number): RuleSchema | null {
-    const rules = this.getRules()
-    const idToFind = String(id)
-    const rule = rules.find((r) => String(r.id) === idToFind)
-
-    if (rule) {
-      rule.enabled = enabled ? 1 : 0
-      rule.updated_at = new Date().toISOString()
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(rules))
-
-      http.patch(`/rules/${id}/toggle`, { enabled: rule.enabled }).catch((err) => {
-        console.warn('后端更新状态失败:', err)
-      })
-      return rule
-    }
-    return null
-  },
-
-  /**
-   * 重置回官方默认预置规则
-   */
-  resetToSeedRules(): RuleSchema[] {
-    const list: RuleSchema[] = seedRules as RuleSchema[]
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(list))
-
-    Promise.all(list.map((r) => http.post('/rules', r))).catch((err) => {
-      console.warn('重置预置规则失败:', err)
+  async toggleRuleEnabled(id: number | string, enabled: boolean | number): Promise<boolean> {
+    const res: any = await http.patch(`/rules/${id}/toggle`, {
+      enabled: enabled ? 1 : 0
     })
-
-    return list
+    return Boolean(res?.success)
   },
 
   // ==========================================
