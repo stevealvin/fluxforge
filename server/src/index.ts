@@ -9,15 +9,7 @@ export const app = new Hono().basePath('/api');
 app.use('*', loggerMiddleware);
 app.use('*', corsMiddleware);
 
-// 3. 根路径与健康检查 (自动处于 /api 与 /api/health)
-app.get('/', (c) => {
-  return c.json({
-    status: 'ok',
-    service: 'flux-view-api',
-    time: new Date().toISOString(),
-  });
-});
-
+// 3. 健康检查端点 (位于 /api/health)
 app.get('/health', (c) => {
   return c.json({
     status: 'ok',
