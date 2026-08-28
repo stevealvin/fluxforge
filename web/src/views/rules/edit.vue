@@ -442,13 +442,14 @@ onUnmounted(() => {
       @apply="handleApplyAiRule"
     />
 
-    <!-- 专业级沙箱测试工作台 -->
+    <!-- 专业级沙箱测试工作台 (内置 AI 智能诊断与修复) -->
     <RuleTestWorkbench
       v-model:show="showTestWorkbench"
       :code="form.code || ''"
       :base-url="form.baseUrl"
       :rule-type="form.type"
       :rule-name="form.name"
+      @update:code="(val) => (form.code = val)"
     />
   </div>
 </template>

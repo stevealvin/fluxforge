@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { ruleDb } from '../db.js';
+import { ruleDb } from '../db/index.js';
 import vm from 'node:vm';
 import { createRequire } from 'node:module';
 import axios from 'axios';

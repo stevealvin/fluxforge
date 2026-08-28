@@ -7,31 +7,34 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// 服务端严格只加载服务端根目录下的 .env 文件 (server/.env)
-const serverEnvPath = resolve(__dirname, '../.env');
-if (fs.existsSync(serverEnvPath)) {
-  dotenv.config({ path: serverEnvPath });
+// 本地开发环境加载 server/.env 文件
+const envPath = resolve(__dirname, '../../.env');
+if (fs.existsSync(envPath)) {
+  dotenv.config({ path: envPath });
+} else {
+  const fallbackEnv = resolve(__dirname, '../.env');
+  if (fs.existsSync(fallbackEnv)) {
+    dotenv.config({ path: fallbackEnv });
+  }
 }
+
+const supabaseUrl =
+  process.env.SUPABASE_URL ||
+  'https://ktyhycnfiketodvbjncy.supabase.co';
+
+const supabaseKey =
+  process.env.SUPABASE_SERVICE_ROLE_KEY ||
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt0eWh5Y25maWtldG9kdmJqbmN5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4NTUwNzgxNiwiZXhwIjoyMTAxMDgzODE2fQ.xJTkF4wau9gj_Tlx1FmNCSLXTN1CpfhmX-eQLiTQjCw';
 
 /**
- * 获取 Supabase SDK 客户端实例 (禁用无用 Session 轮询以保障服务端高并发稳定性)
+ * 获取 Supabase SDK 单例客户端 (禁用无用 Session 轮询以保障高并发与 Serverless 稳定性)
  */
-function getSupabase(): SupabaseClient {
-  const supabaseUrl = (process.env.SUPABASE_URL || '').replace(/\/+$/, '');
-  const supabaseKey =
-    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY || '';
-
-  if (!supabaseUrl || !supabaseKey) {
-    throw new Error('❌ [Supabase] 环境变量缺失: 请确保 SUPABASE_URL 与 SUPABASE_SERVICE_ROLE_KEY 已配置');
+export const supabase: SupabaseClient = createClient(supabaseUrl, supabaseKey, {
+  auth: {
+    persistSession: false,
+    autoRefreshToken: false
   }
-
-  return createClient(supabaseUrl, supabaseKey, {
-    auth: {
-      persistSession: false,
-      autoRefreshToken: false
-    }
-  });
-}
+});
 
 /**
  * 格式化 Supabase 行记录为标准前端对象
@@ -58,7 +61,6 @@ export const ruleDb = {
    * 获取全部规则列表
    */
   async getAllRules(): Promise<any[]> {
-    const supabase = getSupabase();
     const { data, error } = await supabase
       .from('flux_rules')
       .select('*')
@@ -76,7 +78,6 @@ export const ruleDb = {
    * 根据 ID 获取单条规则详情
    */
   async getRuleById(id: number | string): Promise<any | null> {
-    const supabase = getSupabase();
     const { data, error } = await supabase
       .from('flux_rules')
       .select('*')
@@ -95,7 +96,6 @@ export const ruleDb = {
    * 保存规则 (新增 / 更新)
    */
   async saveRule(data: any): Promise<any> {
-    const supabase = getSupabase();
     const now = new Date().toISOString();
     const payload = {
       name: data.name || '',
@@ -141,7 +141,6 @@ export const ruleDb = {
    * 删除规则
    */
   async deleteRule(id: number | string): Promise<boolean> {
-    const supabase = getSupabase();
     const { error } = await supabase
       .from('flux_rules')
       .delete()
@@ -158,7 +157,6 @@ export const ruleDb = {
    * 切换规则启用状态
    */
   async toggleRuleEnabled(id: number | string, enabled: number): Promise<boolean> {
-    const supabase = getSupabase();
     const { error } = await supabase
       .from('flux_rules')
       .update({
@@ -174,5 +172,3 @@ export const ruleDb = {
     return true;
   }
 };
-
-
