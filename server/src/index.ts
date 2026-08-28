@@ -2,13 +2,14 @@ import { Hono } from 'hono';
 import { corsMiddleware, loggerMiddleware } from './middlewares/index.js';
 import rulesRouter from './routes/rules.js';
 
-export const app = new Hono();
+// 1. 创建全局统一带有 /api 前缀的 Hono 实例
+export const app = new Hono().basePath('/api');
 
-// 1. 中间件：日志与跨域支持
+// 2. 中间件：日志与跨域支持
 app.use('*', loggerMiddleware);
 app.use('*', corsMiddleware);
 
-// 2. 根路径与健康检查
+// 3. 根路径与健康检查 (自动处于 /api 与 /api/health)
 app.get('/', (c) => {
   return c.json({
     status: 'ok',
@@ -17,12 +18,15 @@ app.get('/', (c) => {
   });
 });
 
-// 3. 全部路由统一挂载在 /api 下
-const api = new Hono();
-api.route('/rules', rulesRouter);
-api.get('/health', (c) => c.json({ status: 'ok', time: new Date().toISOString() }));
-api.get('/', (c) => c.json({ status: 'ok', message: 'FluxView Rules Engine API is running' }));
+app.get('/health', (c) => {
+  return c.json({
+    status: 'ok',
+    service: 'flux-view-api',
+    time: new Date().toISOString(),
+  });
+});
 
-app.route('/api', api);
+// 4. 挂载规则引擎业务路由 (自动处于 /api/rules/*)
+app.route('/rules', rulesRouter);
 
 export default app;
