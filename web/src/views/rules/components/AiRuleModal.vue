@@ -45,7 +45,7 @@ const mediaType = ref(props.defaultType || 'video')
 const ruleName = ref('')
 const requirement = ref('')
 
-// 各页面 HTML 源码片段
+// 各页面数据源码片段 (直接存储返回的文本数据)
 const listHtml = ref('')
 const detailHtml = ref('')
 const parseHtml = ref('')
@@ -66,20 +66,73 @@ const mediaTypeOptions = [
 ]
 
 /**
- * 纯前端 DOM 启发式卡片聚类探测器
- * 从列表页 HTML 中自动嗅探并提取第 1 个详情页条目的绝对 URL
+ * 通用智能详情链接嗅探器 (支持从 HTML 或 JSON 文本中自动定位首条详情 URL)
  */
-const sniffDetailUrlFromHtml = (html: string, base: string): string => {
-  if (!html || !base) return ''
+const sniffDetailUrl = (rawContent: string, base: string): string => {
+  if (!rawContent || !base) return ''
+  const trimmed = rawContent.trim()
+
+  // 1. 如果是 JSON 数据
+  if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+    try {
+      const data = JSON.parse(trimmed)
+      let items: any[] = []
+      if (Array.isArray(data)) {
+        items = data
+      } else if (typeof data === 'object' && data !== null) {
+        const candidates = ['list', 'data', 'items', 'results', 'vod_list', 'books', 'rows', 'data_list', 'posts']
+        for (const key of candidates) {
+          if (Array.isArray(data[key]) && data[key].length > 0) {
+            items = data[key]
+            break
+          }
+        }
+        if (items.length === 0 && data.data && typeof data.data === 'object') {
+          for (const key of candidates) {
+            if (Array.isArray(data.data[key]) && data.data[key].length > 0) {
+              items = data.data[key]
+              break
+            }
+          }
+        }
+      }
+
+      if (items.length > 0 && items[0] && typeof items[0] === 'object') {
+        const first = items[0]
+        const urlKeys = ['url', 'link', 'detail_url', 'detailUrl', 'href', 'page_url', 'view_url']
+        for (const k of urlKeys) {
+          if (typeof first[k] === 'string' && first[k].trim()) {
+            return new URL(first[k].trim(), base).href
+          }
+        }
+        const idKeys = ['id', 'vod_id', 'vodId', 'book_id', 'bookId', 'media_id', 'mediaId', 'code', 'key']
+        for (const k of idKeys) {
+          if (first[k] !== undefined && first[k] !== null && String(first[k]).trim()) {
+            const idVal = String(first[k]).trim()
+            if (base.includes('?ac=list') || base.includes('?ac=videolist')) {
+              return base.replace(/\?ac=(list|videolist)/, `?ac=detail&ids=${idVal}`)
+            }
+            if (base.includes('/list')) {
+              return base.replace(/\/list.*$/, `/detail/${idVal}`)
+            }
+            const u = new URL(base)
+            return `${u.origin}${u.pathname.replace(/\/+$/, '')}/${idVal}`
+          }
+        }
+      }
+    } catch {
+      // JSON 解析失败则转入 HTML 嗅探
+    }
+  }
+
+  // 2. 如果是 HTML 数据
   try {
     const parser = new DOMParser()
-    const doc = parser.parseFromString(html, 'text/html')
+    const doc = parser.parseFromString(rawContent, 'text/html')
 
-    // 1. 移除常见导航、页眉、页脚与无关侧边栏
     const ignoredSelectors = 'header, nav, footer, .menu, .navbar, .sidebar, #header, #footer, .header, .footer, .nav, .top-bar, .user-panel'
     doc.querySelectorAll(ignoredSelectors).forEach(el => el.remove())
 
-    // 2. 收集所有包含 href 的 <a> 标签
     const links = Array.from(doc.querySelectorAll('a[href]'))
     const candidateLinks = links.filter(a => {
       const href = (a.getAttribute('href') || '').trim()
@@ -88,7 +141,6 @@ const sniffDetailUrlFromHtml = (html: string, base: string): string => {
       return true
     })
 
-    // 3. 优先级 1：包含 <img> 缩略图/海报的卡片链接 (内容列表最核心特征)
     const imgLink = candidateLinks.find(a => {
       const hasImg = a.querySelector('img')
       const classStr = a.className.toLowerCase()
@@ -96,35 +148,30 @@ const sniffDetailUrlFromHtml = (html: string, base: string): string => {
       return hasImg || isCard
     })
     if (imgLink) {
-      const href = imgLink.getAttribute('href')!
-      return new URL(href, base).href
+      return new URL(imgLink.getAttribute('href')!, base).href
     }
 
-    // 4. 优先级 2：链接路径符合典型详情结构
     const patternLink = candidateLinks.find(a => {
       const href = a.getAttribute('href')!
       return /\/(detail|show|view|item|v|p|read|book|vod|drama|article|\d+)(\/|\.|$|\?)/i.test(href)
     })
     if (patternLink) {
-      const href = patternLink.getAttribute('href')!
-      return new URL(href, base).href
+      return new URL(patternLink.getAttribute('href')!, base).href
     }
 
-    // 5. 降级：取前 3 个候选中相对路径最长/最像条目的链接
     if (candidateLinks.length > 0) {
-      const firstValid = candidateLinks[0].getAttribute('href')!
-      return new URL(firstValid, base).href
+      return new URL(candidateLinks[0].getAttribute('href')!, base).href
     }
   } catch (e) {
-    console.warn('DOM 智能探测详情链接失败:', e)
+    console.warn('智能探测详情链接失败:', e)
   }
   return ''
 }
 
-// 抓取列表页源码
+// 抓取列表/发现页数据
 const handleFetchListHtml = async () => {
   if (!targetUrl.value.trim() || !targetUrl.value.startsWith('http')) {
-    message.warning('请先输入有效的列表页/发现页 URL')
+    message.warning('请先输入有效的列表/发现页 URL')
     return
   }
 
@@ -134,33 +181,33 @@ const handleFetchListHtml = async () => {
     const res: any = await http.post('/rules/fetch-html', {
       url: targetUrl.value.trim()
     })
-    if (res?.html) {
-      listHtml.value = res.html.slice(0, 30000)
-      message.success(`列表页源码抓取成功 (${(res.html.length / 1024).toFixed(1)} KB)`)
+    const data = res?.data || res?.html || ''
+    if (data) {
+      listHtml.value = data.slice(0, 30000)
+      message.success(`列表数据抓取成功 (${(data.length / 1024).toFixed(1)} KB)`)
 
-      // 自动嗅探详情页链接
-      const detected = sniffDetailUrlFromHtml(res.html, targetUrl.value.trim())
+      // 自动嗅探首条详情链接
+      const detected = sniffDetailUrl(data, targetUrl.value.trim())
       if (detected) {
         detailUrl.value = detected
         autoSniffed.value = true
-        message.info(`已自动嗅探到首条详情页链接: ${detected}`)
-        // 自动联动抓取详情页
+        message.info(`已自动嗅探到首条详情链接: ${detected}`)
         handleFetchDetailHtml()
       }
     } else {
-      message.warning('抓取到的列表页内容为空')
+      message.warning('抓取到的列表数据为空')
     }
   } catch (err: any) {
-    message.error(err.response?.data?.message || err.message || '抓取列表页源码失败')
+    message.error(err.response?.data?.message || err.message || '抓取列表数据失败')
   } finally {
     fetchingList.value = false
   }
 }
 
-// 抓取详情页源码
+// 抓取详情页/接口数据
 const handleFetchDetailHtml = async () => {
   if (!detailUrl.value.trim() || !detailUrl.value.startsWith('http')) {
-    message.warning('请先输入有效的详情页示例 URL')
+    message.warning('请先输入有效的详情页/接口示例 URL')
     return
   }
 
@@ -169,23 +216,24 @@ const handleFetchDetailHtml = async () => {
     const res: any = await http.post('/rules/fetch-html', {
       url: detailUrl.value.trim()
     })
-    if (res?.html) {
-      detailHtml.value = res.html.slice(0, 30000)
-      message.success(`详情页源码抓取成功 (${(res.html.length / 1024).toFixed(1)} KB)`)
+    const data = res?.data || res?.html || ''
+    if (data) {
+      detailHtml.value = data.slice(0, 30000)
+      message.success(`详情数据抓取成功 (${(data.length / 1024).toFixed(1)} KB)`)
     } else {
-      message.warning('抓取到的详情页内容为空')
+      message.warning('抓取到的详情数据为空')
     }
   } catch (err: any) {
-    message.error(err.response?.data?.message || err.message || '抓取详情页源码失败')
+    message.error(err.response?.data?.message || err.message || '抓取详情数据失败')
   } finally {
     fetchingDetail.value = false
   }
 }
 
-// 抓取播放/解析页源码
+// 抓取播放/解析接口数据
 const handleFetchParseHtml = async () => {
   if (!parseUrl.value.trim() || !parseUrl.value.startsWith('http')) {
-    message.warning('请先输入有效的播放/解析页示例 URL')
+    message.warning('请先输入有效的播放/解析接口示例 URL')
     return
   }
 
@@ -194,14 +242,15 @@ const handleFetchParseHtml = async () => {
     const res: any = await http.post('/rules/fetch-html', {
       url: parseUrl.value.trim()
     })
-    if (res?.html) {
-      parseHtml.value = res.html.slice(0, 25000)
-      message.success(`播放页源码抓取成功 (${(res.html.length / 1024).toFixed(1)} KB)`)
+    const data = res?.data || res?.html || ''
+    if (data) {
+      parseHtml.value = data.slice(0, 25000)
+      message.success(`播放解析数据抓取成功 (${(data.length / 1024).toFixed(1)} KB)`)
     } else {
-      message.warning('抓取到的播放页内容为空')
+      message.warning('抓取到的播放解析数据为空')
     }
   } catch (err: any) {
-    message.error(err.response?.data?.message || err.message || '抓取播放页源码失败')
+    message.error(err.response?.data?.message || err.message || '抓取播放解析数据失败')
   } finally {
     fetchingParse.value = false
   }
@@ -210,7 +259,7 @@ const handleFetchParseHtml = async () => {
 // 调用 AI 大模型生成多页面协同规则代码
 const handleGenerate = async () => {
   if (!listHtml.value.trim() && !detailHtml.value.trim()) {
-    message.warning('请至少抓取或提供列表页或详情页的 HTML 片段')
+    message.warning('请至少抓取或提供列表页或详情页的数据样本 (HTML/JSON)')
     return
   }
 
@@ -221,7 +270,7 @@ const handleGenerate = async () => {
 
   generating.value = true
   try {
-    const code = await aiStore.generateRuleCode({
+    const result = await aiStore.generateRuleCode({
       targetUrl: targetUrl.value.trim(),
       mediaType: mediaType.value,
       listHtml: listHtml.value.trim(),
@@ -232,8 +281,9 @@ const handleGenerate = async () => {
       requirement: requirement.value.trim()
     })
 
-    if (code) {
-      generatedCode.value = code
+    if (result?.code) {
+      generatedCode.value = result.code
+      if (result.name && !ruleName.value) ruleName.value = result.name
       message.success('AI 解析规则生成完成！')
     } else {
       message.error('AI 未能生成有效的代码')
@@ -269,7 +319,7 @@ const handleApply = () => {
     :show="show"
     @update:show="(val) => emit('update:show', val)"
     preset="card"
-    title="AI 智能规则编写助手 (多页面协同版)"
+    title="AI 智能规则编写助手 (多源协同通用版)"
     class="!rounded-3xl max-w-6xl shadow-2xl w-full"
     :segmented="{ content: 'soft', footer: 'soft' }"
   >
@@ -280,12 +330,12 @@ const handleApply = () => {
         </div>
         <div>
           <h2 class="text-base font-black text-zinc-900 dark:text-white flex items-center gap-2">
-            <span>AI 多页面全链路规则生成器</span>
+            <span>AI 多源全链路规则生成器</span>
             <span class="px-2 py-0.5 text-[10px] font-mono rounded-full bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200/50">
               {{ aiStore.model || '未配置' }}
             </span>
           </h2>
-          <p class="text-[11px] text-zinc-400">支持列表页、详情页、播放页多源采样与 DOM 自动嗅探，AI 同步生成 100% 精准的 discovery / search / detail / parse 全套规则</p>
+          <p class="text-[11px] text-zinc-400">通用支持网页 HTML 与 REST JSON API 多源采样与智能嗅探，AI 同步生成 discovery / search / detail / parse 全套解析规则</p>
         </div>
       </div>
     </template>
@@ -298,7 +348,7 @@ const handleApply = () => {
           <div class="flex items-center justify-between text-xs font-bold text-zinc-700 dark:text-zinc-300">
             <span class="flex items-center gap-1.5">
               <Compass class="w-3.5 h-3.5 text-emerald-500" />
-              <span>1. 列表/发现页 URL (必填)</span>
+              <span>1. 发现/列表页 URL (HTML 或 JSON API)</span>
             </span>
             <n-button
               size="tiny"
@@ -316,7 +366,7 @@ const handleApply = () => {
           </div>
           <n-input
             v-model:value="targetUrl"
-            placeholder="例如: https://site.com/movie/list"
+            placeholder="例如: https://site.com/movie/list 或 /api/vod"
             class="!rounded-xl font-mono text-xs"
           />
         </div>
@@ -326,7 +376,7 @@ const handleApply = () => {
           <div class="flex items-center justify-between text-xs font-bold text-zinc-700 dark:text-zinc-300">
             <span class="flex items-center gap-1.5">
               <FileText class="w-3.5 h-3.5 text-teal-500" />
-              <span>2. 详情页示例 URL (选集/正文)</span>
+              <span>2. 详情页/接口示例 URL (选集/正文)</span>
               <span v-if="autoSniffed" class="px-1.5 py-0.2 text-[9px] font-bold rounded bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400">
                 ⚡ 自动嗅探
               </span>
@@ -357,7 +407,7 @@ const handleApply = () => {
           <div class="flex items-center justify-between text-xs font-bold text-zinc-700 dark:text-zinc-300">
             <span class="flex items-center gap-1.5">
               <Terminal class="w-3.5 h-3.5 text-cyan-500" />
-              <span>3. 播放/解析页示例 URL (可选)</span>
+              <span>3. 播放/解析接口示例 URL (可选)</span>
             </span>
             <n-button
               size="tiny"
@@ -370,7 +420,7 @@ const handleApply = () => {
               <template #icon>
                 <DownloadCloud class="w-3 h-3" />
               </template>
-              抓取播放
+              抓取解析
             </n-button>
           </div>
           <n-input
@@ -414,26 +464,35 @@ const handleApply = () => {
               <button
                 type="button"
                 @click="activeHtmlTab = 'list'"
-                class="px-2 py-0.5 rounded-lg transition-all cursor-pointer"
-                :class="activeHtmlTab === 'list' ? 'bg-white dark:bg-zinc-800 text-emerald-600 dark:text-emerald-400 shadow-xs' : 'text-zinc-500'"
+                class="px-2.5 py-1 rounded-lg transition-all cursor-pointer flex items-center gap-1.5"
+                :class="activeHtmlTab === 'list' ? 'bg-white dark:bg-zinc-800 text-emerald-600 dark:text-emerald-400 shadow-xs' : 'text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200'"
               >
-                列表 HTML {{ listHtml ? `(${(listHtml.length / 1024).toFixed(1)}k)` : '' }}
+                <span>列表数据</span>
+                <span v-if="listHtml" class="text-[10px] font-mono font-normal opacity-70">
+                  {{ (listHtml.length / 1024).toFixed(1) }}k
+                </span>
               </button>
               <button
                 type="button"
                 @click="activeHtmlTab = 'detail'"
-                class="px-2 py-0.5 rounded-lg transition-all cursor-pointer"
-                :class="activeHtmlTab === 'detail' ? 'bg-white dark:bg-zinc-800 text-teal-600 dark:text-teal-400 shadow-xs' : 'text-zinc-500'"
+                class="px-2.5 py-1 rounded-lg transition-all cursor-pointer flex items-center gap-1.5"
+                :class="activeHtmlTab === 'detail' ? 'bg-white dark:bg-zinc-800 text-teal-600 dark:text-teal-400 shadow-xs' : 'text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200'"
               >
-                详情 HTML {{ detailHtml ? `(${(detailHtml.length / 1024).toFixed(1)}k)` : '' }}
+                <span>详情数据</span>
+                <span v-if="detailHtml" class="text-[10px] font-mono font-normal opacity-70">
+                  {{ (detailHtml.length / 1024).toFixed(1) }}k
+                </span>
               </button>
               <button
                 type="button"
                 @click="activeHtmlTab = 'parse'"
-                class="px-2 py-0.5 rounded-lg transition-all cursor-pointer"
-                :class="activeHtmlTab === 'parse' ? 'bg-white dark:bg-zinc-800 text-cyan-600 dark:text-cyan-400 shadow-xs' : 'text-zinc-500'"
+                class="px-2.5 py-1 rounded-lg transition-all cursor-pointer flex items-center gap-1.5"
+                :class="activeHtmlTab === 'parse' ? 'bg-white dark:bg-zinc-800 text-cyan-600 dark:text-cyan-400 shadow-xs' : 'text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200'"
               >
-                播放 HTML {{ parseHtml ? `(${(parseHtml.length / 1024).toFixed(1)}k)` : '' }}
+                <span>播放数据</span>
+                <span v-if="parseHtml" class="text-[10px] font-mono font-normal opacity-70">
+                  {{ (parseHtml.length / 1024).toFixed(1) }}k
+                </span>
               </button>
             </div>
           </div>
@@ -442,7 +501,7 @@ const handleApply = () => {
             v-if="activeHtmlTab === 'list'"
             v-model:value="listHtml"
             type="textarea"
-            placeholder="列表页 HTML 源码片段..."
+            placeholder="列表/发现数据样本 (HTML 源码或 JSON 响应)..."
             class="!rounded-xl font-mono text-xs flex-1"
             :autosize="{ minRows: 4, maxRows: 8 }"
           />
@@ -450,7 +509,7 @@ const handleApply = () => {
             v-else-if="activeHtmlTab === 'detail'"
             v-model:value="detailHtml"
             type="textarea"
-            placeholder="详情页 HTML 源码片段 (包含选集列表 / 正文 / 简介)..."
+            placeholder="详情数据样本 (HTML 选集/正文或 JSON 响应)..."
             class="!rounded-xl font-mono text-xs flex-1"
             :autosize="{ minRows: 4, maxRows: 8 }"
           />
@@ -458,7 +517,7 @@ const handleApply = () => {
             v-else
             v-model:value="parseHtml"
             type="textarea"
-            placeholder="播放页 / 直链解析 HTML 源码片段 (可选)..."
+            placeholder="播放解析数据样本 (HTML 源码或 JSON 直链响应)..."
             class="!rounded-xl font-mono text-xs flex-1"
             :autosize="{ minRows: 4, maxRows: 8 }"
           />
@@ -472,7 +531,7 @@ const handleApply = () => {
           </label>
           <n-input
             v-model:value="requirement"
-            placeholder="例如: 选集列表在 .playlist-box li，直链从 script 中的 var player_aaaa 提取"
+            placeholder="例如: 接口返回的是 JSON，直接从 data.list 遍历，直链在 data.play_url"
             class="!rounded-xl text-xs"
           />
         </div>
@@ -488,7 +547,7 @@ const handleApply = () => {
           <template #icon>
             <Bot class="w-4 h-4" />
           </template>
-          <span>{{ generating ? 'AI 大模型正在多页面深度协同解析中...' : '开始生成多页面协同规则' }}</span>
+          <span>{{ generating ? 'AI 大模型正在多源深度协同解析中...' : '开始生成全链路规则代码' }}</span>
         </n-button>
       </div>
 

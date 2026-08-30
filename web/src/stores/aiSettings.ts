@@ -11,6 +11,60 @@ export interface AiConfig {
   temperature: number
 }
 
+export interface GeneratedRuleResult {
+  code: string
+  name?: string
+  description?: string
+  mediaType?: string
+  baseUrl?: string
+}
+
+/**
+ * 辅助提取器：从 HTML 或 JSON 源码中兜底提取站点名称与描述
+ */
+export const extractMetadataFallback = (rawContent: string, url: string = '') => {
+  let name = ''
+  let description = ''
+  if (!rawContent) return { name, description }
+
+  const trimmed = rawContent.trim()
+  if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+    try {
+      const data = JSON.parse(trimmed)
+      name = data.name || data.title || data.sitename || data.site_name || data.app_name || ''
+      description = data.description || data.desc || data.intro || ''
+    } catch {}
+  } else {
+    try {
+      const parser = new DOMParser()
+      const doc = parser.parseFromString(rawContent, 'text/html')
+
+      const titleEl = doc.querySelector('title')
+      if (titleEl && titleEl.textContent) {
+        let rawTitle = titleEl.textContent.trim()
+        // 清理类似 "- 免费在线电影高清播放" 等冗余后缀
+        rawTitle = rawTitle.replace(/\s*[-_–—|]\s*(免费|在线|高清|官方|首页|最新|播放|下载|聚合|APP|官网|主页).*$/i, '').trim()
+        name = rawTitle.slice(0, 30)
+      }
+
+      const metaDesc = doc.querySelector('meta[name="description"], meta[property="og:description"]')
+      if (metaDesc) {
+        description = (metaDesc.getAttribute('content') || '').trim().slice(0, 150)
+      }
+    } catch {}
+  }
+
+  if (!name && url) {
+    try {
+      const u = new URL(url)
+      const hostPart = u.hostname.replace(/^www\./, '').split('.')[0]
+      if (hostPart) name = hostPart.toUpperCase() + ' 资源站'
+    } catch {}
+  }
+
+  return { name, description }
+}
+
 const STORAGE_KEY = 'fluxforge-ai-settings'
 
 /**
@@ -275,7 +329,7 @@ export const useAiSettingsStore = defineStore('aiSettings', () => {
     return rawOutput
   }
 
-  // 生成规则代码 (支持多页面 HTML 采样：列表页 + 详情页 + 播放页)
+  // 生成规则代码 (支持多页面 HTML 采样：列表页 + 详情页 + 播放页，并智能提炼名称与描述)
   const generateRuleCode = async (params: {
     targetUrl: string
     mediaType: MediaType | string
@@ -286,13 +340,13 @@ export const useAiSettingsStore = defineStore('aiSettings', () => {
     parseUrl?: string
     parseHtml?: string
     requirement?: string
-  }): Promise<string> => {
+  }): Promise<GeneratedRuleResult> => {
     const listHtml = params.listHtml || params.htmlSnippet || ''
     const detailHtml = params.detailHtml || ''
     const parseHtml = params.parseHtml || ''
 
-    const systemPrompt = `你是一个资深的 JavaScript 网页抓取与规则引擎专家。
-你需要为 FluxForge 编写一个标准的 ESModule 解析规则脚本。
+    const systemPrompt = `你是一个资深的 JavaScript 网页抓取与数据规则引擎专家。
+你需要为 FluxForge 编写一个标准的 ESModule 解析规则脚本，并提炼该源站的名称与简介。
 
 【FluxForge 规则引擎标准规范】：
 1. 模块导出标准：使用 export default { ... }
@@ -301,7 +355,11 @@ export const useAiSettingsStore = defineStore('aiSettings', () => {
    import * as cheerio from 'cheerio'
 3. 全局沙箱预置变量：
    - ua: 标准浏览器 User-Agent 字符串
-4. 四大生命周期方法规范：
+4. 数据源自适应处理规范：
+   - 若提供的数据样本是 HTML：使用 const $ = cheerio.load(res.data) 提取选择器；
+   - 若提供的数据样本是 JSON (REST API)：直接解析返回的 JSON 对象（如 const { data } = await axios.get(...)，遍历 data.list / data.items 等），无需使用 cheerio；
+   - 若混合（如列表为 JSON 接口，详情为 HTML 页面）：按各自接口的数据类型分别处理。
+5. 四大生命周期方法规范：
    - async discovery({ category, page = 1, baseUrl })：发现列表。返回 { categories: string[], items: MediaItem[], hasMore: boolean }
      其中 MediaItem: { key: string (唯一标识/详情URL相对或绝对路径), title: string, cover?: string, badge?: string, desc?: string }
    - async search({ keyword, page = 1, baseUrl })：搜索列表。返回 { items: MediaItem[], hasMore: boolean }
@@ -322,24 +380,67 @@ export const useAiSettingsStore = defineStore('aiSettings', () => {
 
 【任务输入】：
 - 目标源站 BaseURL: ${params.targetUrl || '无'}
-- 媒体类型: ${params.mediaType}
-${params.detailUrl ? `- 详情页示例 URL: ${params.detailUrl}\n` : ''}
-${params.parseUrl ? `- 播放/解析页示例 URL: ${params.parseUrl}\n` : ''}
-${listHtml ? `【1. 列表页/发现页 HTML 片段 (供 discovery & search 参考)】:\n\`\`\`html\n${listHtml.slice(0, 10000)}\n\`\`\`\n` : ''}
-${detailHtml ? `【2. 详情页/选集页 HTML 片段 (供 detail 参考)】:\n\`\`\`html\n${detailHtml.slice(0, 10000)}\n\`\`\`\n` : ''}
-${parseHtml ? `【3. 播放/解析页 HTML 片段 (供 parse 参考)】:\n\`\`\`html\n${parseHtml.slice(0, 8000)}\n\`\`\`\n` : ''}
-- 特殊需求说明: ${params.requirement || '请根据 HTML 结构精准提取标题、封面、链接、描述、选集等字段'}
+- 期望媒体类型: ${params.mediaType}
+${params.detailUrl ? `- 详情页/接口示例 URL: ${params.detailUrl}\n` : ''}
+${params.parseUrl ? `- 播放/解析接口示例 URL: ${params.parseUrl}\n` : ''}
+${listHtml ? `【1. 列表/发现数据样本 (HTML 或 JSON，供 discovery & search 参考)】:\n\`\`\`\n${listHtml.slice(0, 10000)}\n\`\`\`\n` : ''}
+${detailHtml ? `【2. 详情/选集数据样本 (HTML 或 JSON，供 detail 参考)】:\n\`\`\`\n${detailHtml.slice(0, 10000)}\n\`\`\`\n` : ''}
+${parseHtml ? `【3. 播放/解析数据样本 (HTML 或 JSON，供 parse 参考)】:\n\`\`\`\n${parseHtml.slice(0, 8000)}\n\`\`\`\n` : ''}
+- 特殊需求说明: ${params.requirement || '请根据提供的数据结构精准提取标题、封面、链接、描述、选集等字段'}
 
-【输出要求】：
-- 只输出标准、完整、无语法错误的 JavaScript 代码。
-- 不要包含任何解释性文字或 Markdown 外部说明，直接输出代码内容（可以包裹在 \`\`\`javascript 内）。`
+【输出格式要求（极为重要）】：
+必须返回合法的 JSON 格式（可包含在 \`\`\`json 块中），格式字段如下：
+{
+  "name": "从数据源/标题中智能提炼出的规则或源站简短名称 (例如: 极光影视、煎蛋美图、笔趣阁等，2~15字)",
+  "description": "从网页/接口简介中提炼的特性或内容说明 (50字以内)",
+  "mediaType": "${params.mediaType}",
+  "code": "完整的 ESModule JavaScript 代码..."
+}`
 
-    const userPrompt = `请根据以上 HTML 结构与页面信息生成完整的 ${params.mediaType} 解析规则代码。`
+    const userPrompt = `请根据以上数据样本与结构信息，智能分析并输出包含 name, description, mediaType, code 的 JSON 数据。`
     const rawOutput = await callLlm({ systemPrompt, userPrompt })
 
-    // 去除 markdown 标记
-    let code = rawOutput.replace(/^```(?:javascript|js)?\n/i, '').replace(/```$/i, '').trim()
-    return code
+    // 默认兜底信息
+    const fallbackInfo = extractMetadataFallback(listHtml || detailHtml, params.targetUrl)
+    let extractedName = fallbackInfo.name || ''
+    let extractedDesc = fallbackInfo.description || ''
+    let extractedType = params.mediaType
+    let extractedCode = ''
+
+    // 尝试解析 JSON 输出
+    try {
+      let jsonStr = rawOutput.trim()
+      if (jsonStr.includes('```json')) {
+        jsonStr = jsonStr.replace(/^[\s\S]*?```json/i, '').replace(/```[\s\S]*$/, '').trim()
+      } else if (jsonStr.includes('```')) {
+        jsonStr = jsonStr.replace(/^[\s\S]*?```(?:javascript|js)?/i, '').replace(/```[\s\S]*$/, '').trim()
+      }
+
+      if (jsonStr.startsWith('{') && jsonStr.endsWith('}')) {
+        const parsed = JSON.parse(jsonStr)
+        if (parsed.code) {
+          extractedCode = parsed.code
+          if (parsed.name) extractedName = parsed.name
+          if (parsed.description) extractedDesc = parsed.description
+          if (parsed.mediaType) extractedType = parsed.mediaType
+        }
+      }
+    } catch {
+      // JSON 解析失败则回退到代码匹配
+    }
+
+    // 如果未成功从 JSON 提取到代码，则将输出整体清洗后作为代码
+    if (!extractedCode) {
+      extractedCode = rawOutput.replace(/^```(?:javascript|js|json)?\n/i, '').replace(/```$/i, '').trim()
+    }
+
+    return {
+      code: extractedCode,
+      name: extractedName,
+      description: extractedDesc,
+      mediaType: extractedType,
+      baseUrl: params.targetUrl
+    }
   }
 
   // 🌟 AI 智能诊断与规则增量优化 (纯前端基于已有规则与测试结果精准修复)

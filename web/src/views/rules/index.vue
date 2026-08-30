@@ -21,7 +21,7 @@ import {
   BookOpen,
   Sparkles,
   ExternalLink,
-  RotateCcw
+  Globe
 } from '@lucide/vue'
 
 const router = useRouter()
@@ -104,15 +104,6 @@ const deleteRule = async (row: RuleSchema) => {
   } catch (error) {
     console.error('Failed to delete rule:', error)
     message.error('删除规则失败')
-  }
-}
-
-const resetDefaults = async () => {
-  try {
-    await loadData()
-    message.success('已从云端同步最新规则')
-  } catch (e: any) {
-    message.error('刷新失败: ' + e.message)
   }
 }
 
@@ -237,54 +228,76 @@ const submitTextImport = () => {
   processImportJson(importText.value)
 }
 
-const getCategoryIcon = (type: string) => {
-  if (type === 'video' || type === '视频') return Video
-  if (type === 'picture' || type === '图片') return ImageIcon
-  if (type === 'novel' || type === '小说') return BookOpen
-  return Compass
+const getTypeConfig = (type: string) => {
+  if (type === 'video' || type === '视频') {
+    return {
+      label: '视频',
+      icon: Video,
+      tagClass: 'bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 border-rose-200/60 dark:border-rose-800/40',
+      iconClass: 'bg-rose-500/10 dark:bg-rose-500/20 text-rose-600 dark:text-rose-400 border-rose-500/20'
+    }
+  }
+  if (type === 'picture' || type === '图片') {
+    return {
+      label: '图片',
+      icon: ImageIcon,
+      tagClass: 'bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 border-amber-200/60 dark:border-amber-800/40',
+      iconClass: 'bg-amber-500/10 dark:bg-amber-500/20 text-amber-600 dark:text-amber-400 border-amber-500/20'
+    }
+  }
+  if (type === 'novel' || type === '小说') {
+    return {
+      label: '小说',
+      icon: BookOpen,
+      tagClass: 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 border-indigo-200/60 dark:border-indigo-800/40',
+      iconClass: 'bg-indigo-500/10 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 border-indigo-500/20'
+    }
+  }
+  return {
+    label: type || '通用',
+    icon: Compass,
+    tagClass: 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border-emerald-200/60 dark:border-emerald-800/40',
+    iconClass: 'bg-emerald-500/10 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
+  }
+}
+
+const formatDomain = (url?: string) => {
+  if (!url) return ''
+  try {
+    return url.replace(/^https?:\/\//i, '').replace(/\/.*$/, '')
+  } catch {
+    return url
+  }
 }
 
 loadData()
 </script>
 
 <template>
-  <div class="space-y-6 max-w-7xl mx-auto pb-12">
-    <!-- 顶部操作栏与统计 (mori-box 风格) -->
-    <div class="glass-panel rounded-2xl p-5 sm:p-6 space-y-4 shadow-sm">
-      <div class="flex flex-wrap items-center justify-between gap-4">
+  <div class="h-full flex flex-col gap-3.5 max-w-[1600px] mx-auto w-full overflow-hidden">
+    <!-- 顶部操作栏与统计 (固定在顶部，不随卡片列表滚动) -->
+    <div class="glass-panel rounded-2xl p-4 sm:p-5 space-y-3 shadow-xs shrink-0">
+      <div class="flex flex-wrap items-center justify-between gap-3">
         <!-- 页面标题与统计 -->
         <div class="flex items-center gap-3">
-          <div class="w-10 h-10 rounded-2xl bg-gradient-to-tr from-emerald-600 via-teal-500 to-cyan-500 text-white flex items-center justify-center shadow-md shadow-emerald-500/25 flex-shrink-0">
-            <Archive class="w-5 h-5" />
+          <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-emerald-600 via-teal-500 to-cyan-500 text-white flex items-center justify-center shadow-md shadow-emerald-500/25 flex-shrink-0">
+            <Archive class="w-4.5 h-4.5" />
           </div>
           <div>
-            <h1 class="text-base sm:text-lg font-black tracking-tight text-zinc-900 dark:text-white flex items-center gap-2">
+            <h1 class="text-base font-black tracking-tight text-zinc-900 dark:text-white flex items-center gap-2">
               <span>规则引擎管理</span>
               <span class="px-2 py-0.5 text-[10px] font-mono font-bold rounded-full bg-emerald-50/80 dark:bg-emerald-950/30 text-emerald-600 dark:text-emerald-400 border border-emerald-200/50 dark:border-emerald-800/30">
                 ENGINE HUB
               </span>
             </h1>
-            <p class="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
+            <p class="text-[11px] text-zinc-500 dark:text-zinc-400">
               管理系统内置与自定义的 JavaScript 沙箱抓取与解析规则
             </p>
           </div>
         </div>
 
-        <!-- 动作按钮组 (新建、导入、导出、重置预置) -->
+        <!-- 动作按钮组 (新建、导入、导出) -->
         <div class="flex flex-wrap items-center gap-2">
-          <n-button
-            size="small"
-            secondary
-            class="!rounded-xl !font-bold"
-            @click="resetDefaults"
-            title="重置回默认预置规则"
-          >
-            <template #icon>
-              <RotateCcw class="w-3.5 h-3.5" />
-            </template>
-            <span class="hidden sm:inline">重置预置</span>
-          </n-button>
-
           <n-button
             size="small"
             secondary
@@ -324,7 +337,7 @@ loadData()
       </div>
 
       <!-- 检索与筛选栏 -->
-      <div class="pt-3 border-t border-emerald-100/50 dark:border-white/5 flex flex-wrap items-center justify-between gap-3">
+      <div class="pt-2.5 border-t border-emerald-100/50 dark:border-white/5 flex flex-wrap items-center justify-between gap-2.5">
         <div class="flex flex-wrap items-center gap-2.5">
           <!-- 规则名称检索输入框 (n-input 组件) -->
           <div class="w-48 sm:w-56">
@@ -332,22 +345,22 @@ loadData()
               v-model:value="form.name"
               placeholder="搜索规则名称..."
               clearable
-              class="!rounded-xl"
+              class="!rounded-xl text-xs"
               @keyup.enter="onSearch"
               @clear="onSearch"
             >
               <template #prefix>
-                <SearchIcon class="w-4 h-4 text-zinc-400" />
+                <SearchIcon class="w-3.5 h-3.5 text-zinc-400" />
               </template>
             </n-input>
           </div>
 
           <!-- 规则类型选择框 (n-select 组件) -->
-          <div class="w-36 sm:w-40">
+          <div class="w-32 sm:w-36">
             <n-select
               v-model:value="form.type"
               :options="typeOptions"
-              class="!rounded-xl"
+              class="!rounded-xl text-xs"
               @update:value="onSearch"
             />
           </div>
@@ -355,6 +368,7 @@ loadData()
           <!-- 查询按钮 -->
           <n-button
             type="primary"
+            size="small"
             class="!rounded-xl !font-bold"
             :loading="loading"
             @click="onSearch"
@@ -368,6 +382,7 @@ loadData()
           <!-- 重置按钮 -->
           <n-button
             quaternary
+            size="small"
             class="!rounded-xl !font-semibold"
             :disabled="loading"
             @click="onReset"
@@ -376,41 +391,40 @@ loadData()
           </n-button>
         </div>
 
-        <span class="text-xs text-zinc-400 whitespace-nowrap">
+        <span class="text-[11px] text-zinc-400 whitespace-nowrap">
           已加载 <strong class="text-emerald-600 dark:text-emerald-400">{{ list.length }}</strong> 条规则
         </span>
       </div>
     </div>
 
-    <!-- 规则卡片网格列表 (加载中骨架 / 无数据提示 / 规则卡片) -->
-    <div class="space-y-4">
-      <!-- 1. 加载中骨架动画 (使用 Naive UI 原生 n-card 与 n-skeleton) -->
-      <div v-if="loading" class="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
-        <n-card v-for="n in 6" :key="n" size="small" class="h-full flex flex-col justify-between">
-          <div class="space-y-3 py-1">
+    <!-- 下方卡片网格列表 (独立滚动区域，一行4列) -->
+    <div class="flex-1 min-h-0 overflow-y-auto pr-1 pb-4">
+      <!-- 1. 加载中骨架动画 (使用 Naive UI 原生 n-card 与 n-skeleton，一行4列) -->
+      <div v-if="loading" class="grid gap-3.5 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        <n-card v-for="n in 8" :key="n" size="small" class="h-full flex flex-col justify-between !rounded-2xl">
+          <div class="space-y-2 py-0.5">
             <div class="flex items-start justify-between gap-3">
-              <div class="flex items-center gap-3 flex-1 min-w-0">
-                <n-skeleton width="40px" height="40px" :sharp="false" class="rounded-xl shrink-0" />
+              <div class="flex items-center gap-2.5 flex-1 min-w-0">
+                <n-skeleton width="36px" height="36px" :sharp="false" class="rounded-xl shrink-0" />
                 <div class="flex-1 space-y-1.5 min-w-0">
                   <n-skeleton text style="width: 60%" />
                   <n-skeleton text style="width: 35%" />
                 </div>
               </div>
-              <n-skeleton width="32px" height="18px" round class="shrink-0" />
+              <n-skeleton width="28px" height="16px" round class="shrink-0" />
             </div>
-            <div class="space-y-1.5 pt-1">
+            <div class="space-y-1 pt-1">
               <n-skeleton text :repeat="2" />
             </div>
-            <n-skeleton text style="width: 45%" />
           </div>
           <template #action>
             <div class="flex items-center justify-between">
-              <div class="flex items-center gap-2">
-                <n-skeleton circle width="24px" height="24px" />
-                <n-skeleton circle width="24px" height="24px" />
-                <n-skeleton circle width="24px" height="24px" />
+              <div class="flex items-center gap-1.5">
+                <n-skeleton circle width="22px" height="22px" />
+                <n-skeleton circle width="22px" height="22px" />
+                <n-skeleton circle width="22px" height="22px" />
               </div>
-              <n-skeleton width="64px" height="24px" :sharp="false" class="rounded-lg" />
+              <n-skeleton width="60px" height="24px" :sharp="false" class="rounded-lg" />
             </div>
           </template>
         </n-card>
@@ -420,30 +434,39 @@ loadData()
       <div v-else-if="list.length === 0" class="glass-panel rounded-2xl p-16 text-center max-w-md mx-auto my-12 flex flex-col items-center justify-center space-y-3">
         <Compass class="w-10 h-10 text-zinc-400" />
         <h3 class="text-sm font-bold text-zinc-800 dark:text-zinc-200">没有找到规则</h3>
-        <p class="text-xs text-zinc-500 dark:text-zinc-400">可以点击上方“新建规则”或“重置预置”导入规则。</p>
+        <p class="text-xs text-zinc-500 dark:text-zinc-400">可以点击上方“新建规则”导入规则。</p>
       </div>
 
-      <!-- 3. 真实规则卡片网格 -->
-      <div v-else class="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
+      <!-- 3. 真实规则卡片网格 (一行4列) -->
+      <div v-else class="grid gap-3.5 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         <div
           v-for="rule in list"
           :key="rule.id"
-          class="glass-panel glass-panel-hover rounded-2xl p-5 flex flex-col justify-between h-full group relative border border-emerald-100/60 dark:border-white/5"
+          class="glass-panel glass-panel-hover rounded-2xl p-4 flex flex-col justify-between h-full group relative border border-emerald-100/60 dark:border-white/5"
         >
-          <!-- 上半部：图标、名称、开关、描述 -->
-          <div class="space-y-3">
-            <div class="flex items-start justify-between gap-3">
-              <div class="flex items-center gap-3 min-w-0">
-                <div class="w-10 h-10 rounded-xl bg-emerald-500/10 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center border border-emerald-500/20 flex-shrink-0 group-hover:scale-105 transition-transform">
-                  <component :is="getCategoryIcon(rule.type)" class="w-5 h-5" />
+          <!-- 上半部：图标、名称、开关、类型标签、域名胶囊、描述 -->
+          <div class="space-y-2.5">
+            <div class="flex items-start justify-between gap-2.5">
+              <div class="flex items-center gap-2.5 min-w-0 flex-1">
+                <div
+                  class="w-9 h-9 rounded-xl flex items-center justify-center border flex-shrink-0 group-hover:scale-105 transition-transform"
+                  :class="getTypeConfig(rule.type).iconClass"
+                >
+                  <component :is="getTypeConfig(rule.type).icon" class="w-4.5 h-4.5" />
                 </div>
-                <div class="min-w-0">
+                <div class="min-w-0 flex-1">
                   <h3 class="text-sm font-bold text-zinc-900 dark:text-white truncate group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
                     {{ rule.name }}
                   </h3>
-                  <div class="flex items-center gap-2 mt-0.5">
-                    <span class="text-[10px] font-mono text-zinc-400">
-                      v{{ rule.version || '1.0.0' }} • {{ rule.type === 'video' ? '视频' : rule.type === 'picture' ? '图片' : '小说' }}
+                  <div class="flex items-center gap-1.5 mt-0.5 min-w-0">
+                    <span
+                      class="px-1.5 py-0.2 text-[10px] font-bold rounded border shrink-0"
+                      :class="getTypeConfig(rule.type).tagClass"
+                    >
+                      {{ getTypeConfig(rule.type).label }}
+                    </span>
+                    <span class="text-[10px] font-mono text-zinc-400 shrink-0">
+                      v{{ rule.version || '1.0.0' }}
                     </span>
                   </div>
                 </div>
@@ -453,6 +476,7 @@ loadData()
               <n-switch
                 :value="rule.enabled === 1 || (rule.enabled as any) === true"
                 size="small"
+                class="shrink-0"
                 @update:value="(val: boolean) => toggleRule(rule, val)"
               />
             </div>
@@ -461,21 +485,32 @@ loadData()
             <p class="text-xs text-zinc-600 dark:text-zinc-300 line-clamp-2 leading-relaxed">
               {{ rule.description || '暂无详细描述信息' }}
             </p>
-
-            <!-- 站点域名 -->
-            <div v-if="rule.baseUrl" class="text-[11px] font-mono text-zinc-400 truncate flex items-center gap-1">
-              <span class="opacity-60">源站:</span>
-              <span class="truncate">{{ rule.baseUrl }}</span>
-            </div>
           </div>
 
-          <!-- 下半部：动作栏 (编辑、复制、导出、删除) -->
-          <div class="pt-4 mt-4 border-t border-emerald-100/50 dark:border-white/5 flex items-center justify-between text-xs">
-            <div class="flex items-center gap-1">
+          <!-- 下半部：动作栏 (左侧完整源站链接，右侧快捷按钮组与编辑配置) -->
+          <div class="pt-2.5 mt-2.5 border-t border-emerald-100/50 dark:border-white/5 flex items-center justify-between gap-2 text-xs">
+            <!-- 左侧：源站链接 (带 Globe 图标与文本) -->
+            <a
+              v-if="rule.baseUrl"
+              :href="rule.baseUrl"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="inline-flex items-center gap-1.5 text-xs font-mono text-zinc-400 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors truncate max-w-[130px] sm:max-w-[160px] min-w-0"
+              :title="`访问源站: ${rule.baseUrl}`"
+              @click.stop
+            >
+              <Globe class="w-3.5 h-3.5 shrink-0 opacity-60" />
+              <span class="truncate">{{ formatDomain(rule.baseUrl) }}</span>
+            </a>
+            <span v-else class="text-[11px] text-zinc-400/40 select-none">无源站</span>
+
+            <!-- 右侧：动作按钮组 (复制、导出、删除、编辑配置) -->
+            <div class="flex items-center gap-0.5 shrink-0">
               <n-button
                 quaternary
                 circle
                 size="small"
+                class="text-zinc-400 hover:text-emerald-600"
                 @click="copySingleRule(rule)"
                 title="复制规则 JSON"
               >
@@ -488,6 +523,7 @@ loadData()
                 quaternary
                 circle
                 size="small"
+                class="text-zinc-400 hover:text-emerald-600"
                 @click="exportSingleRule(rule)"
                 title="导出规则文件"
               >
@@ -512,21 +548,21 @@ loadData()
                 </template>
                 确定要删除规则「{{ rule.name }}」吗？
               </n-popconfirm>
-            </div>
 
-            <!-- 编辑配置主按钮 -->
-            <n-button
-              size="small"
-              type="primary"
-              secondary
-              class="!rounded-xl !font-bold"
-              @click="onGoto(rule)"
-            >
-              <template #icon>
-                <EditIcon class="w-3.5 h-3.5" />
-              </template>
-              <span>编辑配置</span>
-            </n-button>
+              <!-- 编辑配置主按钮 -->
+              <n-button
+                size="small"
+                type="primary"
+                secondary
+                class="!rounded-xl !font-bold ml-1"
+                @click="onGoto(rule)"
+              >
+                <template #icon>
+                  <EditIcon class="w-3.5 h-3.5" />
+                </template>
+                <span>编辑</span>
+              </n-button>
+            </div>
           </div>
         </div>
       </div>

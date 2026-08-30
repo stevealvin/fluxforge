@@ -24,18 +24,17 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Info,
-  CheckCircle2
+  CheckCircle2,
+  Wrench
 } from '@lucide/vue'
 import CodeEditor from '@/components/CodeEditor/index.vue'
-import AiRuleModal from './components/AiRuleModal.vue'
-import RuleTestWorkbench from './components/RuleTestWorkbench.vue'
+import RuleWorkbenchModal from './components/RuleWorkbenchModal.vue'
 
 const route = useRoute()
 const router = useRouter()
 const message = useMessage()
 
-const showAiModal = ref(false)
-const showTestWorkbench = ref(false)
+const showWorkbench = ref(false)
 const showMetaSidebar = ref(true)
 
 const formRef = useTemplateRef('formRef')
@@ -138,8 +137,8 @@ const onSubmit = async () => {
   }
 }
 
-const openTestWorkbench = () => {
-  showTestWorkbench.value = true
+const openWorkbench = () => {
+  showWorkbench.value = true
 }
 
 const copyRule = async () => {
@@ -174,17 +173,25 @@ const exportRule = () => {
   }
 }
 
-const handleApplyAiRule = (payload: { code: string; baseUrl: string; type: string; name?: string }) => {
+// 接收来自工作台的智能回填数据 (代码、名称、描述、类型、BaseURL)
+const handleApplyWorkbench = (payload: {
+  code: string
+  baseUrl: string
+  type: string
+  name?: string
+  description?: string
+}) => {
   form.value.code = payload.code
   if (payload.baseUrl) form.value.baseUrl = payload.baseUrl
   if (payload.type) form.value.type = payload.type as any
-  if (payload.name && !form.value.name) form.value.name = payload.name
+  if (payload.name) form.value.name = payload.name
+  if (payload.description) form.value.description = payload.description
 }
 
 const handleKeydown = (e: KeyboardEvent) => {
   if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
     e.preventDefault()
-    openTestWorkbench()
+    openWorkbench()
   }
 }
 
@@ -256,35 +263,21 @@ onUnmounted(() => {
           </template>
         </n-button>
 
-        <!-- AI 智能生成规则 -->
+        <!-- 🚀 一体化规则调试工作台核心入口 (AI 生成 + 沙箱测试 + 诊断) -->
         <n-button
           size="small"
           type="primary"
-          class="!rounded-xl !font-bold !bg-gradient-to-r !from-emerald-600 !to-teal-500 hover:!opacity-95 shadow-md shadow-emerald-500/20"
-          @click="showAiModal = true"
+          class="!rounded-xl !font-black !px-3.5 !bg-gradient-to-r !from-emerald-600 !via-teal-500 !to-cyan-500 hover:!opacity-95 shadow-md shadow-emerald-500/25"
+          @click="openWorkbench"
+          title="AI 智能生成与沙箱测试 (Ctrl+Enter)"
         >
           <template #icon>
             <Sparkles class="w-3.5 h-3.5 text-white animate-pulse" />
           </template>
-          <span>AI 智能生成</span>
+          <span>AI 智能工作台 (Ctrl+Enter)</span>
         </n-button>
 
-        <!-- 打开测试工作台 -->
-        <n-button
-          size="small"
-          type="primary"
-          secondary
-          class="!rounded-xl !font-bold"
-          @click="openTestWorkbench"
-          title="运行沙箱测试 (Ctrl+Enter)"
-        >
-          <template #icon>
-            <Play class="w-3.5 h-3.5 fill-current text-emerald-600 dark:text-emerald-400" />
-          </template>
-          <span>测试运行 (Ctrl+Enter)</span>
-        </n-button>
-
-        <!-- 辅助功能下拉/按键 -->
+        <!-- 辅助功能按键 -->
         <n-button
           v-if="route.query.id"
           size="small"
@@ -358,7 +351,7 @@ onUnmounted(() => {
 
           <n-form ref="formRef" :model="form" class="space-y-3 shrink-0">
             <n-form-item label="规则标识名称" path="name" :rule="{ required: true, message: '请输入规则名称' }">
-              <n-input v-model:value="form.name" clearable placeholder="如: 全面屏超清壁纸, JAVMENU" class="!rounded-xl text-xs" />
+              <n-input v-model:value="form.name" clearable placeholder="如: 全面屏超清壁纸, 极光影视" class="!rounded-xl text-xs" />
             </n-form-item>
 
             <n-form-item label="媒体类型" path="type" :rule="{ required: true, message: '请选择规则媒体类型' }">
@@ -378,7 +371,7 @@ onUnmounted(() => {
             </n-form-item>
 
             <n-form-item label="规则描述">
-              <n-input v-model:value="form.description" type="textarea" :autosize="{ minRows: 2, maxRows: 3 }" clearable placeholder="规则的详细说明及特性..." class="!rounded-xl text-xs" />
+              <n-input v-model:value="form.description" type="textarea" :rows="4" clearable placeholder="规则的详细说明及特性..." class="!rounded-xl text-xs" />
             </n-form-item>
 
             <div class="grid grid-cols-2 gap-2">
@@ -434,22 +427,16 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <!-- AI 规则智能生成弹窗 -->
-    <AiRuleModal
-      v-model:show="showAiModal"
-      :default-base-url="form.baseUrl"
-      :default-type="form.type"
-      @apply="handleApplyAiRule"
-    />
-
-    <!-- 专业级沙箱测试工作台 (内置 AI 智能诊断与修复) -->
-    <RuleTestWorkbench
-      v-model:show="showTestWorkbench"
+    <!-- 一体化智能工作台 (AI 智能生成 + 沙箱测试 + AI 诊断修复) -->
+    <RuleWorkbenchModal
+      v-model:show="showWorkbench"
       :code="form.code || ''"
       :base-url="form.baseUrl"
       :rule-type="form.type"
       :rule-name="form.name"
+      :rule-description="form.description"
       @update:code="(val) => (form.code = val)"
+      @apply="handleApplyWorkbench"
     />
   </div>
 </template>

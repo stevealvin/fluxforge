@@ -140,8 +140,8 @@ rules.patch('/:id/toggle', async (c) => {
   }
 });
 
-// POST /fetch-html -> 快速抓取目标网页源码 (辅助 AI 规则生成，支持 GBK/GB2312/UTF-8 自动识别解码)
-rules.post('/fetch-html', async (c) => {
+// POST /fetch-html & POST /fetch-page -> 抓取目标地址数据 (自动识别编码 GBK/UTF-8 并直接返回文本)
+const handleFetchPage = async (c: any) => {
   try {
     const body = await c.req.json();
     const targetUrl = body.url;
@@ -152,7 +152,7 @@ rules.post('/fetch-html', async (c) => {
     const res = await axios.get(targetUrl, {
       headers: {
         'User-Agent': DEFAULT_USER_AGENT,
-        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        Accept: '*/*',
         'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
         ...(body.headers || {})
       },
@@ -161,22 +161,26 @@ rules.post('/fetch-html', async (c) => {
     });
 
     const contentType = (res.headers['content-type'] || res.headers['Content-Type'] || '') as string;
-    const html = detectAndDecodeHtml(res.data, contentType);
+    const data = detectAndDecodeHtml(res.data, contentType);
 
     return c.json({
       url: targetUrl,
       status: res.status,
-      html
+      data,
+      html: data // 兼容已有别名
     });
   } catch (error: any) {
     return c.json(
       {
-        message: '抓取网页源码失败: ' + (error.message || String(error))
+        message: '抓取数据失败: ' + (error.message || String(error))
       },
       500
     );
   }
-});
+};
+
+rules.post('/fetch-html', handleFetchPage);
+rules.post('/fetch-page', handleFetchPage);
 
 /**
  * 转换 ESModule 语法为适用于 Node.js VM 的 CommonJS 语法
@@ -344,5 +348,6 @@ async function executeSandbox(c: any) {
 
 rules.post('/run', executeSandbox);
 rules.post('/execute', executeSandbox);
+rules.post('/test-sandbox', executeSandbox);
 
 export default rules;

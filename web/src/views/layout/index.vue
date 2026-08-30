@@ -407,7 +407,7 @@ const navRules = [
       </header>
 
       <!-- 主视图渲染区 (KeepAlive 缓存容器，全局弹性自适应) -->
-      <main class="flex-1 flex flex-col min-h-0 min-w-0 overflow-y-auto p-4 sm:p-6 relative">
+      <main class="flex-1 flex flex-col min-h-0 min-w-0 overflow-y-auto p-4 sm:p-5 relative">
         <router-view v-slot="{ Component, route }">
           <transition name="fade-slide" mode="out-in">
             <keep-alive :include="tabsStore.cachedTabNames.value">
