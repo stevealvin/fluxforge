@@ -254,18 +254,16 @@ function transformESMToCJS(code: string): string {
 async function executeSandbox(c: any) {
   try {
     const reqBody = await c.req.json();
-    let { code, ruleId, action, params } = reqBody;
+    let { code, ruleId, action, params, baseUrl } = reqBody;
 
+    let targetRule: any = null;
     // 1. 如果传了 ruleId，从数据库读取规则
     if (ruleId) {
-      const rule = await ruleDb.getRuleById(ruleId);
-      if (!rule) {
+      targetRule = await ruleDb.getRuleById(ruleId);
+      if (!targetRule) {
         return c.json({ message: `Rule [ID:${ruleId}] not found in database` }, 404);
       }
-      code = rule.code;
-      if (rule.baseUrl) {
-        params = { ...params, baseUrl: rule.baseUrl };
-      }
+      code = targetRule.code;
     }
 
     // 2. 校验代码存在
@@ -275,6 +273,16 @@ async function executeSandbox(c: any) {
 
     const targetAction: string = action || 'discovery';
     const targetParams = params || {};
+
+    // 智能提取或回填 baseUrl
+    const currentBaseUrl =
+      targetParams.baseUrl ||
+      baseUrl ||
+      reqBody.targetUrl ||
+      (targetRule ? targetRule.baseUrl : '') ||
+      '';
+
+    targetParams.baseUrl = currentBaseUrl;
 
     const runCode = transformESMToCJS(code);
 
@@ -289,7 +297,7 @@ async function executeSandbox(c: any) {
       return require(name);
     };
 
-    const vmContext = {
+    const vmContext: any = {
       require: sandboxRequire,
       axios,
       cheerio,
@@ -299,6 +307,8 @@ async function executeSandbox(c: any) {
       URL,
       URLSearchParams,
       ua: DEFAULT_USER_AGENT,
+      baseUrl: currentBaseUrl,
+      defineRule: (r: any) => r,
       params: targetParams,
       module: { exports: {} },
       exports: {},
@@ -322,8 +332,53 @@ async function executeSandbox(c: any) {
     if (typeof exported === 'function') {
       result = await exported(targetParams);
     } else if (exported && typeof exported === 'object') {
-      if (typeof exported[targetAction] === 'function') {
-        result = await exported[targetAction](targetParams);
+      // 保证 this.baseUrl 在对象方法中直接可用
+      if (!exported.baseUrl && currentBaseUrl) {
+        exported.baseUrl = currentBaseUrl;
+      }
+
+      // 动作方法查找映射（支持常用别名如 explore -> discovery）
+      const actionMap: Record<string, string[]> = {
+        discovery: ['discovery', 'explore', 'latest', 'list'],
+        detail: ['detail', 'getDetail', 'info'],
+        search: ['search', 'searchList'],
+        parse: ['parse', 'watch', 'content']
+      };
+
+      const candidates = actionMap[targetAction] || [targetAction];
+      let actionFn: any = null;
+
+      for (const name of candidates) {
+        if (typeof exported[name] === 'function') {
+          actionFn = exported[name];
+          break;
+        }
+        if (exported.default && typeof exported.default[name] === 'function') {
+          actionFn = exported.default[name];
+          break;
+        }
+      }
+
+      if (actionFn) {
+        // 智能自适应实参传递（支持对象参数解构与普通位置传参）
+        const fnStr = actionFn.toString();
+        const isDestructured = /^\s*(async\s+)?(function\s*[\w]*\s*)?\(\s*\{/.test(fnStr);
+
+        if (isDestructured) {
+          result = await actionFn.call(exported, targetParams);
+        } else {
+          // 根据 targetAction 匹配最适合的形参格式
+          if (targetAction === 'detail') {
+            const detailKey = targetParams.key || targetParams.url || targetParams.href || targetParams;
+            result = await actionFn.call(exported, detailKey, targetParams);
+          } else if (targetAction === 'search') {
+            result = await actionFn.call(exported, targetParams.keyword || '', targetParams.page || 1, targetParams);
+          } else if (targetAction === 'discovery') {
+            result = await actionFn.call(exported, targetParams.page || 1, targetParams.category, targetParams);
+          } else {
+            result = await actionFn.call(exported, targetParams);
+          }
+        }
       } else if (typeof exported.default === 'function') {
         result = await exported.default(targetParams);
       } else {

@@ -280,50 +280,7 @@ export const useAiSettingsStore = defineStore('aiSettings', () => {
         },
         { headers, timeout: 60000 }
       )
-      rawOutput = res.data?.candidates?.[0]?.content?.parts?.[0]?.text || ''
-    }
-    // 2. Anthropic Claude 协议
-    else if (currentProvider === 'claude') {
-      const url = `${cleanBase}/messages`
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-        'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-direct-browser-access': 'true'
-      }
-      if (apiKey.value) headers['x-api-key'] = apiKey.value
-
-      const res = await axios.post(
-        url,
-        {
-          model: model.value,
-          max_tokens: 4096,
-          system: options.systemPrompt,
-          messages: [{ role: 'user', content: options.userPrompt }],
-          temperature: currentTemp
-        },
-        { headers, timeout: 60000 }
-      )
-      rawOutput = res.data?.content?.[0]?.text || ''
-    }
-    // 3. OpenAI / 兼容协议
-    else {
-      const url = `${cleanBase}/chat/completions`
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-      if (apiKey.value) headers['Authorization'] = `Bearer ${apiKey.value}`
-
-      const res = await axios.post(
-        url,
-        {
-          model: model.value,
-          messages: [
-            { role: 'system', content: options.systemPrompt },
-            { role: 'user', content: options.userPrompt }
-          ],
-          temperature: currentTemp
-        },
-        { headers, timeout: 60000 }
-      )
-      rawOutput = res.data?.choices?.[0]?.message?.content || ''
+            rawOutput = res.data?.choices?.[0]?.message?.content || ''
     }
 
     return rawOutput
@@ -349,20 +306,21 @@ export const useAiSettingsStore = defineStore('aiSettings', () => {
 你需要为 FluxForge 编写一个标准的 ESModule 解析规则脚本，并提炼该源站的名称与简介。
 
 【FluxForge 规则引擎标准规范】：
-1. 模块导出标准：使用 export default { ... }
-2. 必须引入标准依赖：
-   import axios from 'axios'
-   import * as cheerio from 'cheerio'
-3. 全局沙箱预置变量：
-   - ua: 标准浏览器 User-Agent 字符串
-4. 数据源自适应处理规范：
-   - 若提供的数据样本是 HTML：使用 const $ = cheerio.load(res.data) 提取选择器；
+1. 模块导出标准：使用 export default defineRule({ ... })
+2. 全局预置环境（无需且切勿编写 import 语句）：
+   - axios: 全局 HTTP 请求客户端实例
+   - cheerio: 全局 HTML DOM 解析器
+   - ua: 标准移动端/桌面端 User-Agent 字符串
+   - baseUrl: 当前源站的根域名（字符串）
+   - defineRule: 全局规则定义辅助函数
+3. 数据源自适应处理规范：
+   - 若提供的数据样本是 HTML：直接使用 const $ = cheerio.load(res.data) 提取选择器；
    - 若提供的数据样本是 JSON (REST API)：直接解析返回的 JSON 对象（如 const { data } = await axios.get(...)，遍历 data.list / data.items 等），无需使用 cheerio；
    - 若混合（如列表为 JSON 接口，详情为 HTML 页面）：按各自接口的数据类型分别处理。
-5. 四大生命周期方法规范：
-   - async discovery({ category, page = 1, baseUrl })：发现列表。返回 { categories: string[], items: MediaItem[], hasMore: boolean }
+4. 四大生命周期方法规范：
+   - async discovery({ category, page = 1, baseUrl })：发现列表。返回 { categories?: string[], items: MediaItem[], hasMore?: boolean } 或直接返回 MediaItem[]
      其中 MediaItem: { key: string (唯一标识/详情URL相对或绝对路径), title: string, cover?: string, badge?: string, desc?: string }
-   - async search({ keyword, page = 1, baseUrl })：搜索列表。返回 { items: MediaItem[], hasMore: boolean }
+   - async search({ keyword, page = 1, baseUrl })：搜索列表。返回 { items: MediaItem[], hasMore?: boolean } 或直接返回 MediaItem[]
    - async detail({ key, item, baseUrl })：媒体详情。返回扁平化结构：
      {
        title: string,
@@ -371,12 +329,36 @@ export const useAiSettingsStore = defineStore('aiSettings', () => {
        tags?: string[],
        author?: string,
        playUrl?: string (如果是视频直链/M3U8/MP4，切记字段名为 playUrl),
-       images?: string[] (如果是图片画廊/剧照，大图URL数组),
+       images?: string[] (如果是图片画廊/写真/漫画，大图URL数组),
        content?: string (如果是小说正文),
        groups?: [{ name: string, items: [{ key: string, title: string }] }],
        recommendations?: MediaItem[]
      }
    - async parse({ key, groupName, baseUrl })：动态解析播放直链或小说正文。返回 { playUrl?: string, content?: string }
+
+【代码示例模版】：
+export default defineRule({
+  async discovery({ category, page = 1, baseUrl }) {
+    const url = \`\${baseUrl}/list?page=\${page}\`
+    const { data } = await axios.get(url, { headers: { 'User-Agent': ua } })
+    const $ = cheerio.load(data)
+    return $('.item').map((i, el) => ({
+      key: $(el).find('a').attr('href'),
+      title: $(el).find('.title').text().trim(),
+      cover: $(el).find('img').attr('src')
+    })).toArray()
+  },
+  async detail({ key, baseUrl }) {
+    const url = key.startsWith('http') ? key : \`\${baseUrl}\${key}\`
+    const { data } = await axios.get(url, { headers: { 'User-Agent': ua } })
+    const $ = cheerio.load(data)
+    return {
+      title: $('h1').text().trim(),
+      cover: $('.cover img').attr('src'),
+      images: $('.photos img').map((i, el) => $(el).attr('src')).toArray()
+    }
+  }
+})
 
 【任务输入】：
 - 目标源站 BaseURL: ${params.targetUrl || '无'}
@@ -459,28 +441,26 @@ ${parseHtml ? `【3. 播放/解析数据样本 (HTML 或 JSON，供 parse 参考
 你的任务是：基于用户当前已有的 FluxForge 规则代码、沙箱测试实际运行结果、报错信息以及页面真实 HTML，定位问题并精确修复代码。
 
 【FluxForge 规则引擎核心规范】：
-1. 模块导出标准：使用 export default { ... }
-2. 依赖引入：
-   import axios from 'axios'
-   import * as cheerio from 'cheerio'
-3. 全局沙箱预置变量：
-   - ua: 标准浏览器 User-Agent 字符串
-4. 各生命周期返回值规范：
-   - discovery: { categories: string[], items: MediaItem[], hasMore: boolean }
+1. 模块导出标准：使用 export default defineRule({ ... })
+2. 全局预置环境（无需编写 import 语句）：
+   - axios, cheerio, ua, baseUrl, defineRule 均为全局变量
+3. 各生命周期返回值规范：
+   - discovery: { categories?: string[], items: MediaItem[], hasMore?: boolean } 或 MediaItem[]
      其中 MediaItem: { key: string, title: string, cover?: string, badge?: string, desc?: string }
-   - search: { items: MediaItem[], hasMore: boolean }
-   - detail: { title: string, cover?: string, desc?: string, tags?: string[], author?: string, playUrl?: string (视频直链), images?: string[], content?: string (小说正文), groups?: [{ name: string, items: [{ key: string, title: string }] }], recommendations?: MediaItem[] }
+   - search: { items: MediaItem[], hasMore?: boolean } 或 MediaItem[]
+   - detail: { title: string, cover?: string, desc?: string, tags?: string[], author?: string, playUrl?: string, images?: string[], content?: string, groups?: [{ name: string, items: [{ key: string, title: string }] }], recommendations?: MediaItem[] }
    - parse: { playUrl?: string, content?: string }
 
 【修复原则】：
 1. 保持原代码整体结构与正常工作的提取逻辑不变，切勿破坏已成功的字段。
 2. 针对解析失败、为空或报错的字段，深入分析提供的 HTML 结构，使用更健壮的 Cheerio 选择器、属性读取或正则提取方案。
 3. 保证 URL 的正确补全（使用 new URL(href, baseUrl).href 或手动拼接）。
-4. 严格输出 JSON 格式（包含 analysis 与 fixedCode 两个字段），例如：
+4. 代码中使用 export default defineRule({ ... })，切勿编写 import 语句。
+5. 严格输出 JSON 格式（包含 analysis 与 fixedCode 两个字段），例如：
 \`\`\`json
 {
-  "analysis": "1. 修复了 detail() 中 cover 封面选择器，原页面 class 是 .poster-img 而非 .pic；\\n2. 修复了 groups 选集列表提取，增加了线路支持...",
-  "fixedCode": "import axios from 'axios'\\nimport * as cheerio from 'cheerio'\\n\\nexport default { ... }"
+  "analysis": "1. 修复了 detail() 中 cover 封面选择器；2. 修复了 groups 选集列表提取...",
+  "fixedCode": "export default defineRule({ ... })"
 }
 \`\`\``
 
@@ -496,9 +476,9 @@ ${params.currentCode}
 \`\`\`json
 ${JSON.stringify(params.rawResult || {}, null, 2)}
 \`\`\`
-${params.errorMessage ? `【测试报错信息】：\n${params.errorMessage}\n` : ''}
-${params.userFeedback ? `【用户反馈的问题/期望】：\n${params.userFeedback}\n` : ''}
-${params.targetHtml ? `【相关目标网页 HTML 片段】：\n\`\`\`html\n${params.targetHtml.slice(0, 15000)}\n\`\`\`\n` : ''}
+${params.errorMessage ? `【测试报错信息】:\n${params.errorMessage}\n` : ''}
+${params.userFeedback ? `【用户反馈的问题/期望】:\n${params.userFeedback}\n` : ''}
+${params.targetHtml ? `【相关目标网页 HTML 片段】:\n\`\`\`html\n${params.targetHtml.slice(0, 15000)}\n\`\`\`\n` : ''}
 
 请针对上述问题进行诊断，并输出修复后的完整代码与分析说明（以 JSON 结构输出）。`
 

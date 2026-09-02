@@ -42,13 +42,132 @@ export const addExtraLibs = async (monaco: typeof import('monaco-editor')) => {
 }
 
 /**
- * 添加沙箱全局预置类型定义 (如 ua)
+ * 添加沙箱全局预置类型定义 (如 ua, baseUrl, axios, cheerio, defineRule)
  */
 export const addGlobalSandboxTypes = (monaco: typeof import('monaco-editor')) => {
+  const globalTypes = `
+    import type { AxiosStatic } from 'axios';
+    import type * as cheerioType from 'cheerio';
+
+    declare global {
+      /**
+       * 当前规则的目标源站 BaseURL
+       */
+      const baseUrl: string;
+
+      /**
+       * 移动端标准 User-Agent 字符串
+       */
+      const ua: string;
+
+      /**
+       * 全局内置 Axios HTTP 客户端实例
+       */
+      const axios: AxiosStatic;
+
+      /**
+       * 全局内置 Cheerio HTML DOM 解析库
+       */
+      const cheerio: typeof cheerioType;
+
+      /**
+       * 列表项标准模型
+       */
+      interface MediaItem {
+        key: string;
+        title: string;
+        cover?: string;
+        badge?: string;
+        desc?: string;
+        subtitle?: string;
+        tags?: string;
+        date?: string;
+      }
+
+      /**
+       * 详情选集项标准模型
+       */
+      interface EpisodeItem {
+        key?: string;
+        title: string;
+        url?: string;
+      }
+
+      /**
+       * 详情选集线路分组
+       */
+      interface EpisodeGroup {
+        name: string;
+        items: EpisodeItem[];
+      }
+
+      /**
+       * 详情页标准返回数据结构
+       */
+      interface DetailResult {
+        title: string;
+        cover?: string;
+        desc?: string;
+        tags?: string[];
+        author?: string;
+        /** 视频直链地址 (MP4 / M3U8) */
+        playUrl?: string;
+        /** 写真/漫画大图数组 (支持九宫格缩略图预览与长图浏览) */
+        images?: string[];
+        /** 小说正文内容 (若为小说源) */
+        content?: string;
+        /** 选集/分集线路列表 */
+        groups?: EpisodeGroup[];
+        /** 底部相关推荐/同模特作品 */
+        recommendations?: MediaItem[];
+      }
+
+      /**
+       * 发现/列表页标准返回数据结构
+       */
+      interface DiscoveryResult {
+        categories?: string[];
+        items: MediaItem[];
+        hasMore?: boolean;
+      }
+
+      /**
+       * 搜索页标准返回数据结构
+       */
+      interface SearchResult {
+        items: MediaItem[];
+        hasMore?: boolean;
+      }
+
+      /**
+       * 规则定义接口
+       */
+      interface RuleDefinition {
+        discovery?: (params: { category?: string; page?: number; baseUrl?: string }) => Promise<DiscoveryResult | MediaItem[] | any>;
+        search?: (params: { keyword: string; page?: number; baseUrl?: string }) => Promise<SearchResult | MediaItem[] | any>;
+        detail?: (params: { key: string; item?: any; baseUrl?: string }) => Promise<DetailResult | any>;
+        parse?: (params: { key: string; groupName?: string; baseUrl?: string }) => Promise<{ playUrl?: string; content?: string } | any>;
+        [key: string]: any;
+      }
+
+      /**
+       * 辅助函数：定义 FluxForge 规范规则对象（提供完整的参数与返回值类型推导）
+       */
+      function defineRule<T extends RuleDefinition>(rule: T): T;
+    }
+
+    export {};
+  `;
+
   monaco.typescript.javascriptDefaults.addExtraLib(
-    'declare const ua: string;',
+    globalTypes,
     'node_modules/@types/fluxforge-globals/index.d.ts'
-  )
+  );
+
+  monaco.typescript.typescriptDefaults.addExtraLib(
+    globalTypes,
+    'node_modules/@types/fluxforge-globals/index.d.ts'
+  );
 }
 
 /**
