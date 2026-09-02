@@ -252,6 +252,9 @@ function transformESMToCJS(code: string): string {
  * 统一执行沙箱 (POST /run 及 POST /execute)
  */
 async function executeSandbox(c: any) {
+  // 收集沙箱内所有 console 日志
+  const sandboxLogs: Array<{ level: 'log' | 'warn' | 'error' | 'info'; time: string; message: string }> = [];
+
   try {
     const reqBody = await c.req.json();
     let { code, ruleId, action, params, baseUrl } = reqBody;
@@ -296,6 +299,25 @@ async function executeSandbox(c: any) {
       }
       return require(name);
     };
+    const formatLogArg = (arg: any): string => {
+      if (arg === null) return 'null';
+      if (arg === undefined) return 'undefined';
+      if (typeof arg === 'string') return arg;
+      if (arg instanceof Error) return arg.stack || arg.message;
+      try {
+        return JSON.stringify(arg, null, 2);
+      } catch {
+        return String(arg);
+      }
+    };
+
+    const recordLog = (level: 'log' | 'warn' | 'error' | 'info', args: any[]) => {
+      const now = new Date();
+      const time = now.toTimeString().split(' ')[0] + '.' + String(now.getMilliseconds()).padStart(3, '0');
+      const message = args.map(formatLogArg).join(' ');
+      sandboxLogs.push({ level, time, message });
+      console[level === 'info' ? 'log' : level]('[Rule Sandbox]', ...args);
+    };
 
     const vmContext: any = {
       require: sandboxRequire,
@@ -313,9 +335,10 @@ async function executeSandbox(c: any) {
       module: { exports: {} },
       exports: {},
       console: {
-        log: (...args: any[]) => console.log('[Rule Sandbox]', ...args),
-        warn: (...args: any[]) => console.warn('[Rule Sandbox]', ...args),
-        error: (...args: any[]) => console.error('[Rule Sandbox]', ...args)
+        log: (...args: any[]) => recordLog('log', args),
+        warn: (...args: any[]) => recordLog('warn', args),
+        error: (...args: any[]) => recordLog('error', args),
+        info: (...args: any[]) => recordLog('info', args)
       }
     };
 
@@ -360,25 +383,12 @@ async function executeSandbox(c: any) {
       }
 
       if (actionFn) {
-        // 智能自适应实参传递（支持对象参数解构与普通位置传参）
-        const fnStr = actionFn.toString();
-        const isDestructured = /^\s*(async\s+)?(function\s*[\w]*\s*)?\(\s*\{/.test(fnStr);
+        // 兼容 key 与 url 字段别名
+        if (targetParams.key && !targetParams.url) targetParams.url = targetParams.key;
+        if (targetParams.url && !targetParams.key) targetParams.key = targetParams.url;
 
-        if (isDestructured) {
-          result = await actionFn.call(exported, targetParams);
-        } else {
-          // 根据 targetAction 匹配最适合的形参格式
-          if (targetAction === 'detail') {
-            const detailKey = targetParams.key || targetParams.url || targetParams.href || targetParams;
-            result = await actionFn.call(exported, detailKey, targetParams);
-          } else if (targetAction === 'search') {
-            result = await actionFn.call(exported, targetParams.keyword || '', targetParams.page || 1, targetParams);
-          } else if (targetAction === 'discovery') {
-            result = await actionFn.call(exported, targetParams.page || 1, targetParams.category, targetParams);
-          } else {
-            result = await actionFn.call(exported, targetParams);
-          }
-        }
+        // 统一严格对象命名参数入参：{ keyword, page, category, key, url, baseUrl, ... }
+        result = await actionFn.call(exported, targetParams);
       } else if (typeof exported.default === 'function') {
         result = await exported.default(targetParams);
       } else {
@@ -388,13 +398,27 @@ async function executeSandbox(c: any) {
       result = exported;
     }
 
-    return c.json(result);
+    // 返回执行结果及收集到的控制台日志
+    if (result && typeof result === 'object' && !Array.isArray(result)) {
+      return c.json({
+        ...result,
+        result,
+        logs: sandboxLogs
+      });
+    }
+
+    return c.json({
+      result,
+      data: result,
+      logs: sandboxLogs
+    });
   } catch (error: any) {
     console.error('❌ [Sandbox Execution Error]:', error);
     return c.json(
       {
         message: error.message || 'Rule execution failed',
-        stack: error.stack
+        stack: error.stack,
+        logs: sandboxLogs
       },
       500
     );

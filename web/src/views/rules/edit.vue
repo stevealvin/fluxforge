@@ -34,8 +34,9 @@ const route = useRoute()
 const router = useRouter()
 const message = useMessage()
 
-const showWorkbench = ref(false)
-const showMetaSidebar = ref(true)
+// AI 工作台默认展开；左侧元数据配置默认收起以留出足够空间
+const showWorkbench = ref(true)
+const showMetaSidebar = ref(false)
 
 const formRef = useTemplateRef('formRef')
 const form = ref<Partial<RuleSchema>>({
@@ -188,10 +189,34 @@ const handleApplyWorkbench = (payload: {
   if (payload.description) form.value.description = payload.description
 }
 
+const showTerminal = ref(true)
+const consoleLogs = ref<Array<{ level: string; time: string; message: string }>>([])
+const workbenchRef = useTemplateRef<any>('workbenchRef')
+
+const handleReceiveLogs = (logs: any[]) => {
+  consoleLogs.value = logs || []
+  if (logs && logs.length > 0) {
+    showTerminal.value = true
+  }
+}
+
+const runWorkbenchAction = () => {
+  if (!showWorkbench.value) showWorkbench.value = true
+  setTimeout(() => {
+    workbenchRef.value?.executeAction?.()
+  }, 50)
+}
+
 const handleKeydown = (e: KeyboardEvent) => {
-  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+  if ((e.ctrlKey || e.metaKey) && (e.key === 'r' || e.key === 'R')) {
     e.preventDefault()
-    openWorkbench()
+    runWorkbenchAction()
+  } else if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) {
+    e.preventDefault()
+    onSubmit()
+  } else if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+    e.preventDefault()
+    showWorkbench.value = !showWorkbench.value
   }
 }
 
@@ -206,9 +231,9 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="w-full h-full flex flex-col gap-3 overflow-hidden">
+  <div class="w-full h-full flex flex-col gap-2.5 overflow-hidden">
     <!-- 1. 顶部操作工具栏 (IDE Header) -->
-    <div class="glass-panel rounded-2xl px-4 py-2.5 sm:px-5 sm:py-3 flex flex-wrap items-center justify-between gap-3 shadow-xs shrink-0 border border-emerald-100/60 dark:border-white/5">
+    <div class="glass-panel rounded-2xl px-4 py-2 sm:px-5 sm:py-2.5 flex flex-wrap items-center justify-between gap-3 shadow-xs shrink-0 border border-emerald-100/60 dark:border-white/5">
       <!-- 左侧：返回、标题与状态标签 -->
       <div class="flex items-center gap-3 min-w-0">
         <n-button
@@ -249,35 +274,66 @@ onUnmounted(() => {
 
       <!-- 右侧：核心功能与操作按钮组 -->
       <div class="flex items-center gap-2 flex-wrap">
-        <!-- 切换侧边栏展开/收起 -->
+        <!-- 切换配置侧边栏 -->
         <n-button
           size="small"
           quaternary
-          class="!rounded-xl !p-2 text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"
+          class="!rounded-xl !px-2.5 text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"
+          :type="showMetaSidebar ? 'primary' : 'default'"
           @click="showMetaSidebar = !showMetaSidebar"
-          :title="showMetaSidebar ? '收起配置侧边栏 (代码全屏)' : '展开配置侧边栏'"
+          :title="showMetaSidebar ? '收起配置侧栏' : '展开规则基础配置侧栏'"
         >
           <template #icon>
-            <PanelLeftClose v-if="showMetaSidebar" class="w-4 h-4" />
-            <PanelLeftOpen v-else class="w-4 h-4" />
+            <Sliders class="w-3.5 h-3.5" />
           </template>
+          <span>{{ showMetaSidebar ? '收起配置' : '配置' }}</span>
         </n-button>
 
-        <!-- 🚀 一体化规则调试工作台核心入口 (AI 生成 + 沙箱测试 + 诊断) -->
+        <!-- 切换底部控制台 -->
+        <n-button
+          size="small"
+          quaternary
+          class="!rounded-xl !px-2.5 text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"
+          :type="showTerminal ? 'primary' : 'default'"
+          @click="showTerminal = !showTerminal"
+          title="切换沙箱控制台 (Console Logs)"
+        >
+          <template #icon>
+            <Terminal class="w-3.5 h-3.5" />
+          </template>
+          <span>控制台 {{ consoleLogs.length > 0 ? `(${consoleLogs.length})` : '' }}</span>
+        </n-button>
+
+        <!-- 快捷运行测试按钮 (Ctrl+R) -->
+        <n-button
+          size="small"
+          secondary
+          type="primary"
+          class="!rounded-xl !font-bold !px-3 shadow-xs"
+          @click="runWorkbenchAction"
+          title="运行当前沙箱测试 (Ctrl+R)"
+        >
+          <template #icon>
+            <Play class="w-3.5 h-3.5 fill-current" />
+          </template>
+          <span>运行测试 (Ctrl+R)</span>
+        </n-button>
+
+        <!-- 🚀 一体化规则调试工作台切换 -->
         <n-button
           size="small"
           type="primary"
-          class="!rounded-xl !font-black !px-3.5 !bg-gradient-to-r !from-emerald-600 !via-teal-500 !to-cyan-500 hover:!opacity-95 shadow-md shadow-emerald-500/25"
-          @click="openWorkbench"
-          title="AI 智能生成与沙箱测试 (Ctrl+Enter)"
+          class="!rounded-xl !font-bold !px-3 !bg-gradient-to-r !from-emerald-600 !via-teal-500 !to-cyan-500 hover:!opacity-95 shadow-md shadow-emerald-500/25"
+          @click="showWorkbench = !showWorkbench"
+          title="展开/收起 AI 智能与调试工作台 (Ctrl+Enter)"
         >
           <template #icon>
             <Sparkles class="w-3.5 h-3.5 text-white animate-pulse" />
           </template>
-          <span>AI 智能工作台 (Ctrl+Enter)</span>
+          <span>{{ showWorkbench ? '收起工作台' : 'AI 智能工作台' }}</span>
         </n-button>
 
-        <!-- 辅助功能按键 -->
+        <!-- 辅助按键 -->
         <n-button
           v-if="route.query.id"
           size="small"
@@ -304,43 +360,31 @@ onUnmounted(() => {
           </template>
         </n-button>
 
-        <!-- 重置 -->
-        <n-button
-          size="small"
-          secondary
-          class="!rounded-xl"
-          @click="onReset"
-          title="重置代码与表单"
-        >
-          <template #icon>
-            <RefreshCcw class="w-3.5 h-3.5" />
-          </template>
-        </n-button>
-
-        <!-- 保存按钮 -->
+        <!-- 保存按钮 (Ctrl+S) -->
         <n-button
           size="small"
           type="primary"
-          class="!rounded-xl !font-bold !px-4 shadow-md shadow-emerald-500/20"
+          class="!rounded-xl !font-bold !px-3.5 shadow-md shadow-emerald-500/20"
           :loading="submitLoading"
           @click="onSubmit"
+          title="保存当前规则 (Ctrl+S)"
         >
           <template #icon>
             <Save class="w-3.5 h-3.5" />
           </template>
-          <span>保存规则</span>
+          <span>保存</span>
         </n-button>
       </div>
     </div>
 
-    <!-- 2. 主体分栏工作台 (Left: Metadata Form | Right: 100% Fluid Monaco Editor) -->
-    <div class="flex-1 flex gap-3 min-h-0 overflow-hidden">
-      <!-- 左侧：规则配置侧边栏 (Metadata) -->
+    <!-- 2. 主体三栏沉浸式工作台 (Left: Metadata | Center: Monaco + Terminal | Right: Studio Panel) -->
+    <div class="flex-1 flex gap-2.5 min-h-0 overflow-hidden">
+      <!-- 左栏：规则配置侧边栏 (Metadata) -->
       <div
         class="shrink-0 transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] overflow-hidden flex flex-col h-full"
-        :class="showMetaSidebar ? 'w-80 xl:w-96 opacity-100' : 'w-0 opacity-0 pointer-events-none -mr-3'"
+        :class="showMetaSidebar ? 'w-80 xl:w-88 opacity-100' : 'w-0 opacity-0 pointer-events-none -mr-2.5'"
       >
-        <div class="glass-panel rounded-2xl p-4 sm:p-5 flex-1 flex flex-col gap-3.5 shadow-xs border border-emerald-100/60 dark:border-white/5 overflow-y-auto h-full w-80 xl:w-96">
+        <div class="glass-panel rounded-2xl p-4 sm:p-5 flex-1 flex flex-col gap-3.5 shadow-xs border border-emerald-100/60 dark:border-white/5 overflow-y-auto h-full w-80 xl:w-88">
           <div class="flex items-center justify-between pb-2 border-b border-emerald-100/50 dark:border-white/5 shrink-0">
             <div class="flex items-center gap-2 text-xs font-bold text-zinc-800 dark:text-zinc-200">
               <Sliders class="w-3.5 h-3.5 text-emerald-500" />
@@ -371,7 +415,7 @@ onUnmounted(() => {
             </n-form-item>
 
             <n-form-item label="规则描述">
-              <n-input v-model:value="form.description" type="textarea" :rows="4" clearable placeholder="规则的详细说明及特性..." class="!rounded-xl text-xs" />
+              <n-input v-model:value="form.description" type="textarea" :rows="3" clearable placeholder="规则的详细说明及特性..." class="!rounded-xl text-xs" />
             </n-form-item>
 
             <div class="grid grid-cols-2 gap-2">
@@ -391,53 +435,135 @@ onUnmounted(() => {
               <span>沙箱环境规范提示</span>
             </div>
             <ul class="list-disc pl-3.5 space-y-0.5 text-[10px]">
-              <li>全局预置: <code class="text-emerald-600 font-mono">ua</code> (浏览器 User-Agent)</li>
-              <li>四大方法: <code class="text-emerald-600 font-mono">discovery, search, detail, parse</code></li>
-              <li>视频直链必须挂载在 <code class="text-emerald-600 font-mono">playUrl</code> 字段</li>
+              <li>内置全局变量: <code class="text-emerald-600 font-mono">baseUrl</code>, <code class="text-emerald-600 font-mono">ua</code></li>
+              <li>四大标准生命周期: <code class="text-emerald-600 font-mono">discovery, search, detail, parse</code></li>
+              <li>快捷调试: <kbd class="px-1 py-0.5 bg-white dark:bg-zinc-800 rounded border border-zinc-200 dark:border-zinc-700">Ctrl+R</kbd> 运行测试</li>
             </ul>
           </div>
         </div>
       </div>
 
-      <!-- 右侧：100% 全宽沉浸式 Monaco 代码编辑器 -->
-      <div class="flex-1 flex flex-col min-w-0 glass-panel rounded-2xl overflow-hidden shadow-xs border border-emerald-100/60 dark:border-white/5 transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] h-full">
-        <!-- 编辑器顶部状态条 -->
-        <div class="px-4 py-2 border-b border-emerald-100/50 dark:border-white/5 flex items-center justify-between bg-zinc-50/70 dark:bg-white/[0.02] shrink-0">
-          <div class="flex items-center gap-2">
-            <div class="w-1.5 h-4 rounded-full bg-gradient-to-b from-emerald-500 to-teal-500"></div>
-            <span class="text-xs font-bold text-zinc-800 dark:text-zinc-200">
-              ESModule 沙箱规则脚本 (内置 Axios & Cheerio)
-            </span>
+      <!-- 中栏：Monaco 代码编辑器 (代码永远可见、随改随测) + 底部沙箱控制台 Terminal -->
+      <div class="flex-1 flex flex-col min-w-0 h-full gap-2.5 transition-all duration-300">
+        <!-- Monaco 代码编辑器主体 -->
+        <div class="flex-1 min-h-0 glass-panel rounded-2xl overflow-hidden shadow-xs border border-emerald-100/60 dark:border-white/5 flex flex-col">
+          <!-- 编辑器顶部状态条 -->
+          <div class="px-4 py-2 border-b border-emerald-100/50 dark:border-white/5 flex items-center justify-between bg-zinc-50/70 dark:bg-white/[0.02] shrink-0">
+            <div class="flex items-center gap-2">
+              <div class="w-1.5 h-4 rounded-full bg-gradient-to-b from-emerald-500 to-teal-500"></div>
+              <span class="text-xs font-bold text-zinc-800 dark:text-zinc-200">
+                ESModule 沙箱规则脚本 (内置 Axios, Cheerio, defineRule)
+              </span>
+            </div>
+
+            <div class="flex items-center gap-2">
+              <span class="font-mono text-[11px] text-zinc-400">JavaScript</span>
+            </div>
           </div>
 
-          <div class="flex items-center gap-2 text-xs text-zinc-400">
-            <span class="font-mono text-[11px]">JavaScript</span>
+          <!-- Monaco 代码编辑器主体 -->
+          <div class="flex-1 w-full relative min-h-0 overflow-hidden">
+            <code-editor
+              v-model="form.code"
+              model-id="rule_main_editor"
+              height="100%"
+              class="w-full h-full"
+            />
           </div>
         </div>
 
-        <!-- Monaco 代码编辑器主体 (100% 自适应撑满容器，无滚动条溢出) -->
-        <div class="flex-1 w-full relative min-h-0 h-full overflow-hidden">
-          <code-editor
-            v-model="form.code"
-            model-id="rule_main_editor"
-            height="100%"
-            class="w-full h-full"
-          />
+        <!-- 底部：沙箱控制台 Terminal (Console Logs) -->
+        <div
+          v-if="showTerminal"
+          class="h-44 shrink-0 rounded-2xl overflow-hidden shadow-lg border border-zinc-700/60 dark:border-white/10 flex flex-col bg-zinc-950 text-zinc-100 transition-all"
+        >
+          <!-- Terminal 顶栏 (高对比度深色面板顶条) -->
+          <div class="px-3.5 py-1.5 border-b border-zinc-800 flex items-center justify-between bg-zinc-900/90 shrink-0 select-none">
+            <div class="flex items-center gap-2">
+              <Terminal class="w-3.5 h-3.5 text-emerald-400" />
+              <span class="text-xs font-mono font-bold text-white tracking-wide">沙箱运行控制台 (Console Terminal)</span>
+              <span v-if="consoleLogs.length > 0" class="px-2 py-0.5 text-[10px] font-mono font-bold rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                {{ consoleLogs.length }} 条输出
+              </span>
+            </div>
+
+            <div class="flex items-center gap-3">
+              <button
+                v-if="consoleLogs.length > 0"
+                type="button"
+                class="text-xs font-mono text-zinc-300 hover:text-white transition-colors cursor-pointer"
+                @click="consoleLogs = []"
+                title="清空控制台日志"
+              >
+                清空
+              </button>
+              <button
+                type="button"
+                class="text-xs font-mono text-zinc-300 hover:text-white transition-colors cursor-pointer"
+                @click="showTerminal = false"
+                title="收起控制台"
+              >
+                收起
+              </button>
+            </div>
+          </div>
+
+          <!-- Terminal 日志列表 -->
+          <div class="flex-1 min-h-0 overflow-y-auto p-3 font-mono text-xs space-y-1.5 selection:bg-emerald-500/40">
+            <div v-if="consoleLogs.length === 0" class="h-full flex flex-col items-center justify-center text-zinc-400 space-y-1.5">
+              <Terminal class="w-6 h-6 text-emerald-500/40" />
+              <p class="text-xs font-medium text-zinc-200">暂无沙箱控制台输出</p>
+              <p class="text-[11px] text-zinc-400">在规则代码中写入 <code class="text-emerald-400 font-bold">console.log(...)</code>，运行测试后将在此高亮显示</p>
+            </div>
+            <div
+              v-for="(log, idx) in consoleLogs"
+              :key="idx"
+              class="flex items-start gap-2.5 py-1 leading-relaxed hover:bg-white/[0.05] px-2 rounded transition-colors"
+            >
+              <span class="text-[11px] text-zinc-400 font-mono shrink-0 select-none">[{{ log.time }}]</span>
+              <span
+                class="text-[10px] px-1.5 py-0.2 rounded font-bold uppercase select-none shrink-0 border"
+                :class="{
+                  'bg-sky-500/20 text-sky-300 border-sky-500/30': log.level === 'log' || log.level === 'info',
+                  'bg-amber-500/20 text-amber-300 border-amber-500/30': log.level === 'warn',
+                  'bg-rose-500/20 text-rose-300 border-rose-500/30': log.level === 'error'
+                }"
+              >
+                {{ log.level }}
+              </span>
+              <pre
+                class="flex-1 whitespace-pre-wrap break-all text-xs font-mono"
+                :class="{
+                  'text-rose-300 font-bold': log.level === 'error',
+                  'text-amber-200': log.level === 'warn',
+                  'text-zinc-100': log.level !== 'error' && log.level !== 'warn'
+                }"
+              >{{ log.message }}</pre>
+            </div>
+          </div>
         </div>
       </div>
-    </div>
 
-    <!-- 一体化智能工作台 (AI 智能生成 + 沙箱测试 + AI 诊断修复) -->
-    <RuleWorkbenchModal
-      v-model:show="showWorkbench"
-      :code="form.code || ''"
-      :base-url="form.baseUrl"
-      :rule-type="form.type"
-      :rule-name="form.name"
-      :rule-description="form.description"
-      @update:code="(val) => (form.code = val)"
-      @apply="handleApplyWorkbench"
-    />
+      <!-- 右栏：一体化智能工作台 (AI 智能生成 + 沙箱测试 + AI 诊断修复) -->
+      <div
+        class="shrink-0 transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] overflow-hidden flex flex-col h-full"
+        :class="showWorkbench ? 'w-[460px] xl:w-[500px] opacity-100' : 'w-0 opacity-0 pointer-events-none -mr-2.5'"
+      >
+        <RuleWorkbenchModal
+          ref="workbenchRef"
+          embedded
+          :code="form.code || ''"
+          :base-url="form.baseUrl"
+          :rule-type="form.type"
+          :rule-name="form.name"
+          :rule-description="form.description"
+          @update:code="(val) => (form.code = val)"
+          @apply="handleApplyWorkbench"
+          @logs="handleReceiveLogs"
+          @close="showWorkbench = false"
+        />
+      </div>
+    </div>
   </div>
 </template>
 

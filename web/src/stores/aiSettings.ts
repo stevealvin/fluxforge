@@ -255,6 +255,7 @@ export const useAiSettingsStore = defineStore('aiSettings', () => {
     systemPrompt: string
     userPrompt: string
     temperatureOverride?: number
+    jsonMode?: boolean
   }): Promise<string> => {
     if (!baseUrl.value) {
       throw new Error('请先在「系统设置」中配置 AI 模型的 API 接口地址')
@@ -271,22 +272,71 @@ export const useAiSettingsStore = defineStore('aiSettings', () => {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' }
       if (apiKey.value) headers['x-goog-api-key'] = apiKey.value
 
+      const generationConfig: Record<string, any> = { temperature: currentTemp }
+      if (options.jsonMode) {
+        generationConfig.responseMimeType = 'application/json'
+      }
+
       const res = await axios.post(
         url,
         {
           systemInstruction: { parts: [{ text: options.systemPrompt }] },
           contents: [{ role: 'user', parts: [{ text: options.userPrompt }] }],
-          generationConfig: { temperature: currentTemp }
+          generationConfig
         },
         { headers, timeout: 60000 }
       )
-            rawOutput = res.data?.choices?.[0]?.message?.content || ''
+      rawOutput = res.data?.candidates?.[0]?.content?.parts?.[0]?.text || ''
+    }
+    // 2. Anthropic Claude 协议
+    else if (currentProvider === 'claude') {
+      const url = `${cleanBase}/messages`
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      }
+      if (apiKey.value) headers['x-api-key'] = apiKey.value
+
+      const res = await axios.post(
+        url,
+        {
+          model: model.value,
+          max_tokens: 4096,
+          system: options.systemPrompt,
+          messages: [{ role: 'user', content: options.userPrompt }],
+          temperature: currentTemp
+        },
+        { headers, timeout: 60000 }
+      )
+      rawOutput = res.data?.content?.[0]?.text || ''
+    }
+    // 3. OpenAI / 兼容协议 (DeepSeek, 阿里百炼, 硅基流动, Ollama 等)
+    else {
+      const url = `${cleanBase}/chat/completions`
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      if (apiKey.value) headers['Authorization'] = `Bearer ${apiKey.value}`
+
+      const payload: Record<string, any> = {
+        model: model.value,
+        messages: [
+          { role: 'system', content: options.systemPrompt },
+          { role: 'user', content: options.userPrompt }
+        ],
+        temperature: currentTemp
+      }
+
+      if (options.jsonMode) {
+        payload.response_format = { type: 'json_object' }
+      }
+
+      const res = await axios.post(url, payload, { headers, timeout: 60000 })
+      rawOutput = res.data?.choices?.[0]?.message?.content || ''
     }
 
     return rawOutput
   }
 
-  // 生成规则代码 (支持多页面 HTML 采样：列表页 + 详情页 + 播放页，并智能提炼名称与描述)
   const generateRuleCode = async (params: {
     targetUrl: string
     mediaType: MediaType | string
@@ -438,7 +488,7 @@ ${parseHtml ? `【3. 播放/解析数据样本 (HTML 或 JSON，供 parse 参考
     mediaType?: MediaType | string
   }): Promise<{ fixedCode: string; analysis: string }> => {
     const systemPrompt = `你是一个资深的 JavaScript 网页抓取与规则引擎 Debug 专家。
-你的任务是：基于用户当前已有的 FluxForge 规则代码、沙箱测试实际运行结果、报错信息以及页面真实 HTML，定位问题并精确修复代码。
+你的任务是：基于用户已有的 FluxForge 规则代码、沙箱测试实际运行结果、报错信息以及页面真实 HTML，定位问题并精确修复代码。
 
 【FluxForge 规则引擎核心规范】：
 1. 模块导出标准：使用 export default defineRule({ ... })
@@ -446,7 +496,6 @@ ${parseHtml ? `【3. 播放/解析数据样本 (HTML 或 JSON，供 parse 参考
    - axios, cheerio, ua, baseUrl, defineRule 均为全局变量
 3. 各生命周期返回值规范：
    - discovery: { categories?: string[], items: MediaItem[], hasMore?: boolean } 或 MediaItem[]
-     其中 MediaItem: { key: string, title: string, cover?: string, badge?: string, desc?: string }
    - search: { items: MediaItem[], hasMore?: boolean } 或 MediaItem[]
    - detail: { title: string, cover?: string, desc?: string, tags?: string[], author?: string, playUrl?: string, images?: string[], content?: string, groups?: [{ name: string, items: [{ key: string, title: string }] }], recommendations?: MediaItem[] }
    - parse: { playUrl?: string, content?: string }
@@ -456,13 +505,14 @@ ${parseHtml ? `【3. 播放/解析数据样本 (HTML 或 JSON，供 parse 参考
 2. 针对解析失败、为空或报错的字段，深入分析提供的 HTML 结构，使用更健壮的 Cheerio 选择器、属性读取或正则提取方案。
 3. 保证 URL 的正确补全（使用 new URL(href, baseUrl).href 或手动拼接）。
 4. 代码中使用 export default defineRule({ ... })，切勿编写 import 语句。
-5. 严格输出 JSON 格式（包含 analysis 与 fixedCode 两个字段），例如：
-\`\`\`json
+
+【强制输出要求】：
+必须严格返回合法 JSON 对象，严禁输出任何 JSON 之外的额外说明或客套话。
+JSON 结构必须严格符合以下字段定义：
 {
-  "analysis": "1. 修复了 detail() 中 cover 封面选择器；2. 修复了 groups 选集列表提取...",
-  "fixedCode": "export default defineRule({ ... })"
-}
-\`\`\``
+  "analysis": "针对问题原因、选择器失效点与修复思路的详细说明（字符串，支持 Markdown 换行）",
+  "fixedCode": "修复后的完整 JavaScript 规则代码（字符串）"
+}`
 
     const userPrompt = `
 【现有规则代码】：
@@ -480,30 +530,34 @@ ${params.errorMessage ? `【测试报错信息】:\n${params.errorMessage}\n` : 
 ${params.userFeedback ? `【用户反馈的问题/期望】:\n${params.userFeedback}\n` : ''}
 ${params.targetHtml ? `【相关目标网页 HTML 片段】:\n\`\`\`html\n${params.targetHtml.slice(0, 15000)}\n\`\`\`\n` : ''}
 
-请针对上述问题进行诊断，并输出修复后的完整代码与分析说明（以 JSON 结构输出）。`
+请针对上述问题进行深度排查修复，并严格以 JSON 格式输出 analysis 与 fixedCode。`
 
-    const rawOutput = await callLlm({ systemPrompt, userPrompt })
+    const rawOutput = await callLlm({ systemPrompt, userPrompt, jsonMode: true })
 
-    let analysis = '已完成规则优化与修复'
-    let fixedCode = params.currentCode
+    // 纯 JSON 逻辑：剥离可能存在的外层 \`\`\`json 标记后直接 parse
+    const cleanJson = rawOutput.replace(/^\`\`\`(?:json)?\s*/i, '').replace(/\s*\`\`\`$/i, '').trim()
 
+    let parsed: any = null
     try {
-      const cleaned = rawOutput.replace(/^```(?:json)?\n/i, '').replace(/```$/i, '').trim()
-      const parsed = JSON.parse(cleaned)
-      if (parsed.fixedCode) {
-        fixedCode = parsed.fixedCode
-        analysis = parsed.analysis || analysis
-      }
+      parsed = JSON.parse(cleanJson)
     } catch {
-      // 容错处理：如果大模型直接返回了 JS 代码
-      fixedCode = rawOutput.replace(/^```(?:javascript|js)?\n/i, '').replace(/```$/i, '').trim()
-      analysis = '已自动修复选择器与解析逻辑'
+      // 轻量容错：若字符串中含有未转义换行等不可见控制字符，做标准清洗
+      const sanitized = cleanJson.replace(/[\u0000-\u001F\u007F-\u009F]/g, (c) => {
+        return c === '\n' ? '\\n' : c === '\r' ? '\\r' : c === '\t' ? '\\t' : ''
+      })
+      try {
+        parsed = JSON.parse(sanitized)
+      } catch (err: any) {
+        throw new Error(`AI 返回的内容无法解析为有效 JSON 格式: ${err.message}`)
+      }
     }
 
-    return { fixedCode, analysis }
+    return {
+      analysis: parsed?.analysis || '已完成规则代码排查与修复。',
+      fixedCode: parsed?.fixedCode || params.currentCode
+    }
   }
 
-  // 动态从 API 接口获取可用模型列表
   const fetchRemoteModels = async (overrideConfig?: Partial<AiConfig>): Promise<string[]> => {
     const currentProvider = overrideConfig?.provider || provider.value
     const currentBaseUrl = (overrideConfig?.baseUrl || baseUrl.value).replace(/\/+$/, '')
