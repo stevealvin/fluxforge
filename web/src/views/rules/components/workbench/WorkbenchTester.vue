@@ -169,7 +169,7 @@ const executeAction = async (targetAction = activeAction.value) => {
   }
 
   try {
-    const res: any = await http.post('/rules/test-sandbox', {
+    const res: any = await http.post('/rules/run', {
       code: props.code,
       action: targetAction,
       params,

@@ -18,6 +18,7 @@ const props = defineProps<{
   code: string
   baseUrl?: string
   diagnosticInfo?: { error?: string; logs?: any[]; code?: string } | null
+  targetHtml?: string
 }>()
 
 const emit = defineEmits<{
@@ -30,6 +31,7 @@ const aiStore = useAiSettingsStore()
 const debugUserFeedback = ref('')
 const quickProblemTags = [
   '返回列表为空 (items: 0)',
+  'categories 字段没有数据',
   '正文提取为空',
   '防盗链图片裂开',
   '选择器失效',
@@ -45,6 +47,12 @@ const setDiagnosticContext = (info: { error?: string; logs?: any[]; code?: strin
   if (info?.error) {
     debugUserFeedback.value = `测试异常: ${info.error}`
   }
+}
+
+const formatHtmlSize = (str?: string): string => {
+  if (!str) return '0 B'
+  const bytes = new TextEncoder().encode(str).length
+  return bytes >= 1024 ? (bytes / 1024).toFixed(1) + ' KB' : bytes + ' B'
 }
 
 watch(
@@ -79,7 +87,8 @@ const handleStartDebugging = async () => {
       actionParams: {},
       rawResult: {},
       errorMessage: debugUserFeedback.value || undefined,
-      userFeedback: debugUserFeedback.value || '请全面检查代码中的选择器与异常处理，并提供修复方案'
+      userFeedback: debugUserFeedback.value || '请全面检查代码中的选择器与异常处理，并提供修复方案',
+      targetHtml: props.targetHtml || undefined
     })
 
     debugAnalysis.value = result.analysis || '已完成规则代码的排查与优化分析。'
@@ -147,7 +156,7 @@ defineExpose({
             v-for="tag in quickProblemTags"
             :key="tag"
             type="button"
-            class="px-2.5 py-1 text-[10px] rounded-lg bg-amber-50/60 dark:bg-white/5 border border-amber-100/60 dark:border-white/5 text-amber-700 dark:text-amber-300 hover:bg-amber-500/15 transition-colors cursor-pointer"
+            class="px-2.5 py-1 text-[10px] rounded-lg bg-violet-50/60 dark:bg-violet-950/20 border border-violet-200/60 dark:border-violet-800/30 text-violet-700 dark:text-violet-300 hover:bg-violet-500/15 transition-colors cursor-pointer"
             @click="debugUserFeedback = tag"
           >
             {{ tag }}
@@ -155,11 +164,24 @@ defineExpose({
         </div>
       </div>
 
+      <!-- HTML 上下文状态 -->
+      <div class="flex items-center gap-1.5 text-[10px]">
+        <span class="text-zinc-400">诊断上下文:</span>
+        <span v-if="props.targetHtml" class="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-bold">
+          <CheckCircle2 class="w-3 h-3" />
+          已携带目标网页 HTML ({{ formatHtmlSize(props.targetHtml) }})
+        </span>
+        <span v-else class="flex items-center gap-1 text-zinc-400">
+          <AlertCircle class="w-3 h-3" />
+          无 HTML 上下文（请先在「生成」面板抓取采样以提升诊断精度）
+        </span>
+      </div>
+
       <!-- 诊断触发按钮 -->
       <div class="pt-1">
         <n-button
           type="primary"
-          class="w-full !rounded-xl !font-bold !py-3.5 shadow-md shadow-amber-500/20 !bg-gradient-to-r !from-amber-500 !via-rose-500 !to-rose-600 text-white"
+          class="w-full !rounded-xl !font-bold !py-3.5 shadow-md shadow-indigo-500/20 !bg-gradient-to-r !from-indigo-600 !via-purple-600 !to-pink-600 text-white"
           :loading="debugging"
           @click="handleStartDebugging"
         >

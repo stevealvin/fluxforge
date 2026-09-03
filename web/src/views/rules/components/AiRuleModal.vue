@@ -178,7 +178,7 @@ const handleFetchListHtml = async () => {
   fetchingList.value = true
   autoSniffed.value = false
   try {
-    const res: any = await http.post('/rules/fetch-html', {
+    const res: any = await http.post('/rules/fetch-page', {
       url: targetUrl.value.trim()
     })
     const data = res?.data || res?.html || ''
@@ -213,7 +213,7 @@ const handleFetchDetailHtml = async () => {
 
   fetchingDetail.value = true
   try {
-    const res: any = await http.post('/rules/fetch-html', {
+    const res: any = await http.post('/rules/fetch-page', {
       url: detailUrl.value.trim()
     })
     const data = res?.data || res?.html || ''
@@ -239,7 +239,7 @@ const handleFetchParseHtml = async () => {
 
   fetchingParse.value = true
   try {
-    const res: any = await http.post('/rules/fetch-html', {
+    const res: any = await http.post('/rules/fetch-page', {
       url: parseUrl.value.trim()
     })
     const data = res?.data || res?.html || ''

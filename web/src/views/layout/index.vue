@@ -87,11 +87,11 @@ const navRules = [
     <!-- 极光光斑动效背景 (Aurora Ambient Glow) -->
     <!-- Desktop Left Sidebar (微拟态侧边栏) -->
     <aside
-      class="hidden lg:flex flex-col flex-shrink-0 sticky top-0 h-screen p-2.5 justify-between transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] overflow-hidden"
+      class="hidden lg:flex flex-col shrink-0 sticky top-0 h-screen p-2.5 justify-between transition-all duration-300 ease-in-out overflow-hidden"
       :class="[
-        isCollapsed ? 'w-16' : 'w-60',
+        isCollapsed ? 'w-16' : 'w-50',
         themeStore.isDark
-          ? 'bg-[#0a1814]/90 border-white/[0.06] backdrop-blur-xl'
+          ? 'bg-[#0a1814]/90 border-white/6 backdrop-blur-xl'
           : 'bg-white/85 border-emerald-100/60 backdrop-blur-xl'
       ]"
     >
@@ -105,7 +105,7 @@ const navRules = [
                 class="flex items-center group w-full h-full min-w-0 overflow-hidden select-none"
               >
                 <div class="w-11 h-11 shrink-0 flex items-center justify-center">
-                  <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-emerald-600 via-teal-500 to-cyan-500 flex items-center justify-center shadow-lg shadow-emerald-500/25 group-hover:scale-105 transition-transform shrink-0">
+                  <div class="w-9 h-9 rounded-xl bg-linear-to-tr from-emerald-600 via-teal-500 to-cyan-500 flex items-center justify-center shadow-lg shadow-emerald-500/25 group-hover:scale-105 transition-transform shrink-0">
                     <Sparkles class="w-5 h-5 text-white animate-pulse" />
                   </div>
                 </div>
@@ -137,7 +137,7 @@ const navRules = [
                 :class="[
                   $route.path === item.path
                     ? (themeStore.isDark ? 'bg-emerald-500/20 text-emerald-300 shadow-xs border border-emerald-500/30' : 'bg-emerald-600 text-white shadow-md shadow-emerald-500/25')
-                    : (themeStore.isDark ? 'text-zinc-400 hover:text-white hover:bg-white/[0.06]' : 'text-zinc-600 hover:text-zinc-900 hover:bg-emerald-50/60')
+                    : (themeStore.isDark ? 'text-zinc-400 hover:text-white hover:bg-white/6' : 'text-zinc-600 hover:text-zinc-900 hover:bg-emerald-50/60')
                 ]"
               >
                 <div class="w-11 h-10 shrink-0 flex items-center justify-center">
@@ -175,7 +175,7 @@ const navRules = [
                 :class="[
                   $route.path === item.path
                     ? (themeStore.isDark ? 'bg-emerald-500/20 text-emerald-300 shadow-xs border border-emerald-500/30' : 'bg-emerald-600 text-white shadow-md shadow-emerald-500/25')
-                    : (themeStore.isDark ? 'text-zinc-400 hover:text-white hover:bg-white/[0.06]' : 'text-zinc-600 hover:text-zinc-900 hover:bg-emerald-50/60')
+                    : (themeStore.isDark ? 'text-zinc-400 hover:text-white hover:bg-white/6' : 'text-zinc-600 hover:text-zinc-900 hover:bg-emerald-50/60')
                 ]"
               >
                 <div class="w-11 h-10 shrink-0 flex items-center justify-center">
@@ -213,7 +213,7 @@ const navRules = [
                 :class="[
                   (item.path === '/rules' ? ($route.path === '/rules' || $route.path.startsWith('/rules/edit') || $route.path.startsWith('/rules/discovery') || $route.path.startsWith('/rules/detail')) : $route.path === item.path)
                     ? (themeStore.isDark ? 'bg-emerald-500/20 text-emerald-300 shadow-xs border border-emerald-500/30' : 'bg-emerald-600 text-white shadow-md shadow-emerald-500/25')
-                    : (themeStore.isDark ? 'text-zinc-400 hover:text-white hover:bg-white/[0.06]' : 'text-zinc-600 hover:text-zinc-900 hover:bg-emerald-50/60')
+                    : (themeStore.isDark ? 'text-zinc-400 hover:text-white hover:bg-white/6' : 'text-zinc-600 hover:text-zinc-900 hover:bg-emerald-50/60')
                 ]"
               >
                 <div class="w-11 h-10 shrink-0 flex items-center justify-center">
@@ -237,13 +237,13 @@ const navRules = [
       </div>
 
       <!-- 底部控制区（设置、主题切换 & 折叠控制） -->
-      <div class="space-y-1 pt-2 border-t border-emerald-100/60 dark:border-white/[0.06]">
+      <div class="space-y-1 pt-2 border-t border-emerald-100/60 dark:border-white/6">
         <!-- 系统设置 -->
         <n-tooltip :disabled="!isCollapsed" trigger="hover" placement="right">
           <template #trigger>
             <div
               @click="showSettingsModal = true"
-              class="flex items-center w-full h-10 rounded-xl text-xs font-semibold cursor-pointer overflow-hidden transition-colors select-none text-zinc-600 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white hover:bg-emerald-50/80 dark:hover:bg-white/[0.06]"
+              class="flex items-center w-full h-10 rounded-xl text-xs font-semibold cursor-pointer overflow-hidden transition-colors select-none text-zinc-600 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white hover:bg-emerald-50/80 dark:hover:bg-white/6"
             >
               <div class="w-11 h-10 shrink-0 flex items-center justify-center">
                 <Settings class="w-4 h-4 text-cyan-500" />
@@ -310,12 +310,12 @@ const navRules = [
       <!-- 顶部固定 Header (Apple Segmented Glass Tab 多标签栏) -->
       <header
         class="sticky top-0 z-20 h-10 sm:h-11 border-b px-2 sm:px-4 flex items-center justify-between min-w-0 select-none backdrop-blur-xl transition-colors duration-200"
-        :class="themeStore.isDark ? 'bg-[#0a1814]/80 border-white/[0.06]' : 'bg-white/80 border-emerald-100/60'"
+        :class="themeStore.isDark ? 'bg-[#0a1814]/80 border-white/6' : 'bg-white/80 border-emerald-100/60'"
       >
         <!-- 移动端 Logo / 站点标识 -->
-        <div class="flex items-center gap-1.5 lg:hidden flex-shrink-0 mr-1.5">
+        <div class="flex items-center gap-1.5 lg:hidden shrink-0 mr-1.5">
           <router-link to="/" class="flex items-center space-x-1.5">
-            <div class="w-6 h-6 rounded-lg bg-gradient-to-tr from-emerald-600 to-teal-500 flex items-center justify-center shadow-xs">
+            <div class="w-6 h-6 rounded-lg bg-linear-to-tr from-emerald-600 to-teal-500 flex items-center justify-center shadow-xs">
               <Sparkles class="w-3.5 h-3.5 text-white" />
             </div>
             <span class="text-xs font-black tracking-tight gradient-flux font-['Plus_Jakarta_Sans']">FluxForge</span>
@@ -334,7 +334,7 @@ const navRules = [
                   ? 'bg-emerald-500/25 text-emerald-300 border-emerald-500/40 shadow-xs font-bold'
                   : 'bg-emerald-600 text-white border-emerald-600 shadow-xs font-bold')
               : (themeStore.isDark
-                  ? 'bg-white/[0.03] hover:bg-white/[0.08] text-zinc-400 hover:text-zinc-200 border-white/[0.05]'
+                  ? 'bg-white/3 hover:bg-white/8 text-zinc-400 hover:text-zinc-200 border-white/5'
                   : 'bg-emerald-50/60 hover:bg-emerald-100/70 text-zinc-600 hover:text-zinc-900 border-emerald-200/40')"
           >
             <!-- 激活指示微型高亮圆点 -->

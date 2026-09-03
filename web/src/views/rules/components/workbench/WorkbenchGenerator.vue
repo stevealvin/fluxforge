@@ -12,8 +12,14 @@ import {
   Video,
   Image as ImageIcon,
   BookOpen,
-  CheckCircle2
+  CheckCircle2,
+  Eye,
+  Trash2,
+  FileCode,
+  Check,
+  Copy
 } from '@lucide/vue'
+import CodeEditor from '@/components/CodeEditor/index.vue'
 
 const props = defineProps<{
   code: string
@@ -55,6 +61,44 @@ const autoSniffed = ref(false)
 
 const generating = ref(false)
 const generatedResult = ref<GeneratedRuleResult | null>(null)
+
+// 源码查看模态框
+const showSourceModal = ref(false)
+const sourceModalContent = ref('')
+const sourceModalTitle = ref('')
+
+const openSourceViewer = (content: string, title: string) => {
+  sourceModalContent.value = content
+  sourceModalTitle.value = title
+  showSourceModal.value = true
+}
+
+const formatSize = (str: string): string => {
+  const bytes = new TextEncoder().encode(str).length
+  return bytes >= 1024 ? (bytes / 1024).toFixed(1) + ' KB' : bytes + ' B'
+}
+
+const detectContentType = (str: string): string => {
+  const trimmed = str.trim()
+  if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+    try { JSON.parse(trimmed); return 'JSON' } catch {}
+  }
+  if (/<!DOCTYPE|<html|<head|<body/i.test(trimmed)) return 'HTML'
+  return 'Text'
+}
+
+const clearSample = (type: 'list' | 'detail' | 'parse') => {
+  if (type === 'list') listHtml.value = ''
+  else if (type === 'detail') detailHtml.value = ''
+  else parseHtml.value = ''
+}
+
+// 暴露 HTML 数据给父组件（供诊断面板使用）
+defineExpose({
+  listHtml,
+  detailHtml,
+  parseHtml
+})
 
 // 智能嗅探详情页链接
 const sniffDetailUrl = (rawContent: string, base: string): string => {
@@ -200,8 +244,7 @@ const handleGenerateAiRule = async () => {
     generatedResult.value = result
 
     if (result?.code) {
-      emit('update:code', result.code)
-      message.success('✨ 规则代码已由 AI 成功生成并同步至编辑器！')
+      message.success('✨ 规则代码已由 AI 成功生成！请在下方预览并确认替换')
     }
   } catch (err: any) {
     message.error(`AI 生成失败: ${err.message || '请检查模型状态'}`)
@@ -210,9 +253,21 @@ const handleGenerateAiRule = async () => {
   }
 }
 
-// 应用生成的规则
+// 复制生成的代码
+const copyGeneratedCode = async () => {
+  if (!generatedResult.value?.code) return
+  try {
+    await navigator.clipboard.writeText(generatedResult.value.code)
+    message.success('已复制生成的规则代码')
+  } catch {
+    message.error('复制失败，请手动选择复制')
+  }
+}
+
+// 应用生成的规则 (一键替换至编辑器)
 const applyGeneratedRule = (andTest = false) => {
   if (!generatedResult.value) return
+  emit('update:code', generatedResult.value.code)
   emit('apply', {
     code: generatedResult.value.code,
     baseUrl: aiTargetUrl.value,
@@ -220,6 +275,7 @@ const applyGeneratedRule = (andTest = false) => {
     name: generatedResult.value.name,
     description: generatedResult.value.description
   })
+  message.success('已将生成的规则代码应用至编辑器')
   if (andTest) {
     emit('switchToTest')
   }
@@ -279,6 +335,13 @@ watch(
             抓取采样
           </n-button>
         </div>
+        <div v-if="listHtml" class="flex items-center gap-1.5 text-[10px] mt-1">
+          <CheckCircle2 class="w-3 h-3 text-emerald-500 shrink-0" />
+          <span class="text-emerald-600 dark:text-emerald-400 font-bold">已采样</span>
+          <span class="text-zinc-400 font-mono">({{ formatSize(listHtml) }} · {{ detectContentType(listHtml) }})</span>
+          <button class="text-blue-500 hover:text-blue-600 font-bold cursor-pointer hover:underline" @click="openSourceViewer(listHtml, '列表页源码')">查看</button>
+          <button class="text-zinc-400 hover:text-red-500 cursor-pointer" @click="clearSample('list')"><Trash2 class="w-2.5 h-2.5" /></button>
+        </div>
       </div>
 
       <!-- 2. 详情/选集页 URL -->
@@ -311,6 +374,13 @@ watch(
             采样
           </n-button>
         </div>
+        <div v-if="detailHtml" class="flex items-center gap-1.5 text-[10px] mt-1">
+          <CheckCircle2 class="w-3 h-3 text-emerald-500 shrink-0" />
+          <span class="text-emerald-600 dark:text-emerald-400 font-bold">已采样</span>
+          <span class="text-zinc-400 font-mono">({{ formatSize(detailHtml) }} · {{ detectContentType(detailHtml) }})</span>
+          <button class="text-blue-500 hover:text-blue-600 font-bold cursor-pointer hover:underline" @click="openSourceViewer(detailHtml, '详情页源码')">查看</button>
+          <button class="text-zinc-400 hover:text-red-500 cursor-pointer" @click="clearSample('detail')"><Trash2 class="w-2.5 h-2.5" /></button>
+        </div>
       </div>
 
       <!-- 3. 播放/正文页 URL -->
@@ -339,6 +409,13 @@ watch(
           >
             采样
           </n-button>
+        </div>
+        <div v-if="parseHtml" class="flex items-center gap-1.5 text-[10px] mt-1">
+          <CheckCircle2 class="w-3 h-3 text-emerald-500 shrink-0" />
+          <span class="text-emerald-600 dark:text-emerald-400 font-bold">已采样</span>
+          <span class="text-zinc-400 font-mono">({{ formatSize(parseHtml) }} · {{ detectContentType(parseHtml) }})</span>
+          <button class="text-blue-500 hover:text-blue-600 font-bold cursor-pointer hover:underline" @click="openSourceViewer(parseHtml, '播放页源码')">查看</button>
+          <button class="text-zinc-400 hover:text-red-500 cursor-pointer" @click="clearSample('parse')"><Trash2 class="w-2.5 h-2.5" /></button>
         </div>
       </div>
     </div>
@@ -427,16 +504,37 @@ watch(
       </div>
     </div>
 
-    <!-- 3. AI 生成成功庆祝卡片 -->
+    <!-- 3. AI 生成规则代码预览与应用卡片 -->
     <div v-if="generatedResult?.code" class="p-3.5 rounded-2xl bg-gradient-to-br from-emerald-500/10 via-teal-500/5 to-emerald-500/15 border border-emerald-500/30 space-y-2.5 shadow-xs shrink-0">
       <div class="flex items-center justify-between">
         <div class="flex items-center gap-1.5 text-xs font-bold text-emerald-600 dark:text-emerald-400">
           <CheckCircle2 class="w-4 h-4 text-emerald-500" />
-          <span>新规则已成功生成并同步至编辑器！</span>
+          <span>规则代码已成功生成</span>
         </div>
-        <span class="text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 font-bold">
-          Ready
-        </span>
+        <div class="flex items-center gap-1.5">
+          <n-button
+            size="tiny"
+            secondary
+            class="!rounded-lg text-xs"
+            @click="copyGeneratedCode"
+          >
+            <template #icon>
+              <Copy class="w-3 h-3" />
+            </template>
+            <span>复制</span>
+          </n-button>
+          <n-button
+            size="tiny"
+            type="primary"
+            class="!rounded-lg !font-bold text-xs shadow-xs"
+            @click="applyGeneratedRule(false)"
+          >
+            <template #icon>
+              <Check class="w-3 h-3" />
+            </template>
+            <span>一键替换至编辑器</span>
+          </n-button>
+        </div>
       </div>
 
       <div class="text-xs bg-white/80 dark:bg-zinc-900/80 p-3 rounded-xl space-y-1.5 border border-emerald-100/60 dark:border-white/5 backdrop-blur-xs">
@@ -452,25 +550,28 @@ watch(
         </p>
       </div>
 
+      <!-- 生成规则代码预览 -->
+      <div class="h-60 rounded-xl overflow-hidden border border-emerald-100/60 dark:border-white/5 shadow-2xs">
+        <CodeEditor
+          :model-value="generatedResult.code"
+          model-id="workbench_generated_code_preview"
+          height="100%"
+          :read-only="true"
+          class="w-full h-full"
+        />
+      </div>
+
       <div class="flex gap-2 pt-0.5">
         <n-button
           size="small"
-          secondary
-          class="flex-1 !rounded-xl text-xs font-bold"
-          @click="applyGeneratedRule(false)"
-        >
-          更新元数据到表单
-        </n-button>
-        <n-button
-          size="small"
           type="primary"
-          class="flex-1 !rounded-xl text-xs font-bold shadow-md shadow-emerald-500/20"
+          class="w-full !rounded-xl text-xs font-bold shadow-md shadow-emerald-500/20"
           @click="applyGeneratedRule(true)"
         >
           <template #icon>
             <Play class="w-3 h-3 fill-current" />
           </template>
-          <span>立即沙箱测试 ➔</span>
+          <span>一键替换并立即沙箱测试 ➔</span>
         </n-button>
       </div>
     </div>
@@ -490,5 +591,26 @@ watch(
         v2.0
       </span>
     </div>
+
+    <!-- 源码查看模态框 (Naive UI n-modal) -->
+    <n-modal
+      v-model:show="showSourceModal"
+      preset="card"
+      :title="sourceModalTitle"
+      style="width: 94vw; max-width: 1400px; height: 86vh; display: flex; flex-direction: column;"
+      class="!rounded-2xl shadow-2xl"
+      :segmented="{ content: 'soft' }"
+      content-style="flex: 1; min-height: 0; padding: 0;"
+    >
+      <div class="h-full w-full min-h-0">
+        <CodeEditor
+          v-model="sourceModalContent"
+          model-id="source-viewer"
+          height="100%"
+          :read-only="true"
+          :auto-detect-language="true"
+        />
+      </div>
+    </n-modal>
   </div>
 </template>

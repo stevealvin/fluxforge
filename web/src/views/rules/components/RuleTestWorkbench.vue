@@ -151,7 +151,7 @@ const executeAction = async (targetAction = activeAction.value) => {
   }
 
   try {
-    const res = await http.post('/rules/execute', {
+    const res: any = await http.post('/rules/run', {
       code: props.code,
       action: targetAction,
       params: requestParams
@@ -160,7 +160,7 @@ const executeAction = async (targetAction = activeAction.value) => {
     const duration = Math.round(performance.now() - startTime)
     executionTimeMs.value = duration
     statusCode.value = 200
-    rawResult.value = res
+    rawResult.value = res?.result !== undefined ? res.result : res
   } catch (error: any) {
     const duration = Math.round(performance.now() - startTime)
     executionTimeMs.value = duration

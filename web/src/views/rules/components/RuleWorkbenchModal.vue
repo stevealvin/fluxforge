@@ -40,9 +40,18 @@ const emit = defineEmits<{
 const currentTab = ref<'ai' | 'test' | 'debug'>('ai')
 const isFullscreen = ref(false)
 
+const generatorRef = ref<InstanceType<typeof WorkbenchGenerator> | null>(null)
 const testerRef = ref<InstanceType<typeof WorkbenchTester> | null>(null)
 const debuggerRef = ref<InstanceType<typeof WorkbenchDebugger> | null>(null)
 const lastDiagnosticInfo = ref<{ error?: string; logs?: any[]; code?: string } | null>(null)
+
+// 从 Generator 采样数据中取出最相关的 HTML 传递给 Debugger
+const debugTargetHtml = computed(() => {
+  const gen = generatorRef.value
+  if (!gen) return ''
+  // 优先使用列表页 HTML（discovery 是最常见的诊断场景）
+  return gen.listHtml || gen.detailHtml || gen.parseHtml || ''
+})
 
 const handleStartDiagnostic = async (info: { error?: string; logs?: any[]; code?: string }) => {
   lastDiagnosticInfo.value = info
@@ -77,9 +86,6 @@ defineExpose({
         <div class="flex items-center gap-1.5 min-w-0">
           <span class="text-xs sm:text-sm font-black tracking-tight text-zinc-900 dark:text-white truncate">
             AI 智能工作台
-          </span>
-          <span class="px-2 py-0.5 text-[10px] font-mono font-bold rounded-full bg-gradient-to-r from-emerald-500/10 to-teal-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 shrink-0">
-            Studio
           </span>
         </div>
       </div>
@@ -150,9 +156,10 @@ defineExpose({
 
     <!-- 工作台主体分栏内容 -->
     <div class="flex-1 flex flex-col min-h-0 h-full p-3.5 overflow-hidden">
-      <!-- TAB 1: 🚀 AI 规则生成器 -->
+      <!-- TAB 1: 🚀 AI 规则生成器 (v-show 保持组件存活，以便其他 Tab 读取采样数据) -->
       <WorkbenchGenerator
-        v-if="currentTab === 'ai'"
+        v-show="currentTab === 'ai'"
+        ref="generatorRef"
         :code="props.code"
         :base-url="props.baseUrl"
         :rule-type="props.ruleType"
@@ -165,7 +172,7 @@ defineExpose({
 
       <!-- TAB 2: ⚡ 沙箱测试与生命周期调试 -->
       <WorkbenchTester
-        v-else-if="currentTab === 'test'"
+        v-show="currentTab === 'test'"
         ref="testerRef"
         :code="props.code"
         :base-url="props.baseUrl"
@@ -175,11 +182,12 @@ defineExpose({
 
       <!-- TAB 3: 🩺 AI 智能诊断与差量修复 -->
       <WorkbenchDebugger
-        v-else-if="currentTab === 'debug'"
+        v-show="currentTab === 'debug'"
         ref="debuggerRef"
         :code="props.code"
         :base-url="props.baseUrl"
         :diagnostic-info="lastDiagnosticInfo"
+        :target-html="debugTargetHtml"
         @update:code="(val) => emit('update:code', val)"
       />
     </div>

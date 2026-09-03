@@ -27,7 +27,7 @@ export const ruleService = {
   async getRules(): Promise<RuleSchema[]> {
     try {
       const res: any = await http.get('/rules')
-      return res?.data || []
+      return Array.isArray(res) ? res : res?.data || []
     } catch (e) {
       console.error('获取规则列表失败:', e)
       return []
@@ -63,29 +63,31 @@ export const ruleService = {
   },
 
   /**
-   * 保存规则 (新增 / 更新)
+   * 保存规则 (新增 POST / 更新 PUT)
    */
   async saveRule(data: Partial<RuleSchema> & { id?: number | string }): Promise<RuleSchema> {
-    const res: any = await http.post('/rules', data)
-    return res
+    if (data.id) {
+      return http.put(`/rules/${data.id}`, data)
+    }
+    return http.post('/rules', data)
   },
 
   /**
-   * 删除规则
+   * 删除规则 (DELETE 204 No Content)
    */
   async deleteRule(id: number | string): Promise<boolean> {
-    const res: any = await http.delete(`/rules/${id}`)
-    return Boolean(res?.success)
+    await http.delete(`/rules/${id}`)
+    return true
   },
 
   /**
-   * 切换启用状态
+   * 切换启用状态 (PATCH)
    */
   async toggleRuleEnabled(id: number | string, enabled: boolean | number): Promise<boolean> {
-    const res: any = await http.patch(`/rules/${id}/toggle`, {
+    await http.patch(`/rules/${id}/toggle`, {
       enabled: enabled ? 1 : 0
     })
-    return Boolean(res?.success)
+    return true
   },
 
   // ==========================================
@@ -96,14 +98,11 @@ export const ruleService = {
    * 执行 discovery (发现/分类列表)
    */
   async runDiscovery(rule: RuleSchema, params: { category?: string; page?: number } = {}): Promise<DiscoveryResult> {
-    const res: any = await http.post('/rules/execute', {
-      ruleId: rule.id,
-      code: rule.code,
+    const res: any = await http.post(`/rules/${rule.id}/execute`, {
       action: 'discovery',
       params: {
         category: params.category || '',
-        page: params.page || 1,
-        baseUrl: rule.baseUrl
+        page: params.page || 1
       }
     })
 
@@ -118,14 +117,11 @@ export const ruleService = {
    * 执行 search (搜索)
    */
   async runSearch(rule: RuleSchema, params: { keyword: string; page?: number } = { keyword: '' }): Promise<SearchResult> {
-    const res: any = await http.post('/rules/execute', {
-      ruleId: rule.id,
-      code: rule.code,
+    const res: any = await http.post(`/rules/${rule.id}/execute`, {
       action: 'search',
       params: {
         keyword: params.keyword,
-        page: params.page || 1,
-        baseUrl: rule.baseUrl
+        page: params.page || 1
       }
     })
 
@@ -139,14 +135,11 @@ export const ruleService = {
    * 执行 detail (获取媒体详情)
    */
   async runDetail(rule: RuleSchema, params: { key: string; item?: Partial<MediaItem> }): Promise<MediaDetail> {
-    const res: any = await http.post('/rules/execute', {
-      ruleId: rule.id,
-      code: rule.code,
+    const res: any = await http.post(`/rules/${rule.id}/execute`, {
       action: 'detail',
       params: {
         key: params.key,
-        item: params.item,
-        baseUrl: rule.baseUrl
+        item: params.item
       }
     })
 
@@ -169,20 +162,13 @@ export const ruleService = {
    * 执行 parse (动态解析分集播放直链或小说正文)
    */
   async runParse(rule: RuleSchema, params: { key: string; groupName?: string }): Promise<ParseResult> {
-    const res: any = await http.post('/rules/execute', {
-      ruleId: rule.id,
-      code: rule.code,
+    const res: any = await http.post(`/rules/${rule.id}/execute`, {
       action: 'parse',
       params: {
         key: params.key,
-        groupName: params.groupName || '',
-        baseUrl: rule.baseUrl
+        groupName: params.groupName || ''
       }
     })
-
-    if (typeof res === 'string') {
-      return res.startsWith('http') ? { playUrl: res } : { content: res }
-    }
 
     return {
       playUrl: res?.playUrl || '',
