@@ -181,7 +181,7 @@ const handleFetchListHtml = async () => {
     const res: any = await http.post('/rules/fetch-page', {
       url: targetUrl.value.trim()
     })
-    const data = res?.data || res?.html || ''
+    const data = res?.data || ''
     if (data) {
       listHtml.value = data.slice(0, 30000)
       message.success(`列表数据抓取成功 (${(data.length / 1024).toFixed(1)} KB)`)
@@ -216,7 +216,7 @@ const handleFetchDetailHtml = async () => {
     const res: any = await http.post('/rules/fetch-page', {
       url: detailUrl.value.trim()
     })
-    const data = res?.data || res?.html || ''
+    const data = res?.data || ''
     if (data) {
       detailHtml.value = data.slice(0, 30000)
       message.success(`详情数据抓取成功 (${(data.length / 1024).toFixed(1)} KB)`)
@@ -242,7 +242,7 @@ const handleFetchParseHtml = async () => {
     const res: any = await http.post('/rules/fetch-page', {
       url: parseUrl.value.trim()
     })
-    const data = res?.data || res?.html || ''
+    const data = res?.data || ''
     if (data) {
       parseHtml.value = data.slice(0, 25000)
       message.success(`播放解析数据抓取成功 (${(data.length / 1024).toFixed(1)} KB)`)

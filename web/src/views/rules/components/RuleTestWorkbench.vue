@@ -240,12 +240,12 @@ const handleFetchDebugHtml = async () => {
   }
   fetchingDebugHtml.value = true
   try {
-    const res: any = await http.post('/rules/fetch-html', {
+    const res: any = await http.post('/rules/fetch-page', {
       url: debugTargetUrl.value.trim()
     })
-    if (res?.html) {
-      debugTargetHtml.value = res.html.slice(0, 25000)
-      message.success(`已成功抓取目标页面源码 (${(res.html.length / 1024).toFixed(1)} KB)`)
+    if (res?.data) {
+      debugTargetHtml.value = res.data.slice(0, 25000)
+      message.success(`已成功抓取目标页面源码 (${(res.data.length / 1024).toFixed(1)} KB)`)
     }
   } catch (err: any) {
     message.error(err.response?.data?.message || err.message || '抓取网页源码失败')

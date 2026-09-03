@@ -5,7 +5,7 @@ import http from '@/utils/http'
 import { useAiSettingsStore, type GeneratedRuleResult } from '@/stores/aiSettings'
 import type { MediaType } from '@/types/rule'
 import {
-  Sparkles,
+  WandSparkles,
   Play,
   Globe,
   Bot,
@@ -184,8 +184,8 @@ const fetchUrlData = async (url: string, type: 'list' | 'detail' | 'parse') => {
   loadingMap[type].value = true
 
   try {
-    const res: any = await http.post('/rules/fetch-content', { url })
-    const content = typeof res === 'string' ? res : res.content || JSON.stringify(res)
+    const res: any = await http.post('/rules/fetch-page', { url })
+    const content = typeof res === 'string' ? res : res.data || JSON.stringify(res)
 
     if (type === 'list') {
       listHtml.value = content
@@ -420,42 +420,45 @@ watch(
       </div>
     </div>
 
-    <!-- 2. 媒体类型视觉卡片选择 -->
+    <!-- 2. 目标媒体类型：使用紧凑分段控件，避免三张卡片挤占工作台纵向空间 -->
     <div class="rounded-2xl border border-emerald-100/70 dark:border-white/5 bg-white/70 dark:bg-white/[0.02] p-3.5 space-y-3 shadow-2xs">
       <div class="flex items-center justify-between pb-1 border-b border-emerald-100/40 dark:border-white/5">
         <label class="text-xs font-bold text-zinc-800 dark:text-zinc-200">目标媒体类型</label>
         <span class="text-[10px] text-zinc-400">选择适用场景</span>
       </div>
 
-      <div class="grid grid-cols-3 gap-2">
+      <div class="grid grid-cols-3 gap-1 rounded-xl bg-zinc-100/80 dark:bg-white/[0.04] p-1" role="group" aria-label="目标媒体类型">
         <button
           type="button"
-          class="flex flex-col items-center justify-center p-2.5 rounded-xl border text-xs transition-all gap-1 cursor-pointer"
-          :class="aiMediaType === 'video' ? 'bg-rose-50/80 dark:bg-rose-950/30 border-rose-400 dark:border-rose-500 text-rose-600 dark:text-rose-400 font-bold shadow-xs scale-[1.02]' : 'border-zinc-200/60 dark:border-white/5 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-white/5'"
+          class="flex min-w-0 items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-xs transition-all cursor-pointer"
+          :class="aiMediaType === 'video' ? 'bg-white dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 font-bold shadow-xs ring-1 ring-rose-200/80 dark:ring-rose-500/30' : 'text-zinc-500 hover:bg-white/70 dark:hover:bg-white/[0.06]'"
+          :aria-pressed="aiMediaType === 'video'"
           @click="aiMediaType = 'video'"
         >
-          <Video class="w-4 h-4" />
-          <span>视频 (Video)</span>
+          <Video class="w-3.5 h-3.5 shrink-0" />
+          <span class="truncate">视频</span>
         </button>
 
         <button
           type="button"
-          class="flex flex-col items-center justify-center p-2.5 rounded-xl border text-xs transition-all gap-1 cursor-pointer"
-          :class="aiMediaType === 'picture' ? 'bg-amber-50/80 dark:bg-amber-950/30 border-amber-400 dark:border-amber-500 text-amber-600 dark:text-amber-400 font-bold shadow-xs scale-[1.02]' : 'border-zinc-200/60 dark:border-white/5 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-white/5'"
+          class="flex min-w-0 items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-xs transition-all cursor-pointer"
+          :class="aiMediaType === 'picture' ? 'bg-white dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 font-bold shadow-xs ring-1 ring-amber-200/80 dark:ring-amber-500/30' : 'text-zinc-500 hover:bg-white/70 dark:hover:bg-white/[0.06]'"
+          :aria-pressed="aiMediaType === 'picture'"
           @click="aiMediaType = 'picture'"
         >
-          <ImageIcon class="w-4 h-4" />
-          <span>图片 (Picture)</span>
+          <ImageIcon class="w-3.5 h-3.5 shrink-0" />
+          <span class="truncate">图片</span>
         </button>
 
         <button
           type="button"
-          class="flex flex-col items-center justify-center p-2.5 rounded-xl border text-xs transition-all gap-1 cursor-pointer"
-          :class="aiMediaType === 'novel' ? 'bg-cyan-50/80 dark:bg-cyan-950/30 border-cyan-400 dark:border-cyan-500 text-cyan-600 dark:text-cyan-400 font-bold shadow-xs scale-[1.02]' : 'border-zinc-200/60 dark:border-white/5 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-white/5'"
+          class="flex min-w-0 items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-xs transition-all cursor-pointer"
+          :class="aiMediaType === 'novel' ? 'bg-white dark:bg-cyan-950/40 text-cyan-600 dark:text-cyan-400 font-bold shadow-xs ring-1 ring-cyan-200/80 dark:ring-cyan-500/30' : 'text-zinc-500 hover:bg-white/70 dark:hover:bg-white/[0.06]'"
+          :aria-pressed="aiMediaType === 'novel'"
           @click="aiMediaType = 'novel'"
         >
-          <BookOpen class="w-4 h-4" />
-          <span>小说 (Novel)</span>
+          <BookOpen class="w-3.5 h-3.5 shrink-0" />
+          <span class="truncate">小说</span>
         </button>
       </div>
 
@@ -497,9 +500,9 @@ watch(
           @click="handleGenerateAiRule"
         >
           <template #icon>
-            <Sparkles class="w-4 h-4 text-white animate-pulse" />
+            <WandSparkles class="w-4 h-4 text-white" />
           </template>
-          <span>🚀 一键 AI 分析网页并生成规则代码</span>
+          <span>一键 AI 分析网页并生成规则代码</span>
         </n-button>
       </div>
     </div>

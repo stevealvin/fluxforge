@@ -5,7 +5,7 @@ import { useAiSettingsStore } from '@/stores/aiSettings'
 import CodeEditor from '@/components/CodeEditor/index.vue'
 import {
   Wrench,
-  Sparkles,
+  Stethoscope,
   Check,
   Copy,
   AlertCircle,
@@ -138,25 +138,24 @@ defineExpose({
       </div>
 
       <div class="space-y-1">
-        <label class="text-xs text-zinc-600 dark:text-zinc-400">问题现象或异常描述</label>
         <n-input
           v-model:value="debugUserFeedback"
           type="textarea"
           :autosize="{ minRows: 2, maxRows: 3 }"
+          aria-label="问题现象或异常描述"
           placeholder="请描述遇到的问题，例如: 图片未补全协议、正文提取为空、选择器失效..."
           class="!rounded-xl text-xs"
         />
       </div>
 
-      <!-- 快捷标签 -->
+      <!-- 保留快捷标签本身，移除标题以压缩诊断面板空间 -->
       <div class="space-y-1">
-        <span class="text-[10px] text-zinc-400 font-medium">快捷问题标签:</span>
         <div class="flex flex-wrap gap-1.5">
           <button
             v-for="tag in quickProblemTags"
             :key="tag"
             type="button"
-            class="px-2.5 py-1 text-[10px] rounded-lg bg-violet-50/60 dark:bg-violet-950/20 border border-violet-200/60 dark:border-violet-800/30 text-violet-700 dark:text-violet-300 hover:bg-violet-500/15 transition-colors cursor-pointer"
+            class="px-2.5 py-1 text-[10px] rounded-lg bg-rose-50/70 dark:bg-rose-950/25 border border-rose-200/70 dark:border-rose-800/35 text-rose-700 dark:text-rose-300 hover:bg-rose-500/15 transition-colors cursor-pointer"
             @click="debugUserFeedback = tag"
           >
             {{ tag }}
@@ -181,14 +180,14 @@ defineExpose({
       <div class="pt-1">
         <n-button
           type="primary"
-          class="w-full !rounded-xl !font-bold !py-3.5 shadow-md shadow-indigo-500/20 !bg-gradient-to-r !from-indigo-600 !via-purple-600 !to-pink-600 text-white"
+          class="!bg-gradient-to-r !from-teal-600 !via-emerald-500 !to-cyan-500"
           :loading="debugging"
           @click="handleStartDebugging"
         >
           <template #icon>
-            <Sparkles class="w-4 h-4 text-white animate-pulse" />
+            <Stethoscope class="w-4 h-4 text-white" />
           </template>
-          <span>🩺 开始 AI 诊断并推导修复代码</span>
+          <span>开始 AI 诊断并推导修复代码</span>
         </n-button>
       </div>
     </div>
