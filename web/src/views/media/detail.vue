@@ -24,17 +24,17 @@ const loadDetail = async () => {
   errorMsg.value = ''
 
   const ruleId = Number(route.query.ruleId)
-  const key = route.query.key as string
+  const url = (route.query.url || route.query.key) as string
 
-  if (!ruleId || !key) {
-    errorMsg.value = '缺少必要的请求参数 (ruleId 或 key)'
+  if (!ruleId || !url) {
+    errorMsg.value = '缺少必要的请求参数 (ruleId 或 url)'
     loading.value = false
     executing.value = false
     return
   }
 
   // 获取预热数据
-  const preheat = mediaContext.getContext(ruleId, key)
+  const preheat = mediaContext.getContext(ruleId, url)
   if (preheat && !detail.value) {
     detail.value = {
       title: preheat.title || '',
@@ -61,7 +61,7 @@ const loadDetail = async () => {
     }
 
     const res = await ruleService.runDetail(rule.value, {
-      key,
+      url,
       item: preheat
     })
 
@@ -76,19 +76,19 @@ const loadDetail = async () => {
 
 const goToRelated = (item: MediaItem) => {
   const ruleId = Number(route.query.ruleId)
-  if (ruleId && item.key) {
-    mediaContext.setContext(ruleId, item.key, item)
+  if (ruleId && item.url) {
+    mediaContext.setContext(ruleId, item.url, item)
     router.push({
       path: '/media/detail',
       query: {
         ruleId,
-        key: item.key
+        url: item.url
       }
     })
   }
 }
 
-watch([() => route.query.key, () => route.query.ruleId], () => {
+watch([() => route.query.url, () => route.query.key, () => route.query.ruleId], () => {
   loadDetail()
 })
 

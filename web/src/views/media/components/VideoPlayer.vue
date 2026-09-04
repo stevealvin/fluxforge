@@ -14,23 +14,23 @@ const emit = defineEmits<{
   (e: 'select', item: MediaItem): void
 }>()
 
-const activeEpisodeKey = ref<string>('')
+const activeEpisodeUrl = ref<string>('')
 const currentVideoUrl = ref<string>(props.detail.playUrl || '')
 const parsing = ref(false)
 const parseError = ref('')
 
 // 若有选集分组，默认高亮第一集
 if (props.detail.groups && props.detail.groups.length > 0 && props.detail.groups[0].items.length > 0) {
-  activeEpisodeKey.value = props.detail.groups[0].items[0].key
+  activeEpisodeUrl.value = props.detail.groups[0].items[0].url
 }
 
 const handleEpisodeClick = async (ep: MediaEpisode, groupName: string) => {
-  activeEpisodeKey.value = ep.key
+  activeEpisodeUrl.value = ep.url
   parseError.value = ''
 
-  // 如果 ep.key 本身就是直链或包含 .m3u8 / .mp4
-  if (ep.key.startsWith('http') && (ep.key.includes('.m3u8') || ep.key.includes('.mp4'))) {
-    currentVideoUrl.value = ep.key
+  // 如果 ep.url 本身就是直链或包含 .m3u8 / .mp4
+  if (ep.url.startsWith('http') && (ep.url.includes('.m3u8') || ep.url.includes('.mp4'))) {
+    currentVideoUrl.value = ep.url
     return
   }
 
@@ -39,7 +39,7 @@ const handleEpisodeClick = async (ep: MediaEpisode, groupName: string) => {
     parsing.value = true
     try {
       const res = await ruleService.runParse(props.rule, {
-        key: ep.key,
+        url: ep.url,
         groupName
       })
       if (res.playUrl) {
@@ -116,10 +116,10 @@ const handleEpisodeClick = async (ep: MediaEpisode, groupName: string) => {
             <div class="flex flex-wrap gap-2 max-h-60 overflow-y-auto pr-1">
               <n-button
                 v-for="ep in group.items"
-                :key="ep.key"
+                :key="ep.url"
                 size="small"
-                :type="activeEpisodeKey === ep.key ? 'primary' : 'default'"
-                :secondary="activeEpisodeKey !== ep.key"
+                :type="activeEpisodeUrl === ep.url ? 'primary' : 'default'"
+                :secondary="activeEpisodeUrl !== ep.url"
                 class="!rounded-xl !font-semibold"
                 @click="handleEpisodeClick(ep, group.name)"
               >
@@ -166,7 +166,7 @@ const handleEpisodeClick = async (ep: MediaEpisode, groupName: string) => {
         <div class="grid gap-3 sm:gap-4.5 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
           <div
             v-for="(item, idx) in detail.recommendations"
-            :key="item.key || idx"
+            :key="item.url || idx"
             class="group relative flex flex-col rounded-2xl overflow-hidden bg-white/70 dark:bg-white/[0.03] backdrop-blur-md border border-emerald-100/60 dark:border-white/5 hover:-translate-y-1.5 transition-all duration-300 cursor-pointer shadow-2xs hover:shadow-xl hover:shadow-emerald-500/10 active:scale-98"
             @click="emit('select', item)"
           >

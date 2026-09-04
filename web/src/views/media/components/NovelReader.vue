@@ -9,7 +9,7 @@ const props = defineProps<{
   rule?: RuleSchema
 }>()
 
-const activeChapterKey = ref<string>('')
+const activeChapterUrl = ref<string>('')
 const activeChapterTitle = ref<string>('')
 const chapterContent = ref<string>(props.detail.content || '')
 const readingFontSize = ref<'small' | 'medium' | 'large'>('medium')
@@ -23,14 +23,14 @@ if (props.detail.groups && props.detail.groups.length > 0) {
 }
 
 const selectChapter = async (ch: MediaEpisode, autoScroll = true) => {
-  activeChapterKey.value = ch.key
+  activeChapterUrl.value = ch.url
   activeChapterTitle.value = ch.title
   errorMsg.value = ''
 
   if (props.rule) {
     parsing.value = true
     try {
-      const res = await ruleService.runParse(props.rule, { key: ch.key })
+      const res = await ruleService.runParse(props.rule, { url: ch.url })
       if (res.content) {
         chapterContent.value = res.content
         if (autoScroll) {
@@ -48,7 +48,7 @@ const selectChapter = async (ch: MediaEpisode, autoScroll = true) => {
 }
 
 // 翻页上一章 / 下一章
-const currentIndex = () => allChapters.value.findIndex((c) => c.key === activeChapterKey.value)
+const currentIndex = () => allChapters.value.findIndex((c) => c.url === activeChapterUrl.value)
 
 const prevChapter = () => {
   const idx = currentIndex()
@@ -246,10 +246,10 @@ const nextChapter = () => {
         <div class="grid gap-2 grid-cols-1 sm:grid-cols-2 md:grid-cols-3">
           <div
             v-for="item in group.items"
-            :key="item.key"
+            :key="item.url"
             class="glass-panel glass-panel-hover rounded-xl p-3 cursor-pointer transition-all border"
             :class="
-              activeChapterKey === item.key
+              activeChapterUrl === item.url
                 ? 'bg-emerald-600 text-white border-emerald-500 shadow-md shadow-emerald-600/30'
                 : 'text-zinc-700 dark:text-zinc-200'
             "

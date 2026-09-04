@@ -38,6 +38,66 @@ const message = useMessage()
 const showWorkbench = ref(true)
 const showMetaSidebar = ref(false)
 
+// 标准 ESModule defineRule 模板代码
+const RULE_TEMPLATE = `export default defineRule({
+  // 1. 发现列表
+  // 全局可用: baseUrl (站点根域名), axios (HTTP客户端), cheerio (HTML解析器), ua (User-Agent)
+  async discovery({ category = '', page = 1 }) {
+    // TODO: 请求并提取数据
+
+    return {
+      categories: [
+        // { title: '分类标题', url: '/category-url' }
+      ],
+      items: [
+        // { title: '标题', url: '/detail-url', cover: '', desc: '', badge: '' }
+      ],
+      hasMore: false
+    }
+  },
+
+  // 2. 搜索列表
+  async search({ keyword, page = 1 }) {
+    // TODO: 请求并提取搜索结果
+
+    return {
+      items: [
+        // { title: '标题', url: '/detail-url', cover: '', desc: '', badge: '' }
+      ],
+      hasMore: false
+    }
+  },
+
+  // 3. 详情信息与选集
+  async detail({ url, item }) {
+    // TODO: 请求并提取详情数据与选集列表
+
+    return {
+      title: item?.title || '',
+      cover: item?.cover || '',
+      desc: '',
+      tags: [],
+      author: '',
+      groups: [
+        // { name: '默认线路', items: [{ title: '第01集', url: '/play-url' }] }
+      ]
+      // 其它类型直出字段（按需选择）:
+      // playUrl: ''  // 视频播放直链
+      // images: []   // 图集写真大图列表
+      // content: ''  // 小说章节正文
+    }
+  },
+
+  // 4. 直链解析或正文提取
+  async parse({ url, groupName }) {
+    // TODO: 提取分集最终播放直链或小说正文
+
+    return {
+      playUrl: url
+    }
+  }
+})`
+
 const formRef = useTemplateRef('formRef')
 const form = ref<Partial<RuleSchema>>({
   name: '',
@@ -46,54 +106,26 @@ const form = ref<Partial<RuleSchema>>({
   author: '系统管理员',
   version: '1.0.0',
   baseUrl: '',
-  code: `import axios from 'axios'
-import * as cheerio from 'cheerio'
-
-export default {
-  // 1. 发现流
-  async discovery({ category, page = 1 }) {
-    return {
-      categories: ['最新', '热门'],
-      items: [
-        {
-          key: 'item_1',
-          title: '示例项目',
-          cover: 'https://images.unsplash.com/photo-1579546929518-9e396f3cc809?w=500',
-          badge: '高清',
-          desc: '示例描述'
-        }
-      ],
-      hasMore: false
-    }
-  },
-
-  // 2. 搜索
-  async search({ keyword, page = 1 }) {
-    return {
-      items: [],
-      hasMore: false
-    }
-  },
-
-  // 3. 详情
-  async detail({ key, item }) {
-    return {
-      title: item?.title || '详情标题',
-      cover: item?.cover,
-      desc: '正文介绍',
-      tags: ['精选'],
-      playUrl: ''
-    }
-  },
-
-  // 4. 解析
-  async parse({ key }) {
-    return {
-      playUrl: key
-    }
-  }
-}`
+  code: '' // 默认不设置代码，保持纯净空白
 })
+
+const handleInsertTemplate = () => {
+  if (form.value.code && form.value.code.trim()) {
+    window.$dialog?.warning({
+      title: '覆盖确认',
+      content: '当前编辑器中已有规则代码，插入模板将覆盖现有内容，确定继续吗？',
+      positiveText: '确定覆盖',
+      negativeText: '取消',
+      onPositiveClick: () => {
+        form.value.code = RULE_TEMPLATE
+        message.success('已插入标准规则模板代码')
+      }
+    })
+  } else {
+    form.value.code = RULE_TEMPLATE
+    message.success('已插入标准规则模板代码')
+  }
+}
 
 const submitLoading = ref(false)
 
@@ -114,7 +146,7 @@ const onReset = () => {
     author: '系统管理员',
     version: '1.0.0',
     baseUrl: '',
-    code: `export default {\n  async discovery({ category, page = 1 }) {\n    return { items: [] }\n  }\n}`
+    code: ''
   }
 }
 
@@ -456,8 +488,21 @@ onUnmounted(() => {
               </span>
             </div>
 
-            <div class="flex items-center gap-2">
+            <div class="flex items-center gap-2.5">
               <span class="font-mono text-[11px] text-zinc-400">JavaScript</span>
+              <n-button
+                size="tiny"
+                secondary
+                type="primary"
+                class="!rounded-lg !font-bold !px-2.5 shadow-2xs"
+                @click="handleInsertTemplate"
+                title="向当前编辑器插入标准规则模板代码"
+              >
+                <template #icon>
+                  <FileCode class="w-3.5 h-3.5" />
+                </template>
+                <span>插入模板</span>
+              </n-button>
             </div>
           </div>
 
@@ -547,7 +592,7 @@ onUnmounted(() => {
       <!-- 右栏：一体化智能工作台 (AI 智能生成 + 沙箱测试 + AI 诊断修复) -->
       <div
         class="shrink-0 transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] overflow-hidden flex flex-col h-full"
-        :class="showWorkbench ? 'w-[460px] xl:w-[500px] opacity-100' : 'w-0 opacity-0 pointer-events-none -mr-2.5'"
+        :class="showWorkbench ? 'w-[540px] xl:w-[600px] 2xl:w-[660px] opacity-100' : 'w-0 opacity-0 pointer-events-none -mr-2.5'"
       >
         <RuleWorkbenchModal
           ref="workbenchRef"

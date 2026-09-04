@@ -27,7 +27,7 @@ export const ruleService = {
   async getRules(): Promise<RuleSchema[]> {
     try {
       const res: any = await http.get('/rules')
-      return Array.isArray(res) ? res : res?.data || []
+      return res || []
     } catch (e) {
       console.error('获取规则列表失败:', e)
       return []
@@ -134,11 +134,11 @@ export const ruleService = {
   /**
    * 执行 detail (获取媒体详情)
    */
-  async runDetail(rule: RuleSchema, params: { key: string; item?: Partial<MediaItem> }): Promise<MediaDetail> {
+  async runDetail(rule: RuleSchema, params: { url: string; item?: Partial<MediaItem> }): Promise<MediaDetail> {
     const res: any = await http.post(`/rules/${rule.id}/execute`, {
       action: 'detail',
       params: {
-        key: params.key,
+        url: params.url,
         item: params.item
       }
     })
@@ -161,11 +161,11 @@ export const ruleService = {
   /**
    * 执行 parse (动态解析分集播放直链或小说正文)
    */
-  async runParse(rule: RuleSchema, params: { key: string; groupName?: string }): Promise<ParseResult> {
+  async runParse(rule: RuleSchema, params: { url: string; groupName?: string }): Promise<ParseResult> {
     const res: any = await http.post(`/rules/${rule.id}/execute`, {
       action: 'parse',
       params: {
-        key: params.key,
+        url: params.url,
         groupName: params.groupName || ''
       }
     })

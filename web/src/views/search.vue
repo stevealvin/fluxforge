@@ -125,12 +125,12 @@ const handleCardClick = async (item: MediaItem & { ruleId: number; ruleName: str
   }
 
   // 2. 注入上下文并路由跳转
-  mediaContext.setContext(item.ruleId, item.key, item)
+  mediaContext.setContext(item.ruleId, item.url, item)
   router.push({
     path: '/media/detail',
     query: {
       ruleId: item.ruleId,
-      key: item.key
+      url: item.url
     }
   })
 }
@@ -283,7 +283,7 @@ onMounted(() => {
         <div class="grid gap-3 sm:gap-4.5 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
           <div
             v-for="(item, idx) in searchResults"
-            :key="item.key || idx"
+            :key="item.url || idx"
             class="group relative flex flex-col rounded-2xl overflow-hidden bg-white/70 dark:bg-white/[0.03] backdrop-blur-md border border-zinc-200/60 dark:border-white/5 hover:-translate-y-1.5 transition-all duration-300 cursor-pointer shadow-2xs hover:shadow-xl hover:shadow-emerald-500/10 active:scale-98"
             @click="handleCardClick(item)"
           >
@@ -347,7 +347,7 @@ onMounted(() => {
       <div class="space-y-4">
         <div class="w-full max-h-[75vh] flex items-center justify-center bg-black/5 dark:bg-black/30 rounded-xl overflow-hidden">
           <img
-            :src="previewCurrentItem?.cover || previewCurrentItem?.key"
+            :src="previewCurrentItem?.cover || previewCurrentItem?.url"
             referrerpolicy="no-referrer"
             class="max-w-full max-h-[75vh] object-contain rounded-xl shadow-lg"
           />
@@ -363,7 +363,7 @@ onMounted(() => {
               secondary
               size="small"
               class="!rounded-xl"
-              @click="copyImageUrl(previewCurrentItem?.cover || previewCurrentItem?.key)"
+              @click="copyImageUrl(previewCurrentItem?.cover || previewCurrentItem?.url)"
             >
               <template #icon><Copy class="w-3.5 h-3.5" /></template>
               <span>复制直链</span>
@@ -373,7 +373,7 @@ onMounted(() => {
               type="primary"
               size="small"
               class="!rounded-xl"
-              @click="downloadImage(previewCurrentItem?.cover || previewCurrentItem?.key, previewCurrentItem?.title)"
+              @click="downloadImage(previewCurrentItem?.cover || previewCurrentItem?.url, previewCurrentItem?.title)"
             >
               <template #icon><Download class="w-3.5 h-3.5" /></template>
               <span>下载原图</span>

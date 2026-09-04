@@ -29,7 +29,7 @@ export interface RuleSchema {
  * 列表中的基础媒体简项 (用于发现页网格、搜索结果列表、相关推荐等)
  */
 export interface MediaItem {
-  key: string                   // 媒体唯一标识 / 相对路径 / 详情 URL
+  url: string                   // 详情页相对路径或完整 URL (核心跳转地址)
   title: string                 // 主标题
   cover?: string                // 封面海报图 URL
   badge?: string                // 标签角标 (如 "4K超清", "完结", "第12集")
@@ -43,7 +43,7 @@ export interface MediaItem {
  * 选集/章节/分集条目
  */
 export interface MediaEpisode {
-  key: string                   // 选集/章节唯一标识或直链 URL
+  url: string                   // 选集/章节相对或绝对 URL
   title: string                 // 选集/章节标题 (如 "第 01 集", "第 1 章 开篇")
   cover?: string                // 选集封面图 (可选)
   desc?: string                 // 选集简介 (可选)

@@ -230,6 +230,7 @@ const darkThemeOverrides: GlobalThemeOverrides = {
     errorColor: themeColors.dark.error,
     errorColorHover: themeColors.dark.errorHover,
     // 背景与文本
+    baseColor: '#ffffff', // 🌟 设置通用反衬基底色为纯白，Naive UI 所有实体按钮(Primary/Info/Success/Warning/Error)文字自动继承为纯白
     bodyColor: themeColors.dark.bodyBg,
     cardColor: 'rgba(12, 25, 21, 0.78)',
     modalColor: '#0e1f1a',

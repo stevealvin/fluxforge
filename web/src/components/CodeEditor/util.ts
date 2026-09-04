@@ -74,7 +74,7 @@ export const addGlobalSandboxTypes = (monaco: typeof import('monaco-editor')) =>
        * 列表项标准模型
        */
       interface MediaItem {
-        key: string;
+        url: string;
         title: string;
         cover?: string;
         badge?: string;
@@ -88,9 +88,8 @@ export const addGlobalSandboxTypes = (monaco: typeof import('monaco-editor')) =>
        * 详情选集项标准模型
        */
       interface EpisodeItem {
-        key?: string;
         title: string;
-        url?: string;
+        url: string;
       }
 
       /**
@@ -126,7 +125,7 @@ export const addGlobalSandboxTypes = (monaco: typeof import('monaco-editor')) =>
        * 发现/列表页标准返回数据结构
        */
       interface DiscoveryResult {
-        categories?: string[];
+        categories?: string[] | Array<{ title: string; url: string }>;
         items: MediaItem[];
         hasMore?: boolean;
       }
@@ -145,8 +144,8 @@ export const addGlobalSandboxTypes = (monaco: typeof import('monaco-editor')) =>
       interface RuleDefinition {
         discovery?: (params: { category?: string; page?: number; baseUrl?: string }) => Promise<DiscoveryResult | MediaItem[] | any>;
         search?: (params: { keyword: string; page?: number; baseUrl?: string }) => Promise<SearchResult | MediaItem[] | any>;
-        detail?: (params: { key: string; item?: any; baseUrl?: string }) => Promise<DetailResult | any>;
-        parse?: (params: { key: string; groupName?: string; baseUrl?: string }) => Promise<{ playUrl?: string; content?: string } | any>;
+        detail?: (params: { url: string; item?: any; baseUrl?: string }) => Promise<DetailResult | any>;
+        parse?: (params: { url: string; groupName?: string; baseUrl?: string }) => Promise<{ playUrl?: string; content?: string } | any>;
         [key: string]: any;
       }
 
