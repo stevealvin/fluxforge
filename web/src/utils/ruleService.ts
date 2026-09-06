@@ -95,19 +95,19 @@ export const ruleService = {
   // ==========================================
 
   /**
-   * 执行 discovery (发现/分类列表)
+   * 执行 discovery (发现/页签列表)
    */
-  async runDiscovery(rule: RuleSchema, params: { category?: string; page?: number } = {}): Promise<DiscoveryResult> {
+  async runDiscovery(rule: RuleSchema, params: { tab?: string; page?: number } = {}): Promise<DiscoveryResult> {
     const res: any = await http.post(`/rules/${rule.id}/execute`, {
       action: 'discovery',
       params: {
-        category: params.category || '',
+        tab: params.tab || '',
         page: params.page || 1
       }
     })
 
     return {
-      categories: res?.categories || [],
+      tabs: res?.tabs || [],
       items: res?.items || [],
       hasMore: Boolean(res?.hasMore)
     }

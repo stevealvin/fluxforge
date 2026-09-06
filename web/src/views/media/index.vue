@@ -33,8 +33,8 @@ const mediaContext = useMediaContext()
 const rules = ref<RuleSchema[]>([])
 const activeRuleId = ref<number | null>(null)
 const activeRule = ref<RuleSchema | null>(null)
-const subCategories = ref<string[]>([])
-const activeCategory = ref<string>('')
+const tabs = ref<Array<string | { title: string; url?: string }>>([])
+const activeTab = ref<string>('')
 const items = ref<MediaItem[]>([])
 const currentPage = ref(1)
 const hasMore = ref(false)
@@ -65,8 +65,8 @@ const coverAspectClass = computed(() => {
 const loadRules = async () => {
   loading.value = true
   errorMsg.value = ''
-  subCategories.value = []
-  activeCategory.value = ''
+  tabs.value = []
+  activeTab.value = ''
   items.value = []
   searchQuery.value = ''
   currentPage.value = 1
@@ -95,17 +95,18 @@ const handleRuleChange = async (id: number) => {
   if (selected) {
     activeRuleId.value = id
     activeRule.value = selected
-    subCategories.value = []
-    activeCategory.value = ''
+    tabs.value = []
+    activeTab.value = ''
     searchQuery.value = ''
     currentPage.value = 1
     await fetchDiscovery(1)
   }
 }
 
-const handleCategoryChange = async (cat: string) => {
-  if (activeCategory.value === cat) return
-  activeCategory.value = cat
+const handleTabChange = async (tabItem: string | { title: string; url?: string }) => {
+  const tabVal = typeof tabItem === 'object' ? (tabItem.title || tabItem.url || '') : tabItem
+  if (activeTab.value === tabVal) return
+  activeTab.value = tabVal
   currentPage.value = 1
   await fetchDiscovery(1)
 }
@@ -118,14 +119,15 @@ const fetchDiscovery = async (page = 1) => {
 
   try {
     const res = await ruleService.runDiscovery(activeRule.value, {
-      category: activeCategory.value,
+      tab: activeTab.value,
       page
     })
 
-    if (res.categories && res.categories.length > 0) {
-      subCategories.value = res.categories
-      if (!activeCategory.value && subCategories.value.length > 0) {
-        activeCategory.value = subCategories.value[0]
+    if (res.tabs && res.tabs.length > 0) {
+      tabs.value = res.tabs
+      if (!activeTab.value && tabs.value.length > 0) {
+        const first = tabs.value[0]
+        activeTab.value = typeof first === 'object' ? (first.title || first.url || '') : first
       }
     }
 
@@ -285,21 +287,21 @@ onMounted(() => {
           </button>
         </div>
 
-        <!-- 第二排：子分类选择标签 (如有) -->
-        <div v-if="subCategories.length > 0" class="flex items-center gap-1.5 overflow-x-auto no-scrollbar pt-1">
-          <span class="text-[11px] text-zinc-400 whitespace-nowrap mr-1">分类:</span>
+        <!-- 第二排：页签/分类选择标签 (如有) -->
+        <div v-if="tabs.length > 0" class="flex items-center gap-1.5 overflow-x-auto no-scrollbar pt-1">
+          <span class="text-[11px] text-zinc-400 whitespace-nowrap mr-1">页签:</span>
           <button
-            v-for="cat in subCategories"
-            :key="cat"
-            @click="handleCategoryChange(cat)"
+            v-for="(t, idx) in tabs"
+            :key="idx"
+            @click="handleTabChange(t)"
             class="px-2.5 py-1 rounded-lg text-[11px] font-medium whitespace-nowrap transition-all duration-200 cursor-pointer"
             :class="
-              activeCategory === cat
+              activeTab === (typeof t === 'object' ? (t.title || t.url) : t)
                 ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-300 font-bold border border-emerald-200/50 dark:border-emerald-800/40'
                 : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-white/5'
             "
           >
-            {{ cat }}
+            {{ typeof t === 'object' ? (t.title || t.url) : t }}
           </button>
         </div>
       </div>

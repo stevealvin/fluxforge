@@ -3,7 +3,7 @@
  * 
  * 核心目标：
  * 1. 消除 90%+ 的无用代码（head、style、svg、广告、埋点等），大幅减少 Token 占用；
- * 2. 精准保留分类导航骨架 (<nav>, <header>)，确保 AI 能提取 categories；
+ * 2. 精准保留分类导航骨架 (<nav>, <header>)，确保 AI 能提取 tabs/分类；
  * 3. 智能嗅探并放行包含真实数据的 <script>（如苹果CMS player_aaaa、m3u8、Next/Nuxt SSR 数据岛）；
  * 4. 列表页重复卡片自动折叠（同构节点只留前 2~3 个作为选择器样本）；
  * 5. JSON 接口大数组智能抽样。

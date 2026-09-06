@@ -25,28 +25,39 @@ import {
   PanelLeftOpen,
   Info,
   CheckCircle2,
+  AlertCircle,
+  Eye,
+  History,
+  RotateCcw,
   Wrench
 } from '@lucide/vue'
 import CodeEditor from '@/components/CodeEditor/index.vue'
 import RuleWorkbenchModal from './components/RuleWorkbenchModal.vue'
+import WorkbenchSandbox from './components/workbench/WorkbenchSandbox.vue'
+import { useAiSettingsStore } from '@/stores/aiSettings'
 
 const route = useRoute()
 const router = useRouter()
 const message = useMessage()
+const aiStore = useAiSettingsStore()
 
-// AI 工作台默认展开；左侧元数据配置默认收起以留出足够空间
+// AI 工作台与左侧元数据配置默认展开
 const showWorkbench = ref(true)
-const showMetaSidebar = ref(false)
+const showMetaSidebar = ref(true)
+const sandboxCollapsed = ref(false)
+
+const sandboxRef = useTemplateRef<any>('sandboxRef')
+const workbenchRef = useTemplateRef<any>('workbenchRef')
 
 // 标准 ESModule defineRule 模板代码
 const RULE_TEMPLATE = `export default defineRule({
   // 1. 发现列表
   // 全局可用: baseUrl (站点根域名), axios (HTTP客户端), cheerio (HTML解析器), ua (User-Agent)
-  async discovery({ category = '', page = 1 }) {
+  async discovery({ tab = '', page = 1 }) {
     // TODO: 请求并提取数据
 
     return {
-      categories: [
+      tabs: [
         // { title: '分类标题', url: '/category-url' }
       ],
       items: [
@@ -127,14 +138,68 @@ const handleInsertTemplate = () => {
   }
 }
 
+// 数据库已保存代码快照 (进入页面时从数据库读取的原始代码)
+const originalCode = ref('')
+const showSavedCodeModal = ref(false)
+
+// 判断当前编辑器代码是否相对数据库已保存版本发生改动
+const hasCodeChangedFromSaved = computed(() => {
+  if (!route.query.id && !originalCode.value) return false
+  return (form.value.code || '').trim() !== (originalCode.value || '').trim()
+})
+
+// 复制数据库已保存的代码
+const copySavedCode = async () => {
+  if (!originalCode.value) return
+  try {
+    await navigator.clipboard.writeText(originalCode.value)
+    message.success('已复制已保存代码到剪贴板')
+  } catch {
+    message.error('复制失败')
+  }
+}
+
+// 还原为数据库已保存代码
+const restoreOriginalCode = () => {
+  if (!originalCode.value) return
+  window.$dialog?.warning({
+    title: '还原确认',
+    content: '确定要将当前编辑器的代码还原为数据库已保存的版本吗？当前未保存的修改将被覆盖。',
+    positiveText: '确认还原',
+    negativeText: '取消',
+    onPositiveClick: () => {
+      form.value.code = originalCode.value
+      showSavedCodeModal.value = false
+      message.success('已成功还原为数据库已保存代码')
+    }
+  })
+}
+
 const submitLoading = ref(false)
+const pageLoading = ref(Boolean(route.query.id))
+const loadError = ref('')
 
 const loadData = async () => {
   const id = route.query.id
-  if (!id) return
-  const result = await ruleService.getRuleById(id as string)
-  if (result) {
-    form.value = { ...result }
+  if (!id) {
+    pageLoading.value = false
+    return
+  }
+
+  pageLoading.value = true
+  loadError.value = ''
+  try {
+    const result = await ruleService.getRuleById(id as string)
+    if (result) {
+      form.value = { ...result }
+      originalCode.value = result.code || ''
+    } else {
+      loadError.value = '未找到对应的规则数据，可能已被删除'
+    }
+  } catch (err: any) {
+    loadError.value = err.message || '加载规则数据失败，请检查网络或服务端连接'
+  } finally {
+    pageLoading.value = false
   }
 }
 
@@ -157,6 +222,7 @@ const onSubmit = async () => {
   submitLoading.value = true
   try {
     const saved = await ruleService.saveRule(form.value)
+    originalCode.value = form.value.code || ''
     message.success('保存规则成功')
     if (!route.query.id && saved?.id) {
       router.replace(`/rules/edit?id=${saved.id}`)
@@ -206,7 +272,47 @@ const exportRule = () => {
   }
 }
 
-// 接收来自工作台的智能回填数据 (代码、名称、描述、类型、BaseURL)
+// 智能识别站点元数据 (基于站点首页 HTML 与域名提炼站点名称与描述)
+const identifyingSite = ref(false)
+const handleIdentifySite = async () => {
+  const targetUrl = form.value.baseUrl?.trim()
+  if (!targetUrl || !targetUrl.startsWith('http')) {
+    message.warning('请先输入有效的站点根域名 (如 https://example.com)')
+    return
+  }
+
+  identifyingSite.value = true
+  try {
+    let html = ''
+    try {
+      const res: any = await http.post('/rules/fetch-page', { url: targetUrl })
+      html = res?.data || ''
+    } catch (e: any) {
+      console.warn('抓取站点首页失败，将仅基于 URL 域名进行智能识别:', e.message)
+    }
+
+    const meta = await aiStore.extractSiteMetadata({
+      url: targetUrl,
+      htmlContent: html,
+      useAi: true
+    })
+
+    if (meta.name) {
+      form.value.name = meta.name
+    }
+    if (meta.description) {
+      form.value.description = meta.description
+    }
+
+    message.success(`✨ 已成功识别站点信息: ${meta.name}`)
+  } catch (err: any) {
+    message.error(`识别站点信息失败: ${err.message || '网络或模型异常'}`)
+  } finally {
+    identifyingSite.value = false
+  }
+}
+
+// 接收来自工作台的代码同步
 const handleApplyWorkbench = (payload: {
   code: string
   baseUrl: string
@@ -215,27 +321,34 @@ const handleApplyWorkbench = (payload: {
   description?: string
 }) => {
   form.value.code = payload.code
-  if (payload.baseUrl) form.value.baseUrl = payload.baseUrl
-  if (payload.type) form.value.type = payload.type as any
-  if (payload.name) form.value.name = payload.name
-  if (payload.description) form.value.description = payload.description
+  if (payload.baseUrl && !form.value.baseUrl) form.value.baseUrl = payload.baseUrl
+  if (payload.type && !form.value.type) form.value.type = payload.type as any
+  if (payload.name && !form.value.name) form.value.name = payload.name
+  if (payload.description && !form.value.description) form.value.description = payload.description
 }
 
-const showTerminal = ref(true)
-const consoleLogs = ref<Array<{ level: string; time: string; message: string }>>([])
-const workbenchRef = useTemplateRef<any>('workbenchRef')
-
-const handleReceiveLogs = (logs: any[]) => {
-  consoleLogs.value = logs || []
-  if (logs && logs.length > 0) {
-    showTerminal.value = true
-  }
-}
-
-const runWorkbenchAction = () => {
+// 响应沙箱异常 -> 自动展开右侧 AI 助手并注入诊断信息
+const handleFixErrorFromSandbox = (context: any) => {
   if (!showWorkbench.value) showWorkbench.value = true
   setTimeout(() => {
-    workbenchRef.value?.executeAction?.()
+    workbenchRef.value?.handleFixError?.(context)
+  }, 100)
+}
+
+// 响应 AI 生成完毕后的自动测试 -> 驱动中下方的沙箱
+const handleAutoTestFromAi = ({ action, code }: { action: string; code: string }) => {
+  sandboxCollapsed.value = false
+  setTimeout(() => {
+    sandboxRef.value?.executeAction?.(action, code)
+  }, 50)
+}
+
+
+
+const runWorkbenchAction = () => {
+  sandboxCollapsed.value = false
+  setTimeout(() => {
+    sandboxRef.value?.executeAction?.()
   }, 50)
 }
 
@@ -246,7 +359,7 @@ const handleKeydown = (e: KeyboardEvent) => {
   } else if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) {
     e.preventDefault()
     onSubmit()
-  } else if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+  } else if (e.altKey && (e.key === 'w' || e.key === 'W')) {
     e.preventDefault()
     showWorkbench.value = !showWorkbench.value
   }
@@ -321,19 +434,19 @@ onUnmounted(() => {
           <span>{{ showMetaSidebar ? '收起配置' : '配置' }}</span>
         </n-button>
 
-        <!-- 切换底部控制台 -->
+        <!-- 切换底部沙箱面板 -->
         <n-button
           size="small"
           quaternary
           class="!rounded-xl !px-2.5 text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"
-          :type="showTerminal ? 'primary' : 'default'"
-          @click="showTerminal = !showTerminal"
-          title="切换沙箱控制台 (Console Logs)"
+          :type="!sandboxCollapsed ? 'primary' : 'default'"
+          @click="sandboxCollapsed = !sandboxCollapsed"
+          title="切换沙箱调试与结果面板"
         >
           <template #icon>
             <Terminal class="w-3.5 h-3.5" />
           </template>
-          <span>控制台 {{ consoleLogs.length > 0 ? `(${consoleLogs.length})` : '' }}</span>
+          <span>调试面板</span>
         </n-button>
 
         <!-- 快捷运行测试按钮 (Ctrl+R) -->
@@ -357,7 +470,7 @@ onUnmounted(() => {
           type="primary"
           class="!rounded-xl !font-bold !px-3 !bg-gradient-to-r !from-emerald-600 !via-teal-500 !to-cyan-500 hover:!opacity-95 shadow-md shadow-emerald-500/25"
           @click="showWorkbench = !showWorkbench"
-          title="展开/收起 AI 智能与调试工作台 (Ctrl+Enter)"
+          title="展开/收起 AI 智能与调试工作台 (Alt+W)"
         >
           <template #icon>
             <Sparkles class="w-3.5 h-3.5 text-white animate-pulse" />
@@ -409,8 +522,43 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <!-- 2. 主体三栏沉浸式工作台 (Left: Metadata | Center: Monaco + Terminal | Right: Studio Panel) -->
-    <div class="flex-1 flex gap-2.5 min-h-0 overflow-hidden">
+    <!-- 2. 主体工作台状态分发 -->
+    <!-- 2.1 加载失败错误态 -->
+    <div
+      v-if="loadError"
+      class="flex-1 flex flex-col items-center justify-center p-8 text-center glass-panel rounded-2xl border border-rose-500/20 bg-rose-500/[0.03] shadow-xs"
+    >
+      <AlertCircle class="w-12 h-12 text-rose-500 mb-3" />
+      <h3 class="text-sm font-bold text-rose-600 dark:text-rose-400 mb-1">规则加载失败</h3>
+      <p class="text-xs text-zinc-500 dark:text-zinc-400 mb-4">{{ loadError }}</p>
+      <div class="flex items-center gap-2">
+        <n-button size="small" secondary class="!rounded-xl" @click="loadData">
+          <template #icon><RefreshCcw class="w-3.5 h-3.5" /></template>
+          <span>重新尝试</span>
+        </n-button>
+        <n-button size="small" type="primary" class="!rounded-xl" @click="router.back()">
+          <span>返回规则列表</span>
+        </n-button>
+      </div>
+    </div>
+
+    <!-- 2.2 正在加载页面数据 (毛玻璃优雅微光态) -->
+    <div
+      v-else-if="pageLoading"
+      class="flex-1 flex flex-col items-center justify-center glass-panel rounded-2xl border border-emerald-100/60 dark:border-white/5 space-y-3.5 shadow-xs"
+    >
+      <div class="relative flex items-center justify-center">
+        <div class="w-12 h-12 rounded-full border-2 border-emerald-500/20 border-t-emerald-500 animate-spin"></div>
+        <Sparkles class="w-5 h-5 text-emerald-500 absolute animate-pulse" />
+      </div>
+      <div class="text-center space-y-1">
+        <span class="text-xs font-bold text-zinc-700 dark:text-zinc-200">正在载入规则脚本与配置...</span>
+        <p class="text-[11px] text-zinc-400">读取远端数据库与代码沙箱环境</p>
+      </div>
+    </div>
+
+    <!-- 2.3 主体三栏沉浸式工作台 (Left: Metadata | Center: Monaco + Terminal | Right: Studio Panel) -->
+    <div v-else class="flex-1 flex gap-2.5 min-h-0 overflow-hidden">
       <!-- 左栏：规则配置侧边栏 (Metadata) -->
       <div
         class="shrink-0 transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] overflow-hidden flex flex-col h-full"
@@ -426,11 +574,48 @@ onUnmounted(() => {
           </div>
 
           <n-form ref="formRef" :model="form" class="space-y-3 shrink-0">
-            <n-form-item label="规则标识名称" path="name" :rule="{ required: true, message: '请输入规则名称' }">
-              <n-input v-model:value="form.name" clearable placeholder="如: 全面屏超清壁纸, 极光影视" class="!rounded-xl text-xs" />
+            <!-- 1. 站点地址 (Base URL) [必填] -->
+            <n-form-item
+              label="站点根域名 (Base URL)"
+              path="baseUrl"
+              :rule="[
+                { required: true, message: '请输入站点根域名 (如 https://example.com)', trigger: ['blur', 'input'] },
+                {
+                  validator: (_rule, value) => {
+                    if (!value) return true
+                    return /^https?:\/\//i.test(value.trim()) || new Error('站点根域名必须以 http:// 或 https:// 开头')
+                  },
+                  trigger: 'blur'
+                }
+              ]"
+            >
+              <div class="space-y-1.5 w-full">
+                <n-input
+                  v-model:value="form.baseUrl"
+                  clearable
+                  placeholder="https://example.com"
+                  class="!rounded-xl font-mono text-xs w-full"
+                  @keydown.enter.prevent="handleIdentifySite"
+                />
+                <n-button
+                  size="small"
+                  secondary
+                  type="primary"
+                  class="w-full !rounded-xl !font-bold text-xs"
+                  :loading="identifyingSite"
+                  @click="handleIdentifySite"
+                  title="自动抓取首页并提炼网站名称与简介"
+                >
+                  <template #icon>
+                    <Sparkles class="w-3.5 h-3.5" />
+                  </template>
+                  <span>智能识别填充站点信息</span>
+                </n-button>
+              </div>
             </n-form-item>
 
-            <n-form-item label="媒体类型" path="type" :rule="{ required: true, message: '请选择规则媒体类型' }">
+            <!-- 2. 媒体类型 [必填] -->
+            <n-form-item label="媒体类型" path="type" :rule="{ required: true, message: '请选择媒体类型' }">
               <n-select
                 v-model:value="form.type"
                 :options="[
@@ -442,12 +627,13 @@ onUnmounted(() => {
               />
             </n-form-item>
 
-            <n-form-item label="目标站点根域名 (Base URL)" path="baseUrl">
-              <n-input v-model:value="form.baseUrl" clearable placeholder="https://example.com" class="!rounded-xl font-mono text-xs" />
+            <!-- 3. 网站名称 [必填] -->
+            <n-form-item label="网站名称" path="name" :rule="{ required: true, message: '请输入网站名称' }">
+              <n-input v-model:value="form.name" clearable placeholder="如: 全面屏超清壁纸, 极光影视" class="!rounded-xl text-xs" />
             </n-form-item>
 
-            <n-form-item label="规则描述">
-              <n-input v-model:value="form.description" type="textarea" :rows="3" clearable placeholder="规则的详细说明及特性..." class="!rounded-xl text-xs" />
+            <n-form-item label="网站描述信息">
+              <n-input v-model:value="form.description" type="textarea" :rows="3" clearable placeholder="网站的详细说明及主营资源特色介绍..." class="!rounded-xl text-xs" />
             </n-form-item>
 
             <div class="grid grid-cols-2 gap-2">
@@ -488,8 +674,31 @@ onUnmounted(() => {
               </span>
             </div>
 
-            <div class="flex items-center gap-2.5">
+            <div class="flex items-center gap-2">
               <span class="font-mono text-[11px] text-zinc-400">JavaScript</span>
+
+              <!-- 📜 查看已保存代码 (仅在编辑已有规则或有已保存代码时展示) -->
+              <n-button
+                v-if="route.query.id || originalCode"
+                size="tiny"
+                quaternary
+                class="!rounded-lg text-xs transition-all"
+                :class="hasCodeChangedFromSaved ? 'text-amber-600 dark:text-amber-400 font-bold bg-amber-500/10 hover:bg-amber-500/20' : 'text-zinc-600 dark:text-zinc-300'"
+                @click="showSavedCodeModal = true"
+                title="查看进入页面时从数据库读取的已保存代码版本"
+              >
+                <template #icon>
+                  <History class="w-3.5 h-3.5" />
+                </template>
+                <span>已保存代码</span>
+                <span
+                  v-if="hasCodeChangedFromSaved"
+                  class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse ml-0.5"
+                  title="当前编辑器代码相比已保存版本有新改动"
+                ></span>
+              </n-button>
+
+              <!-- 📥 插入模板 -->
               <n-button
                 size="tiny"
                 secondary
@@ -517,82 +726,21 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <!-- 底部：沙箱控制台 Terminal (Console Logs) -->
-        <div
-          v-if="showTerminal"
-          class="h-44 shrink-0 rounded-2xl overflow-hidden shadow-lg border border-zinc-700/60 dark:border-white/10 flex flex-col bg-zinc-950 text-zinc-100 transition-all"
-        >
-          <!-- Terminal 顶栏 (高对比度深色面板顶条) -->
-          <div class="px-3.5 py-1.5 border-b border-zinc-800 flex items-center justify-between bg-zinc-900/90 shrink-0 select-none">
-            <div class="flex items-center gap-2">
-              <Terminal class="w-3.5 h-3.5 text-emerald-400" />
-              <span class="text-xs font-mono font-bold text-white tracking-wide">沙箱运行控制台 (Console Terminal)</span>
-              <span v-if="consoleLogs.length > 0" class="px-2 py-0.5 text-[10px] font-mono font-bold rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                {{ consoleLogs.length }} 条输出
-              </span>
-            </div>
-
-            <div class="flex items-center gap-3">
-              <button
-                v-if="consoleLogs.length > 0"
-                type="button"
-                class="text-xs font-mono text-zinc-300 hover:text-white transition-colors cursor-pointer"
-                @click="consoleLogs = []"
-                title="清空控制台日志"
-              >
-                清空
-              </button>
-              <button
-                type="button"
-                class="text-xs font-mono text-zinc-300 hover:text-white transition-colors cursor-pointer"
-                @click="showTerminal = false"
-                title="收起控制台"
-              >
-                收起
-              </button>
-            </div>
-          </div>
-
-          <!-- Terminal 日志列表 -->
-          <div class="flex-1 min-h-0 overflow-y-auto p-3 font-mono text-xs space-y-1.5 selection:bg-emerald-500/40">
-            <div v-if="consoleLogs.length === 0" class="h-full flex flex-col items-center justify-center text-zinc-400 space-y-1.5">
-              <Terminal class="w-6 h-6 text-emerald-500/40" />
-              <p class="text-xs font-medium text-zinc-200">暂无沙箱控制台输出</p>
-              <p class="text-[11px] text-zinc-400">在规则代码中写入 <code class="text-emerald-400 font-bold">console.log(...)</code>，运行测试后将在此高亮显示</p>
-            </div>
-            <div
-              v-for="(log, idx) in consoleLogs"
-              :key="idx"
-              class="flex items-start gap-2.5 py-1 leading-relaxed hover:bg-white/[0.05] px-2 rounded transition-colors"
-            >
-              <span class="text-[11px] text-zinc-400 font-mono shrink-0 select-none">[{{ log.time }}]</span>
-              <span
-                class="text-[10px] px-1.5 py-0.2 rounded font-bold uppercase select-none shrink-0 border"
-                :class="{
-                  'bg-sky-500/20 text-sky-300 border-sky-500/30': log.level === 'log' || log.level === 'info',
-                  'bg-amber-500/20 text-amber-300 border-amber-500/30': log.level === 'warn',
-                  'bg-rose-500/20 text-rose-300 border-rose-500/30': log.level === 'error'
-                }"
-              >
-                {{ log.level }}
-              </span>
-              <pre
-                class="flex-1 whitespace-pre-wrap break-all text-xs font-mono"
-                :class="{
-                  'text-rose-300 font-bold': log.level === 'error',
-                  'text-amber-200': log.level === 'warn',
-                  'text-zinc-100': log.level !== 'error' && log.level !== 'warn'
-                }"
-              >{{ log.message }}</pre>
-            </div>
-          </div>
-        </div>
+        <!-- 底部：一体化沙箱调试工作台 (可视化预览 + JSON + 控制台终端) -->
+        <WorkbenchSandbox
+          ref="sandboxRef"
+          :code="form.code || ''"
+          :rule-type="form.type"
+          :base-url="form.baseUrl || workbenchRef?.targetUrl"
+          v-model:collapsed="sandboxCollapsed"
+          @fix-error="handleFixErrorFromSandbox"
+        />
       </div>
 
-      <!-- 右栏：一体化智能工作台 (AI 智能生成 + 沙箱测试 + AI 诊断修复) -->
+      <!-- 右栏：一体化智能工作台 (AI 目标采样管理 + AI 规则生成与诊断) -->
       <div
         class="shrink-0 transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] overflow-hidden flex flex-col h-full"
-        :class="showWorkbench ? 'w-[540px] xl:w-[600px] 2xl:w-[660px] opacity-100' : 'w-0 opacity-0 pointer-events-none -mr-2.5'"
+        :class="showWorkbench ? 'w-[440px] xl:w-[480px] 2xl:w-[520px] opacity-100' : 'w-0 opacity-0 pointer-events-none -mr-2.5'"
       >
         <RuleWorkbenchModal
           ref="workbenchRef"
@@ -604,11 +752,67 @@ onUnmounted(() => {
           :rule-description="form.description"
           @update:code="(val) => (form.code = val)"
           @apply="handleApplyWorkbench"
-          @logs="handleReceiveLogs"
+          @auto-test="handleAutoTestFromAi"
           @close="showWorkbench = false"
         />
       </div>
     </div>
+
+    <!-- 数据库已保存代码只读与还原弹窗 -->
+    <n-modal
+      v-model:show="showSavedCodeModal"
+      preset="card"
+      title="📜 数据库已保存规则代码 (初始加载版本)"
+      class="!max-w-3xl !w-[92vw] !rounded-2xl shadow-2xl"
+      :segmented="{ content: true, action: true }"
+    >
+      <div class="space-y-2.5">
+        <div class="flex items-center justify-between text-xs">
+          <div class="flex items-center gap-1.5 text-zinc-500 dark:text-zinc-400">
+            <Info class="w-3.5 h-3.5 text-emerald-500" />
+            <span>进入编辑时从数据库加载的已存代码。若当前代码被 AI 修改覆盖，可在此随时查看或一键还原。</span>
+          </div>
+          <span
+            class="font-mono text-[11px] px-2 py-0.5 rounded-md font-bold shrink-0"
+            :class="hasCodeChangedFromSaved ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400' : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'"
+          >
+            {{ hasCodeChangedFromSaved ? '当前有未保存改动' : '与当前代码一致' }}
+          </span>
+        </div>
+
+        <div class="h-[460px] rounded-xl overflow-hidden border border-zinc-200/80 dark:border-white/10 shadow-inner">
+          <code-editor
+            :model-value="originalCode"
+            model-id="rule_saved_code_preview_modal"
+            height="100%"
+            class="w-full h-full"
+            :options="{ readOnly: true, lineNumbers: 'on', minimap: { enabled: false } }"
+          />
+        </div>
+      </div>
+      <template #action>
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <span class="text-xs text-zinc-400">若对 AI 修改或当前代码不满意，可点击右侧按钮直接还原回数据库版本</span>
+          <div class="flex items-center gap-2">
+            <n-button size="small" secondary class="!rounded-xl" @click="copySavedCode">
+              <template #icon><Copy class="w-3.5 h-3.5" /></template>
+              <span>复制代码</span>
+            </n-button>
+            <n-button
+              size="small"
+              type="warning"
+              secondary
+              class="!rounded-xl !font-bold"
+              :disabled="!hasCodeChangedFromSaved"
+              @click="restoreOriginalCode"
+            >
+              <template #icon><RotateCcw class="w-3.5 h-3.5" /></template>
+              <span>还原为已保存版本</span>
+            </n-button>
+          </div>
+        </div>
+      </template>
+    </n-modal>
   </div>
 </template>
 

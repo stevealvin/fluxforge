@@ -1,9 +1,8 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, watch, useTemplateRef } from 'vue'
 import type { MediaType } from '@/types/rule'
 import WorkbenchSampling from './workbench/WorkbenchSampling.vue'
 import WorkbenchPrompt, { type AiGenerationResult } from './workbench/WorkbenchPrompt.vue'
-import WorkbenchSandbox from './workbench/WorkbenchSandbox.vue'
 import {
   Sparkles,
   Maximize2,
@@ -30,8 +29,9 @@ const props = withDefaults(
 const emit = defineEmits<{
   (e: 'update:show', val: boolean): void
   (e: 'update:code', val: string): void
+  (e: 'update:baseUrl', val: string): void
   (e: 'apply', payload: { code: string; baseUrl: string; type: string; name?: string; description?: string }): void
-  (e: 'logs', logs: any[]): void
+  (e: 'auto-test', payload: { action: string; code: string }): void
   (e: 'close'): void
 }>()
 
@@ -41,9 +41,8 @@ const isFullscreen = ref(false)
 // 模块子引用
 const samplingRef = useTemplateRef<any>('samplingRef')
 const promptRef = useTemplateRef<any>('promptRef')
-const sandboxRef = useTemplateRef<any>('sandboxRef')
 
-// 共享采样状态
+// 共享采样状态 (默认取左边表单的数据)
 const targetUrl = ref(props.baseUrl || '')
 const detailUrl = ref('')
 const parseUrl = ref('')
@@ -51,6 +50,27 @@ const selectedMediaType = ref<MediaType | string>(props.ruleType || 'video')
 const listHtml = ref('')
 const detailHtml = ref('')
 const parseHtml = ref('')
+
+// 仅首次从左侧表单获取初始值，不持续同步监听
+const stopBaseUrlWatch = watch(
+  () => props.baseUrl,
+  (newVal) => {
+    if (newVal && !targetUrl.value) {
+      targetUrl.value = newVal
+      stopBaseUrlWatch()
+    }
+  },
+  { immediate: true }
+)
+
+// 响应规则分类联动
+watch(
+  () => props.ruleType,
+  (newVal) => {
+    if (newVal) selectedMediaType.value = newVal
+  },
+  { immediate: true }
+)
 
 // AI 产出代码（优先使用，否则使用外部传入的当前代码）
 const latestAiResult = ref<AiGenerationResult | null>(null)
@@ -60,9 +80,9 @@ const handleCodeReady = (result: AiGenerationResult) => {
   latestAiResult.value = result
 }
 
-// 自动测试调度
+// 自动测试调度 (通知外层中下方的沙箱执行)
 const handleAutoTest = (action: string, code: string) => {
-  sandboxRef.value?.executeAction(action, code)
+  emit('auto-test', { action, code })
 }
 
 // 响应沙箱异常 -> 联动 AI 智能诊断修复
@@ -88,13 +108,10 @@ const handleApply = (payload: { code: string; baseUrl: string; type: string; nam
   emit('apply', payload)
 }
 
-// 暴露给外层调用 (如 Ctrl+R 快捷键测试)
-const executeAction = (action?: any, overrideCode?: string) => {
-  sandboxRef.value?.executeAction(action, overrideCode || latestAiResult.value?.code || props.code)
-}
-
 defineExpose({
-  executeAction
+  handleFixError,
+  handleRunAi: (options?: any) => promptRef.value?.handleRunAi(options),
+  targetUrl
 })
 </script>
 
@@ -135,7 +152,7 @@ defineExpose({
           quaternary
           size="tiny"
           class="!p-1.5 !rounded-lg text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200"
-          title="收起工作台 (Ctrl+Enter)"
+          title="收起工作台 (Alt+W)"
           @click="emit('close')"
         >
           <template #icon>
@@ -174,16 +191,6 @@ defineExpose({
         @code-ready="handleCodeReady"
         @auto-test="handleAutoTest"
         @apply="handleApply"
-      />
-
-      <!-- 模块 3: 沙箱测试与结果呈现 -->
-      <WorkbenchSandbox
-        ref="sandboxRef"
-        :code="latestAiResult?.code || props.code"
-        :rule-type="selectedMediaType"
-        :base-url="targetUrl"
-        @logs="(logs) => emit('logs', logs)"
-        @fix-error="handleFixError"
       />
     </div>
   </div>

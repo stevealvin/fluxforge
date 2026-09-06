@@ -84,8 +84,8 @@ export interface MediaDetail {
  * 发现页返回结果 (discovery 方法返回的数据标准)
  */
 export interface DiscoveryResult {
-  categories?: string[]         // 支持的子分类/标签选项 (如 ['最新', '热门', '推荐'])
-  items: MediaItem[]            // 当前分类下的媒体卡片列表
+  tabs?: string[] | Array<{ title: string; url?: string }> // 页签/分类选项 (如 ['最新', '热门'] 或 [{ title: '最新', url: '/latest' }])
+  items: MediaItem[]            // 当前页签下的媒体卡片列表
   hasMore?: boolean             // 是否有下一页
   page?: number                 // 当前页码
 }

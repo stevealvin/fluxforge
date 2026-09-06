@@ -29,12 +29,14 @@ export interface ProcessRuleParams {
   parseHtml?: string
 }
 
+export interface SiteMetadataResult {
+  name: string
+  description: string
+}
+
 export interface ProcessRuleResult {
   code: string
   analysis: string
-  name?: string
-  description?: string
-  mediaType?: string
   isFix?: boolean
 }
 
@@ -387,7 +389,7 @@ export const useAiSettingsStore = defineStore('aiSettings', () => {
    - 图集大图数组: images?: string[]
    - 小说正文文本: content?: string
 4. 四大生命周期方法：
-   - async discovery({ category, page = 1 }): 返回 { categories?: Array<{ title: string, url: string }>, items: MediaItem[], hasMore?: boolean } 或 MediaItem[]
+   - async discovery({ tab, page = 1 }): 返回 { tabs?: Array<{ title: string, url: string }>, items: MediaItem[], hasMore?: boolean } 或 MediaItem[]
    - async search({ keyword, page = 1 }): 返回 { items: MediaItem[], hasMore?: boolean } 或 MediaItem[]
    - async detail({ url, item }): 返回 { title: string, cover?: string, desc?: string, tags?: string[], author?: string, playUrl?: string, images?: string[], content?: string, groups?: [{ name: string, items: [{ title: string, url: string }] }], recommendations?: MediaItem[] }
    - async parse({ url, groupName }): 返回 { playUrl?: string, content?: string, headers?: Record<string, string> }
@@ -404,9 +406,6 @@ export const useAiSettingsStore = defineStore('aiSettings', () => {
 必须严格返回合法的 JSON 格式（可包含在 \`\`\`json 块中），格式字段如下：
 {
   "analysis": "设计思路、问题排查分析或修改要点说明（50~300字）",
-  "name": "提炼出的源站/规则简短名称（可选，2~15字）",
-  "description": "规则特性简介（可选，50字以内）",
-  "mediaType": "${mediaType}",
   "code": "完整的 ESModule JavaScript 规则代码..."
 }`
 
@@ -461,8 +460,8 @@ export const useAiSettingsStore = defineStore('aiSettings', () => {
     }
 
     const userPrompt = promptSections.length > 0
-      ? promptSections.join('\n\n') + '\n\n请针对上述信息进行分析处理，严格以 JSON 格式输出 analysis, name, description, mediaType, code。'
-      : '请编写一个标准的 FluxForge 规则脚本，严格以 JSON 格式输出。'
+      ? promptSections.join('\n\n') + '\n\n请针对上述信息进行分析处理，严格以 JSON 格式输出 analysis 与 code。'
+      : '请编写一个标准的 FluxForge 规则脚本，严格以 JSON 格式输出包含 analysis 与 code。'
 
     const rawOutput = await callLlm({ systemPrompt, userPrompt, jsonMode: true })
 
@@ -492,18 +491,82 @@ export const useAiSettingsStore = defineStore('aiSettings', () => {
       code = rawOutput.replace(/^```(?:javascript|js|json)?\n/i, '').replace(/```$/i, '').trim()
     }
 
-    const fallbackInfo = extractMetadataFallback(listHtml || detailHtml || params.contextData || '', params.targetUrl)
-    const name = parsed?.name || fallbackInfo.name || ''
-    const description = parsed?.description || fallbackInfo.description || ''
     const analysis = parsed?.analysis || (isFixMode ? '已完成规则代码针对性排查与修复。' : '已根据需求生成规则代码。')
 
     return {
       code,
       analysis,
-      name,
-      description,
-      mediaType: parsed?.mediaType || mediaType,
       isFix: isFixMode
+    }
+  }
+
+  /**
+   * 🌟 独立的站点元数据提取器 (优先 DOM 本地秒级嗅探，可选轻量 AI 提炼)
+   */
+  const extractSiteMetadata = async (params: {
+    url: string
+    htmlContent?: string
+    useAi?: boolean
+  }): Promise<SiteMetadataResult> => {
+    const html = params.htmlContent || ''
+
+    // 1. 本地精准 DOM 嗅探 (0 Token 消耗，秒级完成)
+    const localMeta = extractMetadataFallback(html, params.url)
+
+    // 如果未开启 AI 润色，或本地已经提取到站点名称，优先直接返回
+    if (!params.useAi && localMeta.name) {
+      return localMeta
+    }
+
+    // 2. 仅当配置了可用模型且需要 AI 提炼时，使用轻量微型 Prompt 提炼纯净名称与描述
+    if (baseUrl.value && model.value && (params.useAi || !localMeta.name)) {
+      try {
+        const systemPrompt = `你是一个网站信息提炼专家。
+你的任务是：根据提供的网页源码或 URL，提炼出该网站的纯净中文站点名称与网站简介。
+
+【强制输出要求】：
+必须严格返回合法的 JSON 格式（严禁包含代码或额外客套废话）：
+{
+  "name": "提炼出的纯净网站名称（如'樱花动漫'、'极光影视'、'笔趣阁'，2~10字，切勿包含推广后缀，严禁填写规则名称）",
+  "description": "网站自身的官方简介或主要资源特色（50字以内，切勿描述规则本身）"
+}`
+
+        const userPrompt = `
+目标网站 URL: ${params.url || '未提供'}
+参考网页 HTML 片段:
+\`\`\`html
+${html.slice(0, 8000)}
+\`\`\`
+
+请提炼出该网站的纯净站点名称与描述，严格输出 JSON。`
+
+        const rawOutput = await callLlm({
+          systemPrompt,
+          userPrompt,
+          temperatureOverride: 0.1,
+          jsonMode: true
+        })
+
+        let cleanJson = rawOutput.trim()
+        if (cleanJson.includes('```json')) {
+          cleanJson = cleanJson.replace(/^[\s\S]*?```json/i, '').replace(/```[\s\S]*$/, '').trim()
+        } else if (cleanJson.includes('```')) {
+          cleanJson = cleanJson.replace(/^[\s\S]*?```/i, '').replace(/```[\s\S]*$/, '').trim()
+        }
+
+        const parsed = JSON.parse(cleanJson)
+        return {
+          name: parsed?.name?.trim() || localMeta.name || '未知站点',
+          description: parsed?.description?.trim() || localMeta.description || ''
+        }
+      } catch (e) {
+        console.warn('AI 提取站点元数据失败，回退使用本地嗅探结果:', e)
+      }
+    }
+
+    return {
+      name: localMeta.name || '新源站',
+      description: localMeta.description || ''
     }
   }
 
@@ -582,6 +645,7 @@ export const useAiSettingsStore = defineStore('aiSettings', () => {
     applyPreset,
     testConnection,
     processRuleCode,
+    extractSiteMetadata,
     fetchRemoteModels
   }
 })

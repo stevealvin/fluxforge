@@ -15,20 +15,43 @@ import {
   Copy,
   ExternalLink,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
   Layers,
-  Sparkles
+  Sparkles,
+  Trash2
 } from '@lucide/vue'
 
-const props = defineProps<{
-  code: string
-  ruleType?: MediaType | string
-  baseUrl?: string
-}>()
+const props = withDefaults(
+  defineProps<{
+    code: string
+    ruleType?: MediaType | string
+    baseUrl?: string
+    collapsed?: boolean
+  }>(),
+  {
+    collapsed: false
+  }
+)
 
 const emit = defineEmits<{
+  (e: 'update:collapsed', val: boolean): void
   (e: 'logs', logs: any[]): void
   (e: 'fix-error', context: { action: RuleAction; actionParams: any; rawResult: any; errorMessage: string }): void
 }>()
+
+const isCollapsed = ref(props.collapsed)
+watch(
+  () => props.collapsed,
+  (val) => {
+    isCollapsed.value = val
+  }
+)
+
+const toggleCollapsed = () => {
+  isCollapsed.value = !isCollapsed.value
+  emit('update:collapsed', isCollapsed.value)
+}
 
 const message = useMessage()
 
@@ -43,8 +66,8 @@ const actionTabs = [
   { label: 'parse', desc: '解析', value: 'parse' as RuleAction, icon: Terminal }
 ]
 
-const paramsDiscovery = ref({ category: '', page: 1 })
-const paramsSearch = ref({ keyword: '斗罗大陆', page: 1 })
+const paramsDiscovery = ref({ tab: '', page: 1 })
+const paramsSearch = ref({ keyword: '', page: 1 })
 const paramsDetail = ref({ url: '', item: null as any })
 const paramsParse = ref({ url: '', groupName: '' })
 
@@ -89,14 +112,23 @@ const parsedVisualData = computed(() => {
     else if (Array.isArray(r.pictures)) items = r.pictures
   }
 
+  const tabs = r && typeof r === 'object' && Array.isArray(r.tabs) ? r.tabs : []
+
   return {
     items,
     isDetail: activeAction.value === 'detail' || (r && typeof r === 'object' && (r.title || r.groups || r.playUrl)),
     isParse: activeAction.value === 'parse',
-    categories: r && typeof r === 'object' && Array.isArray(r.categories) ? r.categories : [],
+    tabs,
     raw: r
   }
 })
+
+const handleSelectTab = (t: any) => {
+  const val = typeof t === 'object' ? (t.title || t.url || '') : String(t)
+  paramsDiscovery.value.tab = val
+  paramsDiscovery.value.page = 1
+  executeAction('discovery')
+}
 
 // 执行沙箱动作
 const executeAction = async (actionToRun?: RuleAction, overrideCode?: string) => {
@@ -107,6 +139,11 @@ const executeAction = async (actionToRun?: RuleAction, overrideCode?: string) =>
   if (!codeToRun || !codeToRun.trim()) {
     message.warning('请先输入或由 AI 生成规则脚本代码')
     return
+  }
+
+  if (isCollapsed.value) {
+    isCollapsed.value = false
+    emit('update:collapsed', false)
   }
 
   running.value = true
@@ -196,29 +233,50 @@ const copyJsonResult = async () => {
   }
 }
 
+const clearLogs = () => {
+  sandboxLogs.value = []
+  emit('logs', [])
+}
+
 defineExpose({
   executeAction,
-  activeAction
+  activeAction,
+  isCollapsed,
+  toggleCollapsed,
+  clearLogs
 })
 </script>
 
 <template>
-  <div class="rounded-2xl border border-zinc-200/80 dark:border-white/5 bg-white/80 dark:bg-white/[0.02] p-3 space-y-3 shadow-xs flex-1 flex flex-col min-h-0">
+  <div
+    class="glass-panel rounded-2xl border border-emerald-100/60 dark:border-white/5 shadow-xs flex flex-col transition-all duration-300 overflow-hidden"
+    :class="isCollapsed ? 'shrink-0' : 'flex-1 min-h-[260px] max-h-[440px]'"
+  >
     <!-- 测试控制栏与 Tab 切换 -->
-    <div class="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-zinc-100 dark:border-white/5 shrink-0">
-      <!-- 4 大动作 Tabs 切换 -->
-      <div class="flex items-center p-0.5 rounded-xl bg-zinc-100/80 dark:bg-white/[0.04] border border-zinc-200/50 dark:border-white/5">
-        <button
-          v-for="tab in actionTabs"
-          :key="tab.value"
-          type="button"
-          class="flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-lg transition-all cursor-pointer"
-          :class="activeAction === tab.value ? 'bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white shadow-xs font-bold' : 'text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-300'"
-          @click="activeAction = tab.value"
-        >
-          <component :is="tab.icon" class="w-3.5 h-3.5" />
-          <span>{{ tab.desc }}</span>
-        </button>
+    <div class="px-3.5 py-2 border-b border-zinc-100 dark:border-white/5 flex flex-wrap items-center justify-between gap-2 bg-zinc-50/70 dark:bg-white/[0.02] shrink-0 select-none">
+      <div class="flex items-center gap-3">
+        <!-- 4 大动作 Tabs 切换 -->
+        <div class="flex items-center p-0.5 rounded-xl bg-zinc-200/50 dark:bg-white/[0.04] border border-zinc-200/60 dark:border-white/5">
+          <button
+            v-for="tab in actionTabs"
+            :key="tab.value"
+            type="button"
+            class="flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-lg transition-all cursor-pointer"
+            :class="activeAction === tab.value ? 'bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white shadow-xs font-bold' : 'text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-300'"
+            @click="activeAction = tab.value"
+          >
+            <component :is="tab.icon" class="w-3.5 h-3.5" />
+            <span>{{ tab.desc }}</span>
+          </button>
+        </div>
+
+        <!-- 快速入参提示 (折叠或宽屏时显示) -->
+        <div class="hidden md:flex items-center gap-2 text-xs font-mono text-zinc-400">
+          <span v-if="activeAction === 'discovery'">tab: {{ paramsDiscovery.tab || '默认' }} (p{{ paramsDiscovery.page }})</span>
+          <span v-else-if="activeAction === 'search'">wd: {{ paramsSearch.keyword || '未输入' }} (p{{ paramsSearch.page }})</span>
+          <span v-else-if="activeAction === 'detail'">url: {{ paramsDetail.url ? '已设置' : '未设置' }}</span>
+          <span v-else-if="activeAction === 'parse'">url: {{ paramsParse.url ? '已设置' : '未设置' }}</span>
+        </div>
       </div>
 
       <!-- 运行按钮与快捷键提示 -->
@@ -239,160 +297,191 @@ defineExpose({
           </template>
           <span>运行测试 (Ctrl+R)</span>
         </n-button>
-      </div>
-    </div>
 
-    <!-- 动态入参配置面板 -->
-    <div class="p-2 rounded-xl bg-zinc-50/70 dark:bg-zinc-900/40 border border-zinc-200/40 dark:border-white/5 space-y-2 shrink-0">
-      <!-- discovery 参数 -->
-      <div v-if="activeAction === 'discovery'" class="grid grid-cols-2 gap-2">
-        <div class="flex items-center gap-1.5 min-w-0">
-          <span class="text-[11px] text-zinc-400 w-12 shrink-0">category:</span>
-          <n-input v-model:value="paramsDiscovery.category" placeholder="分类参数(可选)" size="tiny" class="!rounded-lg text-xs" />
-        </div>
-        <div class="flex items-center gap-1.5 min-w-0">
-          <span class="text-[11px] text-zinc-400 w-10 shrink-0">page:</span>
-          <n-input-number v-model:value="paramsDiscovery.page" :min="1" size="tiny" class="!rounded-lg text-xs flex-1" />
-        </div>
-      </div>
-
-      <!-- search 参数 -->
-      <div v-else-if="activeAction === 'search'" class="grid grid-cols-2 gap-2">
-        <div class="flex items-center gap-1.5 min-w-0">
-          <span class="text-[11px] text-zinc-400 w-12 shrink-0">keyword:</span>
-          <n-input v-model:value="paramsSearch.keyword" placeholder="搜索关键词" size="tiny" class="!rounded-lg text-xs" />
-        </div>
-        <div class="flex items-center gap-1.5 min-w-0">
-          <span class="text-[11px] text-zinc-400 w-10 shrink-0">page:</span>
-          <n-input-number v-model:value="paramsSearch.page" :min="1" size="tiny" class="!rounded-lg text-xs flex-1" />
-        </div>
-      </div>
-
-      <!-- detail 参数 -->
-      <div v-else-if="activeAction === 'detail'" class="space-y-1.5">
-        <div class="flex items-center gap-1.5 min-w-0">
-          <span class="text-[11px] text-zinc-400 w-10 shrink-0">url:</span>
-          <n-input v-model:value="paramsDetail.url" placeholder="详情页相对路径或完整 URL (如 /vod/detail-123.html)" size="tiny" class="!rounded-lg text-xs font-mono" />
-        </div>
-      </div>
-
-      <!-- parse 参数 -->
-      <div v-else-if="activeAction === 'parse'" class="grid grid-cols-2 gap-2">
-        <div class="flex items-center gap-1.5 min-w-0">
-          <span class="text-[11px] text-zinc-400 w-10 shrink-0">url:</span>
-          <n-input v-model:value="paramsParse.url" placeholder="选集相对路径或地址" size="tiny" class="!rounded-lg text-xs font-mono" />
-        </div>
-        <div class="flex items-center gap-1.5 min-w-0">
-          <span class="text-[11px] text-zinc-400 w-16 shrink-0">groupName:</span>
-          <n-input v-model:value="paramsParse.groupName" placeholder="线路名 (如 默认线路)" size="tiny" class="!rounded-lg text-xs" />
-        </div>
-      </div>
-    </div>
-
-    <!-- 异常与报错横幅 + AI 诊断入口 -->
-    <div
-      v-if="errorMessage"
-      class="p-2.5 rounded-xl bg-rose-50 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900/40 flex items-center justify-between gap-3 text-xs shrink-0 text-rose-700 dark:text-rose-300"
-    >
-      <div class="flex items-center gap-2 min-w-0">
-        <AlertCircle class="w-4 h-4 shrink-0 text-rose-500" />
-        <span class="font-mono truncate font-medium">{{ errorMessage }}</span>
-      </div>
-      <n-button
-        type="error"
-        size="tiny"
-        secondary
-        class="!rounded-lg shrink-0 font-bold"
-        @click="triggerFixError"
-      >
-        <template #icon>
-          <Sparkles class="w-3.5 h-3.5" />
-        </template>
-        <span>让 AI 修复此问题</span>
-      </n-button>
-    </div>
-
-    <!-- 视图模式切换与展示控制栏 -->
-    <div class="flex items-center justify-between pt-1 border-t border-zinc-100 dark:border-white/5 shrink-0">
-      <div class="flex items-center gap-1">
-        <span class="text-[11px] font-bold text-zinc-600 dark:text-zinc-400">输出模式:</span>
-        <div class="flex items-center p-0.5 rounded-lg bg-zinc-100 dark:bg-white/[0.04]">
-          <button
-            type="button"
-            class="px-2 py-0.5 text-[10px] font-medium rounded cursor-pointer"
-            :class="viewMode === 'visual' ? 'bg-white dark:bg-zinc-800 text-emerald-600 font-bold shadow-2xs' : 'text-zinc-500'"
-            @click="viewMode = 'visual'"
-          >
-            可视化
-          </button>
-          <button
-            type="button"
-            class="px-2 py-0.5 text-[10px] font-medium rounded cursor-pointer"
-            :class="viewMode === 'json' ? 'bg-white dark:bg-zinc-800 text-emerald-600 font-bold shadow-2xs' : 'text-zinc-500'"
-            @click="viewMode = 'json'"
-          >
-            JSON
-          </button>
-          <button
-            type="button"
-            class="px-2 py-0.5 text-[10px] font-medium rounded cursor-pointer"
-            :class="viewMode === 'logs' ? 'bg-white dark:bg-zinc-800 text-emerald-600 font-bold shadow-2xs' : 'text-zinc-500'"
-            @click="viewMode = 'logs'"
-          >
-            沙箱日志 ({{ sandboxLogs.length }})
-          </button>
-        </div>
-      </div>
-
-      <div class="flex items-center gap-2">
         <n-button
-          v-if="rawResult"
-          size="tiny"
           quaternary
-          class="!rounded-lg text-[10px]"
-          @click="copyJsonResult"
+          size="small"
+          class="!p-1.5 !rounded-xl text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200"
+          :title="isCollapsed ? '展开沙箱测试与结果面板' : '收起沙箱面板'"
+          @click="toggleCollapsed"
         >
           <template #icon>
-            <Copy class="w-3 h-3" />
+            <component :is="isCollapsed ? ChevronUp : ChevronDown" class="w-4 h-4" />
           </template>
-          <span>复制 JSON</span>
         </n-button>
       </div>
     </div>
 
-    <!-- 结果呈现区 (支持滚动与不同视图) -->
-    <div class="flex-1 overflow-y-auto min-h-0 pr-1 space-y-3">
-      <!-- 模式 A: 原始 JSON 视图 -->
-      <div v-if="viewMode === 'json'" class="h-full">
-        <pre class="p-3 rounded-xl bg-zinc-950 text-zinc-200 text-xs font-mono whitespace-pre-wrap break-all h-full overflow-y-auto">{{ jsonOutput || '暂无运行结果数据' }}</pre>
-      </div>
-
-      <!-- 模式 B: 沙箱 Console 日志 -->
-      <div v-else-if="viewMode === 'logs'" class="h-full">
-        <div v-if="sandboxLogs.length === 0" class="h-full flex items-center justify-center text-xs text-zinc-400">
-          沙箱未产生任何 console 输出
+    <!-- 展开后的主体内容 -->
+    <div v-if="!isCollapsed" class="p-3 space-y-3 flex-1 flex flex-col min-h-0 overflow-hidden">
+      <!-- 动态入参配置面板 -->
+      <div class="p-2 rounded-xl bg-zinc-50/70 dark:bg-zinc-900/40 border border-zinc-200/40 dark:border-white/5 space-y-2 shrink-0">
+        <!-- discovery 参数 -->
+        <div v-if="activeAction === 'discovery'" class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          <div class="flex items-center gap-1.5 min-w-0 sm:col-span-2">
+            <span class="text-[11px] text-zinc-400 w-8 shrink-0">tab:</span>
+            <n-input
+              v-model:value="paramsDiscovery.tab"
+              placeholder="页签名称/路径(可选)"
+              size="tiny"
+              class="!rounded-lg text-xs"
+            />
+          </div>
+          <div class="flex items-center gap-1.5 min-w-0 sm:col-span-2">
+            <span class="text-[11px] text-zinc-400 w-10 shrink-0">page:</span>
+            <n-input-number v-model:value="paramsDiscovery.page" :min="1" size="tiny" class="!rounded-lg text-xs flex-1" />
+          </div>
         </div>
-        <div v-else class="p-2 space-y-1.5 bg-zinc-950 rounded-xl font-mono text-xs overflow-y-auto h-full">
-          <div
-            v-for="(log, idx) in sandboxLogs"
-            :key="idx"
-            class="flex items-start gap-2 py-0.5 text-zinc-300"
-          >
-            <span class="text-[10px] text-zinc-500 shrink-0">{{ log.time }}</span>
-            <span
-              class="text-[9px] px-1 py-0.2 rounded font-bold uppercase shrink-0"
-              :class="{
-                'bg-sky-500/20 text-sky-300': log.level === 'log' || log.level === 'info',
-                'bg-amber-500/20 text-amber-300': log.level === 'warn',
-                'bg-rose-500/20 text-rose-300': log.level === 'error'
-              }"
-            >
-              {{ log.level }}
-            </span>
-            <pre class="flex-1 whitespace-pre-wrap break-all text-xs font-mono">{{ log.message }}</pre>
+
+        <!-- search 参数 -->
+        <div v-else-if="activeAction === 'search'" class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          <div class="flex items-center gap-1.5 min-w-0 sm:col-span-2">
+            <span class="text-[11px] text-zinc-400 w-14 shrink-0">keyword:</span>
+            <n-input v-model:value="paramsSearch.keyword" placeholder="搜索关键词" size="tiny" class="!rounded-lg text-xs" />
+          </div>
+          <div class="flex items-center gap-1.5 min-w-0 sm:col-span-2">
+            <span class="text-[11px] text-zinc-400 w-10 shrink-0">page:</span>
+            <n-input-number v-model:value="paramsSearch.page" :min="1" size="tiny" class="!rounded-lg text-xs flex-1" />
+          </div>
+        </div>
+
+        <!-- detail 参数 -->
+        <div v-else-if="activeAction === 'detail'" class="space-y-1.5">
+          <div class="flex items-center gap-1.5 min-w-0">
+            <span class="text-[11px] text-zinc-400 w-8 shrink-0">url:</span>
+            <n-input v-model:value="paramsDetail.url" placeholder="详情页相对或完整 URL" size="tiny" class="!rounded-lg text-xs" />
+          </div>
+        </div>
+
+        <!-- parse 参数 -->
+        <div v-else-if="activeAction === 'parse'" class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+          <div class="flex items-center gap-1.5 min-w-0 sm:col-span-2">
+            <span class="text-[11px] text-zinc-400 w-8 shrink-0">url:</span>
+            <n-input v-model:value="paramsParse.url" placeholder="解析目标直链 / 播放页 URL" size="tiny" class="!rounded-lg text-xs" />
+          </div>
+          <div class="flex items-center gap-1.5 min-w-0">
+            <span class="text-[11px] text-zinc-400 w-12 shrink-0">group:</span>
+            <n-input v-model:value="paramsParse.groupName" placeholder="选集组名(可选)" size="tiny" class="!rounded-lg text-xs" />
           </div>
         </div>
       </div>
+
+      <!-- 异常提示条 -->
+      <div
+        v-if="errorMessage"
+        class="p-2.5 rounded-xl border border-rose-500/30 bg-rose-500/10 flex items-center justify-between gap-2 shrink-0"
+      >
+        <div class="flex items-center gap-2 min-w-0">
+          <AlertCircle class="w-4 h-4 text-rose-500 shrink-0" />
+          <span class="text-xs text-rose-700 dark:text-rose-300 font-medium truncate">{{ errorMessage }}</span>
+        </div>
+        <n-button
+          size="tiny"
+          type="error"
+          secondary
+          class="!rounded-lg !font-bold shrink-0 shadow-2xs"
+          @click="triggerFixError"
+        >
+          <template #icon>
+            <Sparkles class="w-3.5 h-3.5 text-rose-500" />
+          </template>
+          <span>由 AI 诊断修复</span>
+        </n-button>
+      </div>
+
+      <!-- 结果视口顶栏与视图模式切换 -->
+      <div class="flex items-center justify-between shrink-0 pt-0.5">
+        <div class="flex items-center gap-2">
+          <span class="text-xs font-bold text-zinc-800 dark:text-zinc-200">执行结果</span>
+          <!-- 模式切换 Pills -->
+          <div class="flex items-center p-0.5 rounded-lg bg-zinc-100 dark:bg-white/[0.04] border border-zinc-200/40 dark:border-white/5">
+            <button
+              type="button"
+              class="px-2.5 py-0.5 text-[11px] font-medium rounded cursor-pointer transition-all"
+              :class="viewMode === 'visual' ? 'bg-white dark:bg-zinc-800 text-emerald-600 dark:text-emerald-400 font-bold shadow-2xs' : 'text-zinc-500'"
+              @click="viewMode = 'visual'"
+            >
+              可视化预览
+            </button>
+            <button
+              type="button"
+              class="px-2.5 py-0.5 text-[11px] font-medium rounded cursor-pointer transition-all"
+              :class="viewMode === 'json' ? 'bg-white dark:bg-zinc-800 text-emerald-600 dark:text-emerald-400 font-bold shadow-2xs' : 'text-zinc-500'"
+              @click="viewMode = 'json'"
+            >
+              JSON 数据
+            </button>
+            <button
+              type="button"
+              class="px-2.5 py-0.5 text-[11px] font-medium rounded cursor-pointer transition-all"
+              :class="viewMode === 'logs' ? 'bg-white dark:bg-zinc-800 text-emerald-600 dark:text-emerald-400 font-bold shadow-2xs' : 'text-zinc-500'"
+              @click="viewMode = 'logs'"
+            >
+              沙箱日志 ({{ sandboxLogs.length }})
+            </button>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <n-button
+            v-if="rawResult"
+            size="tiny"
+            quaternary
+            class="!rounded-lg text-[10px]"
+            @click="copyJsonResult"
+          >
+            <template #icon>
+              <Copy class="w-3 h-3" />
+            </template>
+            <span>复制 JSON</span>
+          </n-button>
+        </div>
+      </div>
+
+      <!-- 结果呈现区 (支持滚动与不同视图) -->
+      <div class="flex-1 overflow-y-auto min-h-0 pr-1 space-y-3">
+        <!-- 模式 A: 原始 JSON 视图 -->
+        <div v-if="viewMode === 'json'" class="h-full">
+          <pre class="p-3 rounded-xl bg-zinc-950 text-zinc-200 text-xs font-mono whitespace-pre-wrap break-all h-full overflow-y-auto">{{ jsonOutput || '暂无运行结果数据' }}</pre>
+        </div>
+
+        <!-- 模式 B: 沙箱 Console 日志 -->
+        <div v-else-if="viewMode === 'logs'" class="h-full">
+          <div v-if="sandboxLogs.length === 0" class="h-full flex items-center justify-center text-xs text-zinc-400">
+            沙箱未产生任何 console 输出
+          </div>
+          <div v-else class="p-2 space-y-1.5 bg-zinc-950 rounded-xl font-mono text-xs overflow-y-auto h-full relative">
+            <div class="sticky top-0 z-10 flex items-center justify-between pb-1.5 mb-1.5 border-b border-zinc-800 bg-zinc-950/90 backdrop-blur-xs">
+              <span class="text-[10px] text-zinc-400">输出日志 ({{ sandboxLogs.length }} 条)</span>
+              <button
+                type="button"
+                class="text-[10px] text-zinc-400 hover:text-white flex items-center gap-1 cursor-pointer transition-colors"
+                @click="clearLogs"
+              >
+                <Trash2 class="w-3 h-3" />
+                <span>清空</span>
+              </button>
+            </div>
+            <div
+              v-for="(log, idx) in sandboxLogs"
+              :key="idx"
+              class="flex items-start gap-2 py-0.5 text-zinc-300"
+            >
+              <span class="text-[10px] text-zinc-500 shrink-0">{{ log.time }}</span>
+              <span
+                class="text-[9px] px-1 py-0.2 rounded font-bold uppercase shrink-0"
+                :class="{
+                  'bg-sky-500/20 text-sky-300': log.level === 'log' || log.level === 'info',
+                  'bg-amber-500/20 text-amber-300': log.level === 'warn',
+                  'bg-rose-500/20 text-rose-300': log.level === 'error'
+                }"
+              >
+                {{ log.level }}
+              </span>
+              <pre class="flex-1 whitespace-pre-wrap break-all text-xs font-mono">{{ log.message }}</pre>
+            </div>
+          </div>
+        </div>
 
       <!-- 模式 C: 可视化渲染视图 (重点) -->
       <div v-else class="space-y-3">
@@ -403,18 +492,27 @@ defineExpose({
 
         <!-- C.1 列表流网格卡片 (discovery / search) -->
         <div v-if="parsedVisualData?.items && parsedVisualData.items.length > 0" class="space-y-2">
-          <!-- 分类标签呈现 (若有) -->
-          <div v-if="parsedVisualData.categories && parsedVisualData.categories.length > 0" class="flex flex-wrap gap-1.5 pb-1">
-            <span
-              v-for="(cat, idx) in parsedVisualData.categories"
+          <!-- 分类/页签呈现 (若有) -->
+          <div v-if="parsedVisualData.tabs && parsedVisualData.tabs.length > 0" class="flex flex-wrap items-center gap-1.5 pb-1">
+            <span class="text-[10px] text-zinc-400 mr-0.5">页签:</span>
+            <button
+              v-for="(t, idx) in parsedVisualData.tabs"
               :key="idx"
-              class="px-2 py-0.5 text-[10px] rounded-md bg-zinc-100 dark:bg-white/[0.06] text-zinc-600 dark:text-zinc-300"
+              type="button"
+              @click="handleSelectTab(t)"
+              class="px-2 py-0.5 text-[10px] rounded-md transition-all cursor-pointer border"
+              :class="
+                (paramsDiscovery.tab === (typeof t === 'object' ? (t.title || t.url) : t))
+                  ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border-emerald-300 dark:border-emerald-800/50 font-bold shadow-2xs'
+                  : 'bg-zinc-100 dark:bg-white/[0.06] text-zinc-600 dark:text-zinc-300 border-transparent hover:border-zinc-300 dark:hover:border-white/20'
+              "
+              title="点击选中此页签并立即重新运行"
             >
-              {{ typeof cat === 'object' ? cat.title : cat }}
-            </span>
+              {{ typeof t === 'object' ? (t.title || t.url) : t }}
+            </button>
           </div>
 
-          <div class="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+          <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2.5">
             <div
               v-for="(item, idx) in parsedVisualData.items"
               :key="idx"
@@ -439,21 +537,23 @@ defineExpose({
               </div>
 
               <!-- 标题与操作栏 -->
-              <div class="p-2 space-y-1 flex-1 flex flex-col justify-between">
-                <div class="text-xs font-bold text-zinc-800 dark:text-zinc-200 line-clamp-1" :title="item.title">
-                  {{ item.title || '无标题' }}
-                </div>
-                <div v-if="item.desc" class="text-[10px] text-zinc-400 line-clamp-1">
-                  {{ item.desc }}
+              <div class="p-2 space-y-1.5 flex-1 flex flex-col justify-between">
+                <div>
+                  <div class="text-xs font-bold text-zinc-800 dark:text-zinc-200 line-clamp-1" :title="item.title">
+                    {{ item.title || '无标题' }}
+                  </div>
+                  <div v-if="item.desc" class="text-[10px] text-zinc-400 line-clamp-1 mt-0.5">
+                    {{ item.desc }}
+                  </div>
                 </div>
 
-                <div class="pt-1.5 flex items-center justify-between border-t border-zinc-100 dark:border-white/5">
-                  <span class="text-[9px] font-mono text-zinc-400 truncate max-w-[90px]" :title="item.url">
+                <div class="pt-1.5 space-y-1 border-t border-zinc-100 dark:border-white/5">
+                  <div class="text-[9px] font-mono text-zinc-400 truncate" :title="item.url">
                     {{ item.url || '' }}
-                  </span>
+                  </div>
                   <button
                     type="button"
-                    class="text-[10px] font-bold text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 flex items-center gap-0.5 cursor-pointer"
+                    class="w-full py-1 px-1.5 rounded-lg text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50/80 dark:bg-emerald-950/40 hover:bg-emerald-500 hover:text-white transition-all flex items-center justify-center gap-0.5 cursor-pointer shadow-2xs"
                     @click="testDetailWithItem(item)"
                   >
                     <span>测试详情</span>
@@ -564,4 +664,5 @@ defineExpose({
       </div>
     </div>
   </div>
+</div>
 </template>

@@ -125,7 +125,7 @@ export const addGlobalSandboxTypes = (monaco: typeof import('monaco-editor')) =>
        * 发现/列表页标准返回数据结构
        */
       interface DiscoveryResult {
-        categories?: string[] | Array<{ title: string; url: string }>;
+        tabs?: string[] | Array<{ title: string; url: string }>;
         items: MediaItem[];
         hasMore?: boolean;
       }
@@ -142,7 +142,7 @@ export const addGlobalSandboxTypes = (monaco: typeof import('monaco-editor')) =>
        * 规则定义接口
        */
       interface RuleDefinition {
-        discovery?: (params: { category?: string; page?: number; baseUrl?: string }) => Promise<DiscoveryResult | MediaItem[] | any>;
+        discovery?: (params: { tab?: string; page?: number; baseUrl?: string }) => Promise<DiscoveryResult | MediaItem[] | any>;
         search?: (params: { keyword: string; page?: number; baseUrl?: string }) => Promise<SearchResult | MediaItem[] | any>;
         detail?: (params: { url: string; item?: any; baseUrl?: string }) => Promise<DetailResult | any>;
         parse?: (params: { url: string; groupName?: string; baseUrl?: string }) => Promise<{ playUrl?: string; content?: string } | any>;

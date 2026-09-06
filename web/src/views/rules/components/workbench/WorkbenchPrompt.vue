@@ -2,24 +2,17 @@
 import { ref, computed } from 'vue'
 import { useMessage } from 'naive-ui'
 import { useAiSettingsStore } from '@/stores/aiSettings'
-import CodeEditor from '@/components/CodeEditor/index.vue'
 import type { MediaType } from '@/types/rule'
 import {
   Sparkles,
-  CheckCircle2,
+  Loader2,
+  FileText,
   Copy,
-  Check,
-  Code,
-  CheckCheck,
-  ChevronDown,
-  ChevronUp
+  CheckCheck
 } from '@lucide/vue'
 
 export interface AiGenerationResult {
   code: string
-  name?: string
-  description?: string
-  mediaType?: string
   analysis?: string
   isFix?: boolean
 }
@@ -50,8 +43,6 @@ const userPrompt = ref('')
 const aiLoading = ref(false)
 const autoTestAfterAi = ref(true)
 const currentAiResult = ref<AiGenerationResult | null>(null)
-const showCodePreview = ref(false)
-const showAnalysis = ref(false)
 
 // 判断是否全新冷启动
 const isFreshStart = computed(() => {
@@ -90,6 +81,8 @@ const handleRunAi = async (options?: {
   rawResult?: any
   errorMessage?: string
 }) => {
+  if (aiLoading.value) return
+
   if (!aiStore.baseUrl || !aiStore.model) {
     message.error('请先在「系统设置」中配置 AI API Key 与模型提供商')
     return
@@ -118,14 +111,20 @@ const handleRunAi = async (options?: {
     if (result?.code) {
       currentAiResult.value = {
         code: result.code,
-        name: result.name || props.ruleName,
-        description: result.description || props.ruleDescription,
-        mediaType: result.mediaType || props.mediaType,
         analysis: result.analysis || (isFix ? 'AI 已完成代码针对性优化与排错。' : 'AI 已根据需求生成完整规则脚本。'),
         isFix
       }
-      showCodePreview.value = false
-      message.success(isFix ? '✨ AI 已完成针对性优化修复！' : '✨ 规则生成成功！')
+
+      // 方案A：生成成功后，直接自动同步至主编辑器 (保持全局单一代码源)
+      emit('apply', {
+        code: result.code,
+        baseUrl: props.targetUrl || '',
+        type: String(props.mediaType),
+        name: props.ruleName,
+        description: props.ruleDescription
+      })
+
+      message.success(isFix ? '✨ AI 已完成针对性优化修复并同步至主编辑器！' : '✨ 规则生成成功并已同步至主编辑器！')
       emit('code-ready', currentAiResult.value)
 
       if (autoTestAfterAi.value) {
@@ -139,19 +138,19 @@ const handleRunAi = async (options?: {
   }
 }
 
-// 复制当前 AI 代码
-const copyAiCode = async () => {
-  const code = currentAiResult.value?.code
-  if (!code) return
+// 复制 AI 分析报告
+const copyAnalysis = async () => {
+  const analysis = currentAiResult.value?.analysis
+  if (!analysis) return
   try {
-    await navigator.clipboard.writeText(code)
-    message.success('已复制 AI 代码到剪贴板')
+    await navigator.clipboard.writeText(analysis)
+    message.success('已复制分析报告到剪贴板')
   } catch {
     message.error('复制失败')
   }
 }
 
-// 一键应用到主编辑器
+// 再次同步到主编辑器
 const applyToMainEditor = () => {
   const codeToApply = currentAiResult.value?.code
   if (!codeToApply) return
@@ -159,11 +158,11 @@ const applyToMainEditor = () => {
   emit('apply', {
     code: codeToApply,
     baseUrl: props.targetUrl || '',
-    type: currentAiResult.value?.mediaType || String(props.mediaType),
-    name: currentAiResult.value?.name || props.ruleName,
-    description: currentAiResult.value?.description || props.ruleDescription
+    type: String(props.mediaType),
+    name: props.ruleName,
+    description: props.ruleDescription
   })
-  message.success('✅ 已将代码与配置无缝同步至主编辑器')
+  message.success('✅ 已将代码重新同步至主编辑器')
 }
 
 defineExpose({
@@ -183,16 +182,17 @@ defineExpose({
             <Sparkles class="w-3.5 h-3.5 text-emerald-500" />
             <span>AI 规则需求与调整指令:</span>
           </span>
-          <span class="text-[10px] text-zinc-400">支持 Ctrl+Enter 快捷发送</span>
+          <span class="text-[10px] text-zinc-400">按 Enter 发送，Shift+Enter 换行</span>
         </div>
 
         <n-input
           v-model:value="userPrompt"
           type="textarea"
           :rows="2"
+          :disabled="aiLoading"
           :placeholder="isFreshStart ? '请输入生成需求（如：提取列表标题、封面高清原图、过滤广告节点等）...' : '输入优化需求或问题（如：选集正序排列、正文保留段落、翻页失效等）...'"
           class="!rounded-xl text-xs"
-          @keydown.ctrl.enter="handleRunAi()"
+          @keydown.enter.exact.prevent="!$event.isComposing && handleRunAi()"
         />
       </div>
 
@@ -203,7 +203,8 @@ defineExpose({
           v-for="chip in quickPromptChips"
           :key="chip"
           type="button"
-          class="px-2 py-0.5 text-[10px] rounded-lg bg-violet-50/70 dark:bg-violet-950/20 border border-violet-200/50 dark:border-violet-800/30 text-violet-700 dark:text-violet-300 hover:bg-violet-500/15 transition-colors cursor-pointer"
+          :disabled="aiLoading"
+          class="px-2 py-0.5 text-[10px] rounded-lg bg-violet-50/70 dark:bg-violet-950/20 border border-violet-200/50 dark:border-violet-800/30 text-violet-700 dark:text-violet-300 hover:bg-violet-500/15 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           @click="handleApplyPromptChip(chip)"
         >
           {{ chip }}
@@ -216,97 +217,69 @@ defineExpose({
           type="primary"
           class="flex-1 !rounded-xl !font-bold !py-3 shadow-md shadow-emerald-500/20 !bg-gradient-to-r !from-emerald-600 !via-teal-500 !to-cyan-500 text-white"
           :loading="aiLoading"
+          :disabled="aiLoading"
           @click="handleRunAi()"
         >
           <template #icon>
-            <Sparkles class="w-4 h-4 text-white animate-pulse" />
+            <Loader2 v-if="aiLoading" class="w-4 h-4 text-white animate-spin" />
+            <Sparkles v-else class="w-4 h-4 text-white animate-pulse" />
           </template>
           <span>
-            {{ isFreshStart ? '🚀 一键 AI 分析并生成规则代码' : '✨ 让 AI 推导优化并更新规则' }}
+            {{ aiLoading
+                ? (isFreshStart ? '🚀 正在智能分析并生成代码...' : '✨ 正在排查推导并优化代码...')
+                : (isFreshStart ? '🚀 一键 AI 分析并生成规则代码' : '✨ 让 AI 推导优化并更新规则')
+            }}
           </span>
         </n-button>
       </div>
     </div>
 
-    <!-- AI 产出卡片 (代码更新与分析简述) -->
+    <!-- AI 分析报告卡片 (直接常驻展示，无代码预览，不可折叠) -->
     <div
-      v-if="currentAiResult?.code"
-      class="rounded-2xl border border-emerald-200/80 dark:border-emerald-800/40 bg-emerald-50/30 dark:bg-emerald-950/15 p-3 space-y-2.5 shadow-2xs"
+      v-if="currentAiResult?.analysis"
+      class="rounded-2xl border border-emerald-200/80 dark:border-emerald-800/40 bg-emerald-50/40 dark:bg-emerald-950/20 p-3.5 space-y-2.5 shadow-2xs"
     >
       <div class="flex items-center justify-between">
         <div class="flex items-center gap-1.5">
-          <CheckCircle2 class="w-4 h-4 text-emerald-500" />
+          <FileText class="w-4 h-4 text-emerald-500" />
           <span class="text-xs font-bold text-zinc-900 dark:text-zinc-100">
-            {{ currentAiResult.isFix ? 'AI 诊断修复完成' : 'AI 规则生成完成' }}
-          </span>
-          <span v-if="currentAiResult.name" class="px-1.5 py-0.2 text-[10px] rounded bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 font-bold">
-            {{ currentAiResult.name }}
+            {{ currentAiResult.isFix ? 'AI 诊断优化报告' : 'AI 规则分析报告' }}
           </span>
         </div>
 
         <div class="flex items-center gap-1.5">
           <n-button
-            v-if="currentAiResult.analysis"
             size="tiny"
             quaternary
             class="!rounded-lg text-[10px]"
-            @click="showAnalysis = !showAnalysis"
-          >
-            {{ showAnalysis ? '收起分析' : '分析报告' }}
-          </n-button>
-          <n-button
-            size="tiny"
-            quaternary
-            class="!rounded-lg text-[10px]"
-            @click="showCodePreview = !showCodePreview"
+            title="复制分析报告"
+            @click="copyAnalysis"
           >
             <template #icon>
-              <Code class="w-3 h-3" />
+              <Copy class="w-3 h-3" />
             </template>
-            <span>{{ showCodePreview ? '收起预览' : '查看代码' }}</span>
+            <span>复制报告</span>
           </n-button>
           <n-button
             size="tiny"
             secondary
             class="!rounded-lg text-[10px]"
-            @click="copyAiCode"
-          >
-            <template #icon>
-              <Copy class="w-3 h-3" />
-            </template>
-            <span>复制</span>
-          </n-button>
-          <n-button
-            size="tiny"
-            type="primary"
-            class="!rounded-lg !font-bold text-[10px] shadow-xs"
+            title="代码已自动同步至主编辑器，点击可再次强制同步"
             @click="applyToMainEditor"
           >
             <template #icon>
-              <CheckCheck class="w-3 h-3" />
+              <CheckCheck class="w-3 h-3 text-emerald-500" />
             </template>
-            <span>同步主编辑器</span>
+            <span>已同步主编辑器</span>
           </n-button>
         </div>
       </div>
 
-      <!-- 分析报告展开 -->
+      <!-- 分析报告正文 (常驻直接展示，不可收起) -->
       <div
-        v-if="showAnalysis && currentAiResult.analysis"
-        class="text-xs p-2.5 rounded-xl bg-white/80 dark:bg-black/20 border border-emerald-100 dark:border-white/5 text-zinc-600 dark:text-zinc-300 whitespace-pre-wrap leading-relaxed"
+        class="text-xs p-3 rounded-xl bg-white/80 dark:bg-black/20 border border-emerald-100 dark:border-white/5 text-zinc-700 dark:text-zinc-200 whitespace-pre-wrap leading-relaxed select-text shadow-2xs font-normal"
       >
         {{ currentAiResult.analysis }}
-      </div>
-
-      <!-- 代码预览抽屉/容器 -->
-      <div v-if="showCodePreview" class="h-64 rounded-xl overflow-hidden border border-zinc-200/80 dark:border-white/10">
-        <code-editor
-          :model-value="currentAiResult.code"
-          model-id="ai_code_preview"
-          height="100%"
-          class="w-full h-full"
-          :options="{ readOnly: true, lineNumbers: 'on', minimap: { enabled: false } }"
-        />
       </div>
     </div>
   </div>

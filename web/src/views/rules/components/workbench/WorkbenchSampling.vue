@@ -108,7 +108,7 @@ const sniffDetailUrl = (rawContent: string, base: string): string => {
 
 const fetchUrlData = async (url: string, type: 'list' | 'detail' | 'parse') => {
   if (!url) {
-    message.warning('请输入要采样的目标网址')
+    message.warning('请输入要采样的网址')
     return
   }
 
@@ -151,12 +151,12 @@ defineExpose({
 
 <template>
   <div class="rounded-2xl border border-emerald-100/70 dark:border-white/5 bg-white/70 dark:bg-white/[0.02] p-3.5 space-y-3 shadow-2xs shrink-0">
-    <!-- 1. 目标源站 URL 输入与采样 (宽裕独立行) -->
+    <!-- 1. 源站 URL 输入与采样 (宽裕独立行) -->
     <div class="space-y-1.5">
       <div class="flex items-center justify-between text-xs font-bold text-zinc-700 dark:text-zinc-300">
         <div class="flex items-center gap-1.5">
           <Globe class="w-3.5 h-3.5 text-emerald-500" />
-          <span>目标源站 URL (可选采样)</span>
+          <span>源站 URL (可选采样)</span>
         </div>
         <button
           type="button"
