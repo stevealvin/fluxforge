@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, useTemplateRef, onMounted, onUnmounted } from 'vue'
+import { ref, computed, useTemplateRef, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 defineOptions({ name: 'EditView' })
