@@ -10,7 +10,7 @@
 
 ```
 [1. 基础治理与环境迁移]
- ├── 统一 Monorepo (flux-view) 与 Flutter App (flux-view-app) 命名
+ ├── 统一 Monorepo (fluxforge) 与 Flutter App 命名
  ├── 统一 GitHub 默认分支为 main（删除历史 master）
  └── 修复 GitHub MCP 配置与 .gitignore 规则忽略 (.agents/)
       │
@@ -136,7 +136,7 @@
    * 是否需要为常见类型（如只抓 JSON API、或标准的 XPath/CSS 规则）提供可视化表单配置，并在后台自动生成标准 `code`？
 2. **多源搜索的并发策略与流式响应**：
    * 当前搜索是前端并行发起多个请求。未来是否需要后端支持 SSE (Server-Sent Events) 流式推送，或者在前端支持“先返回先渲染”？
-3. **Flutter 移动端 (`flux-view-app`) 的对齐方案**：
+3. **Flutter 移动端 (`app/`) 的对齐方案**：
    * 手机端是直接调用后端的 Hono API 接口，还是在 Flutter 内置 JavaScriptCore / QuickJS 独立运行沙箱？
 
 ---

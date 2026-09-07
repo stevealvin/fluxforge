@@ -1,10 +1,12 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import axios from 'axios'
 import type { MediaType } from '@/types/rule'
 import { distillContentForAi } from '@/utils/htmlDistiller'
 
-export interface AiConfig {
+export interface AiProfile {
+  id: string
+  name: string
   provider: 'openai' | 'gemini' | 'claude' | string
   baseUrl: string
   apiKey: string
@@ -86,7 +88,8 @@ export const extractMetadataFallback = (rawContent: string, url: string = '') =>
   return { name, description }
 }
 
-const STORAGE_KEY = 'fluxforge-ai-settings'
+const PROFILES_STORAGE_KEY = 'fluxforge-ai-profiles'
+const ACTIVE_PROFILE_ID_KEY = 'fluxforge-active-profile-id'
 
 /**
  * 仅保留 API 协议本质不同的主流厂商类型：
@@ -122,75 +125,212 @@ export const AI_PRESETS: Record<
 }
 
 export const useAiSettingsStore = defineStore('aiSettings', () => {
-  const provider = ref<string>('openai')
-  const baseUrl = ref<string>('https://api.openai.com/v1')
-  const apiKey = ref<string>('')
-  const model = ref<string>('gpt-4o-mini')
-  const temperature = ref<number>(0.1)
+  // 🌟 多配置列表与当前激活生效 ID
+  const profiles = ref<AiProfile[]>([])
+  const activeProfileId = ref<string>('')
 
-  // 从 localStorage 加载配置
+  // 当前激活生效的配置对象 (自动防空安全兜底)
+  const activeProfile = computed<AiProfile>(() => {
+    if (profiles.value.length === 0) {
+      return {
+        id: 'fallback',
+        name: '默认配置',
+        provider: 'openai',
+        baseUrl: 'https://api.openai.com/v1',
+        apiKey: '',
+        model: 'gpt-4o-mini',
+        temperature: 0.1
+      }
+    }
+    const found = profiles.value.find((p) => p.id === activeProfileId.value)
+    return found || profiles.value[0]
+  })
+
+  // 默认推荐配置工厂
+  const createDefaultProfiles = (): AiProfile[] => [
+    {
+      id: 'profile_deepseek',
+      name: 'DeepSeek 官方',
+      provider: 'openai',
+      baseUrl: 'https://api.deepseek.com',
+      apiKey: '',
+      model: 'deepseek-chat',
+      temperature: 0.1
+    },
+    {
+      id: 'profile_gemini',
+      name: 'Google Gemini 2.0',
+      provider: 'gemini',
+      baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+      apiKey: '',
+      model: 'gemini-2.0-flash',
+      temperature: 0.1
+    },
+    {
+      id: 'profile_openai',
+      name: 'OpenAI 兼容中转',
+      provider: 'openai',
+      baseUrl: 'https://api.openai.com/v1',
+      apiKey: '',
+      model: 'gpt-4o-mini',
+      temperature: 0.1
+    }
+  ]
+
+  // 持久化保存到 localStorage
+  const persistProfiles = () => {
+    try {
+      localStorage.setItem(PROFILES_STORAGE_KEY, JSON.stringify(profiles.value))
+      localStorage.setItem(ACTIVE_PROFILE_ID_KEY, activeProfileId.value)
+    } catch (e) {
+      console.error('持久化 AI 配置失败:', e)
+    }
+  }
+
+  // 从 localStorage 加载配置并执行去重自愈
   const loadSettings = () => {
     try {
-      const raw = localStorage.getItem(STORAGE_KEY)
-      if (raw) {
-        const saved = JSON.parse(raw)
-        provider.value = saved.provider || 'openai'
-        baseUrl.value = saved.baseUrl || 'https://api.openai.com/v1'
-        apiKey.value = saved.apiKey || ''
-        model.value = saved.model || 'gpt-4o-mini'
-        temperature.value = saved.temperature ?? 0.1
+      const rawProfiles = localStorage.getItem(PROFILES_STORAGE_KEY)
+      const rawActiveId = localStorage.getItem(ACTIVE_PROFILE_ID_KEY)
+      if (rawProfiles) {
+        const list = JSON.parse(rawProfiles)
+        if (Array.isArray(list) && list.length > 0) {
+          // 🌟 脏数据自愈：检查并消除可能存在的重复 ID
+          const seenIds = new Set<string>()
+          let hasDuplicateId = false
+          for (let i = 0; i < list.length; i++) {
+            const p = list[i]
+            if (!p.id || seenIds.has(p.id)) {
+              p.id = 'profile_' + Date.now() + '_' + i + '_' + Math.random().toString(36).substring(2, 7)
+              hasDuplicateId = true
+            }
+            seenIds.add(p.id)
+          }
+
+          profiles.value = list
+          activeProfileId.value = rawActiveId && list.some((p: any) => p.id === rawActiveId) ? rawActiveId : list[0].id
+          
+          if (hasDuplicateId) {
+            console.warn('检测到本地缓存存在重复或缺失的 Profile ID，已自动完成自愈重分配')
+            persistProfiles()
+          }
+          return
+        }
       }
+
+      // 全新环境用户，初始化推荐预设配置列表
+      profiles.value = createDefaultProfiles()
+      activeProfileId.value = profiles.value[0].id
+      persistProfiles()
     } catch (e) {
       console.warn('加载 AI 配置失败:', e)
     }
   }
 
-  // 保存配置
-  const saveSettings = (config: Partial<AiConfig>) => {
-    if (config.provider !== undefined) provider.value = config.provider
-    if (config.baseUrl !== undefined) baseUrl.value = config.baseUrl
-    if (config.apiKey !== undefined) apiKey.value = config.apiKey
-    if (config.model !== undefined) model.value = config.model
-    if (config.temperature !== undefined) temperature.value = config.temperature
-
-    const data: AiConfig = {
-      provider: provider.value,
-      baseUrl: baseUrl.value,
-      apiKey: apiKey.value,
-      model: model.value,
-      temperature: temperature.value
+  // 切换当前激活配置
+  const setActiveProfile = (id: string) => {
+    if (profiles.value.some((p) => p.id === id)) {
+      activeProfileId.value = id
+      persistProfiles()
     }
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
   }
 
-  // 选择厂商预设
-  const applyPreset = (key: string) => {
+  // 新增一套 API 配置
+  const addProfile = (presetKey: string = 'openai', customName?: string): AiProfile => {
+    const preset = AI_PRESETS[presetKey] || AI_PRESETS.openai
+    const newProfile: AiProfile = {
+      id: 'profile_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
+      name: customName || `新配置 (${preset.label.split('/')[0].trim()})`,
+      provider: presetKey,
+      baseUrl: preset.baseUrl,
+      apiKey: '',
+      model: preset.defaultModel,
+      temperature: 0.1
+    }
+    profiles.value.push(newProfile)
+    persistProfiles()
+    return newProfile
+  }
+
+  // 更新指定 API 配置 (严格防止外部 data 中意外携带的 id 覆盖已有主键)
+  const updateProfile = (id: string, data: Partial<AiProfile>) => {
+    const idx = profiles.value.findIndex((p) => p.id === id)
+    if (idx !== -1) {
+      const { id: _ignoredId, ...safeData } = data
+      profiles.value[idx] = { ...profiles.value[idx], ...safeData }
+      persistProfiles()
+    }
+  }
+
+  // 克隆复制指定配置 (保证深拷贝并生成全新的唯一独立 ID)
+  const duplicateProfile = (id: string): AiProfile | null => {
+    const source = profiles.value.find((p) => p.id === id)
+    if (!source) return null
+    const newProfile: AiProfile = {
+      id: 'profile_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8),
+      name: `${source.name} (副本)`,
+      provider: source.provider,
+      baseUrl: source.baseUrl,
+      apiKey: source.apiKey,
+      model: source.model,
+      temperature: source.temperature
+    }
+    profiles.value.push(newProfile)
+    persistProfiles()
+    return newProfile
+  }
+
+  // 删除指定 API 配置 (至少保留 1 个)
+  const deleteProfile = (id: string): boolean => {
+    if (profiles.value.length <= 1) return false
+    const idx = profiles.value.findIndex((p) => p.id === id)
+    if (idx !== -1) {
+      profiles.value.splice(idx, 1)
+      if (activeProfileId.value === id) {
+        activeProfileId.value = profiles.value[0].id
+      }
+      persistProfiles()
+      return true
+    }
+    return false
+  }
+
+  // 选择厂商预设 (用于快速填充指定 profile)
+  const applyPreset = (key: string, targetId?: string) => {
     const preset = AI_PRESETS[key]
     if (preset) {
-      provider.value = key
-      baseUrl.value = preset.baseUrl
-      model.value = preset.defaultModel
+      const idToUpdate = targetId || activeProfileId.value
+      updateProfile(idToUpdate, {
+        provider: key,
+        baseUrl: preset.baseUrl,
+        model: preset.defaultModel
+      })
     }
   }
 
-  // 测试连接 (按不同 API 协议分发)
-  const testConnection = async (): Promise<{ success: boolean; message: string }> => {
-    if (!baseUrl.value) {
+  // 测试连接 (支持传入任意待测试的 Profile，未传则测试当前激活的 Profile)
+  const testConnection = async (targetProfile?: Partial<AiProfile>): Promise<{ success: boolean; message: string }> => {
+    const current = activeProfile.value
+    const testBaseUrl = (targetProfile?.baseUrl ?? current.baseUrl).trim()
+    const testProvider = targetProfile?.provider ?? current.provider
+    const testApiKey = (targetProfile?.apiKey ?? current.apiKey).trim()
+    const testModel = (targetProfile?.model ?? current.model).trim()
+
+    if (!testBaseUrl) {
       return { success: false, message: '请先填写 API 接口地址 (Base URL)' }
     }
 
-    const cleanBase = baseUrl.value.replace(/\/+$/, '')
-    const currentProvider = provider.value
+    const cleanBase = testBaseUrl.replace(/\/+$/, '')
 
     try {
       // 1. Google Gemini 协议
-      if (currentProvider === 'gemini') {
-        const url = `${cleanBase}/models/${model.value}:generateContent`
+      if (testProvider === 'gemini') {
+        const url = `${cleanBase}/models/${testModel}:generateContent`
         const headers: Record<string, string> = {
           'Content-Type': 'application/json'
         }
-        if (apiKey.value) {
-          headers['x-goog-api-key'] = apiKey.value
+        if (testApiKey) {
+          headers['x-goog-api-key'] = testApiKey
         }
 
         const res = await axios.post(
@@ -203,27 +343,27 @@ export const useAiSettingsStore = defineStore('aiSettings', () => {
         )
 
         if (res.status === 200 && res.data?.candidates?.length > 0) {
-          return { success: true, message: `连接成功！Gemini [${model.value}] 响应正常。` }
+          return { success: true, message: `连接成功！Gemini [${testModel}] 响应正常。` }
         }
         return { success: false, message: `响应格式不符合预期: ${JSON.stringify(res.data)}` }
       }
 
       // 2. Anthropic Claude 协议
-      if (currentProvider === 'claude') {
+      if (testProvider === 'claude') {
         const url = `${cleanBase}/messages`
         const headers: Record<string, string> = {
           'Content-Type': 'application/json',
           'anthropic-version': '2023-06-01',
           'anthropic-dangerous-direct-browser-access': 'true'
         }
-        if (apiKey.value) {
-          headers['x-api-key'] = apiKey.value
+        if (testApiKey) {
+          headers['x-api-key'] = testApiKey
         }
 
         const res = await axios.post(
           url,
           {
-            model: model.value,
+            model: testModel,
             max_tokens: 10,
             messages: [{ role: 'user', content: 'Ping' }]
           },
@@ -231,7 +371,7 @@ export const useAiSettingsStore = defineStore('aiSettings', () => {
         )
 
         if (res.status === 200 && res.data?.content?.length > 0) {
-          return { success: true, message: `连接成功！Claude [${model.value}] 响应正常。` }
+          return { success: true, message: `连接成功！Claude [${testModel}] 响应正常。` }
         }
         return { success: false, message: `响应格式不符合预期: ${JSON.stringify(res.data)}` }
       }
@@ -241,14 +381,14 @@ export const useAiSettingsStore = defineStore('aiSettings', () => {
       const headers: Record<string, string> = {
         'Content-Type': 'application/json'
       }
-      if (apiKey.value) {
-        headers['Authorization'] = `Bearer ${apiKey.value}`
+      if (testApiKey) {
+        headers['Authorization'] = `Bearer ${testApiKey}`
       }
 
       const res = await axios.post(
         url,
         {
-          model: model.value,
+          model: testModel,
           messages: [{ role: 'user', content: 'Ping' }],
           max_tokens: 10
         },
@@ -256,7 +396,7 @@ export const useAiSettingsStore = defineStore('aiSettings', () => {
       )
 
       if (res.status === 200 && res.data?.choices?.length > 0) {
-        return { success: true, message: `连接成功！OpenAI兼容模型 [${model.value}] 响应正常。` }
+        return { success: true, message: `连接成功！OpenAI兼容模型 [${testModel}] 响应正常。` }
       }
       return { success: false, message: `响应异常: ${JSON.stringify(res.data)}` }
     } catch (error: any) {
@@ -278,20 +418,21 @@ export const useAiSettingsStore = defineStore('aiSettings', () => {
     temperatureOverride?: number
     jsonMode?: boolean
   }): Promise<string> => {
-    if (!baseUrl.value) {
+    const current = activeProfile.value
+    if (!current.baseUrl) {
       throw new Error('请先在「系统设置」中配置 AI 模型的 API 接口地址')
     }
 
-    const cleanBase = baseUrl.value.replace(/\/+$/, '')
-    const currentProvider = provider.value
-    const currentTemp = options.temperatureOverride ?? temperature.value
+    const cleanBase = current.baseUrl.replace(/\/+$/, '')
+    const currentProvider = current.provider
+    const currentTemp = options.temperatureOverride ?? current.temperature
     let rawOutput = ''
 
     // 1. Google Gemini 协议
     if (currentProvider === 'gemini') {
-      const url = `${cleanBase}/models/${model.value}:generateContent`
+      const url = `${cleanBase}/models/${current.model}:generateContent`
       const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-      if (apiKey.value) headers['x-goog-api-key'] = apiKey.value
+      if (current.apiKey) headers['x-goog-api-key'] = current.apiKey
 
       const generationConfig: Record<string, any> = { temperature: currentTemp }
       if (options.jsonMode) {
@@ -317,12 +458,12 @@ export const useAiSettingsStore = defineStore('aiSettings', () => {
         'anthropic-version': '2023-06-01',
         'anthropic-dangerous-direct-browser-access': 'true'
       }
-      if (apiKey.value) headers['x-api-key'] = apiKey.value
+      if (current.apiKey) headers['x-api-key'] = current.apiKey
 
       const res = await axios.post(
         url,
         {
-          model: model.value,
+          model: current.model,
           max_tokens: 4096,
           system: options.systemPrompt,
           messages: [{ role: 'user', content: options.userPrompt }],
@@ -336,10 +477,10 @@ export const useAiSettingsStore = defineStore('aiSettings', () => {
     else {
       const url = `${cleanBase}/chat/completions`
       const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-      if (apiKey.value) headers['Authorization'] = `Bearer ${apiKey.value}`
+      if (current.apiKey) headers['Authorization'] = `Bearer ${current.apiKey}`
 
       const payload: Record<string, any> = {
-        model: model.value,
+        model: current.model,
         messages: [
           { role: 'system', content: options.systemPrompt },
           { role: 'user', content: options.userPrompt }
@@ -371,41 +512,56 @@ export const useAiSettingsStore = defineStore('aiSettings', () => {
     const detailHtml = params.detailHtml || ''
     const parseHtml = params.parseHtml || ''
 
-    const systemPrompt = `你是一个资深的 JavaScript 网页抓取与规则引擎专家。
-你的任务是：根据用户的指令、现有规则代码、报错信息或数据样本，编写或优化/修复 FluxForge 规则脚本。
+    const systemPrompt = `你是一个资深的跨媒体聚合规则引擎架构师与多源 DSL 代码转译专家。
+你的任务是：根据用户提供的任意形态输入（自然语言指令、数据样本、报错堆栈、或异构外部源规则/脚本），编写、转译或优化/修复符合 FluxForge 规范的 ESModule 规则代码。
 
 【FluxForge 规则引擎标准规范】：
-1. 模块导出标准：使用 export default defineRule({ ... })，严禁编写任何 import 语句。
-2. 全局预置环境（在各生命周期函数内直接访问）：
+1. 模块导出标准：必须使用 export default defineRule({ ... })，严禁编写任何 import 语句。
+2. 全局预置宿主环境（在各生命周期函数内直接访问）：
    - baseUrl: 当前源站根域名字符串（请求时直接使用 \`\${baseUrl}/list\`）
    - axios: 全局 HTTP 请求客户端实例
    - cheerio: 全局 HTML DOM 解析器
-   - ua: 标准移动端/桌面端 User-Agent 字符串
+   - ua: 标准 User-Agent 字符串
    - defineRule: 全局规则定义辅助函数
 3. 核心返回值契约（严格遵循标准属性名，所有链接统一为 url，严禁使用 key、href、path 或其他别名）：
    - MediaItem: { title: string, url: string, cover?: string, desc?: string, badge?: string }
    - 选集项: { title: string, url: string }
-   - 视频直链: playUrl?: string
+   - 视频/音频直链: playUrl?: string
    - 图集大图数组: images?: string[]
    - 小说正文文本: content?: string
-4. 四大生命周期方法：
+4. 四大生命周期方法契约：
    - async discovery({ tab, page = 1 }): 返回 { tabs?: Array<{ title: string, url: string }>, items: MediaItem[], hasMore?: boolean } 或 MediaItem[]
    - async search({ keyword, page = 1 }): 返回 { items: MediaItem[], hasMore?: boolean } 或 MediaItem[]
    - async detail({ url, item }): 返回 { title: string, cover?: string, desc?: string, tags?: string[], author?: string, playUrl?: string, images?: string[], content?: string, groups?: [{ name: string, items: [{ title: string, url: string }] }], recommendations?: MediaItem[] }
    - async parse({ url, groupName }): 返回 { playUrl?: string, content?: string, headers?: Record<string, string> }
-5. 数据源自适应处理规范：
-   - 若提供的数据样本是 HTML：使用 const $ = cheerio.load(res.data) 提取选择器；
-   - 若提供的数据样本是 JSON (REST API)：直接解析返回的 JSON 对象，无需使用 cheerio。
 
-【代码处理与修复原则】：
-1. 若提供了现有规则代码：以现有代码为基准，保持未受影响且正常的提取逻辑不动，针对报错点或用户诉求进行局部精准修改/修复；
-2. 若未提供代码（或为空骨架）：编写完整、语法规范的四大生命周期实现；
-3. 保证 URL 的合法性与完整性，避免相对路径拼接错误。
+【多模态输入自适应识别与处理引擎（核心泛化能力）】：
+无论用户的输入呈现何种形式，你都必须自动识别其本质意图并自适应融会贯通：
+1. 外部规则配置与异构脚本转译模式：
+   - 当输入包含任何外部平台的规则配置（DSL）、网络爬虫脚本、HTTP 调用流或接口规范时，自动将其作为“业务逻辑蓝图”，将其请求逻辑与数据提取语法无缝转译为 FluxForge 标准代码：
+   - 提取全局 baseUrl: 解析目标站点的 Host / 基础服务根域名；
+   - 映射到 discovery: 将分类浏览、探索或首页规则转换为标准的分类列表与条目提取逻辑；
+   - 映射到 search: 将搜索请求构造（支持 GET/POST、URL 占位符宏或参数结构）与搜索结果提取逻辑转为 search 实现；
+   - 映射到 detail: 将详情提取与目录/章节/剧集列表规则转为标准书籍/影视详情以及分组结构 groups: [{ name: '默认分组', items: [{ title, url }] }]；
+   - 映射到 parse: 将正文内容或媒体直链解析逻辑转为 parse 实现（小说文本提取并保留段落排版/清洗净化返回 { content }，媒体播放直链提取返回 { playUrl }）；
+   - 语法转写: 将外部 DSL 选择器（CSS 选择器、属性读取宏、文本节点提取、XPath、正则提取等）平滑转写为基于 Cheerio 与原生 JavaScript 的健壮语法。
+2. 数据样本驱动模式（HTML DOM 源码 / REST API JSON 响应）：
+   - 若提供的是 HTML 数据：使用 const $ = cheerio.load(res.data) 进行 CSS 选择器提取；
+   - 若提供的是 JSON 数据：直接按对象层级安全解构提取，无需使用 cheerio。
+3. 异常诊断与修复模式（含有触发动作、报错堆栈或异常返回值）：
+   - 以现有代码为基准，准确定位报错原因（如未考虑相对路径拼接、选择器失效、空指针异常、未处理防盗链 Referer 等），做最小化精准修复。
+4. 自然语言与需求变更模式：
+   - 理解用户的微调指示（如“封面高清化”、“选集正序”、“正文段落排版”、“过滤广告节点”等），针对性优化。
+
+【代码生成原则】：
+1. 现有代码优先：若提供了现有正常代码，保留其正常部分，仅对需要修改或修复的点进行局部精准演进；
+2. 保持健壮性：请求前检查并补全相对路径为完整绝对 URL；对提取文本进行 .trim()；对可能为空的属性使用可选链；
+3. 输出纯净：严禁编造不存在的模块导入，严禁外部未定义依赖。
 
 【强制输出要求】：
 必须严格返回合法的 JSON 格式（可包含在 \`\`\`json 块中），格式字段如下：
 {
-  "analysis": "设计思路、问题排查分析或修改要点说明（50~300字）",
+  "analysis": "设计思路、输入意图识别说明或修改要点（50~300字）",
   "code": "完整的 ESModule JavaScript 规则代码..."
 }`
 
@@ -519,7 +675,7 @@ export const useAiSettingsStore = defineStore('aiSettings', () => {
     }
 
     // 2. 仅当配置了可用模型且需要 AI 提炼时，使用轻量微型 Prompt 提炼纯净名称与描述
-    if (baseUrl.value && model.value && (params.useAi || !localMeta.name)) {
+    if (activeProfile.value.baseUrl && activeProfile.value.model && (params.useAi || !localMeta.name)) {
       try {
         const systemPrompt = `你是一个网站信息提炼专家。
 你的任务是：根据提供的网页源码或 URL，提炼出该网站的纯净中文站点名称与网站简介。
@@ -570,10 +726,12 @@ ${html.slice(0, 8000)}
     }
   }
 
-  const fetchRemoteModels = async (overrideConfig?: Partial<AiConfig>): Promise<string[]> => {
-    const currentProvider = overrideConfig?.provider || provider.value
-    const currentBaseUrl = (overrideConfig?.baseUrl || baseUrl.value).replace(/\/+$/, '')
-    const currentApiKey = overrideConfig?.apiKey !== undefined ? overrideConfig.apiKey : apiKey.value
+  // 动态通过接口从厂商拉取模型列表
+  const fetchRemoteModels = async (overrideConfig?: Partial<AiProfile>): Promise<string[]> => {
+    const current = activeProfile.value
+    const currentProvider = overrideConfig?.provider || current.provider
+    const currentBaseUrl = (overrideConfig?.baseUrl || current.baseUrl).replace(/\/+$/, '')
+    const currentApiKey = overrideConfig?.apiKey !== undefined ? overrideConfig.apiKey : current.apiKey
 
     if (!currentBaseUrl) {
       throw new Error('请先填写 API 接口地址 (Base URL)')
@@ -635,13 +793,16 @@ ${html.slice(0, 8000)}
   loadSettings()
 
   return {
-    provider,
-    baseUrl,
-    apiKey,
-    model,
-    temperature,
+    // 多配置核心状态与激活项
+    profiles,
+    activeProfileId,
+    activeProfile,
     loadSettings,
-    saveSettings,
+    setActiveProfile,
+    addProfile,
+    updateProfile,
+    duplicateProfile,
+    deleteProfile,
     applyPreset,
     testConnection,
     processRuleCode,

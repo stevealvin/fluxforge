@@ -1,5 +1,5 @@
 /**
- * FluxForge 标准媒体与规则契约模型
+ * 标准媒体与规则契约模型
  */
 
 export type MediaType = 'video' | 'picture' | 'novel'

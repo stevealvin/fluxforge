@@ -13,7 +13,7 @@ app.use('*', corsMiddleware);
 app.get('/health', (c) => {
   return c.json({
     status: 'ok',
-    service: 'flux-view-api',
+    service: 'fluxforge-api',
     time: new Date().toISOString(),
   });
 });

@@ -84,7 +84,6 @@ const defaultSites: SiteSource[] = [
 ]
 
 const STORAGE_KEY = 'fluxforge-market-sites'
-const LEGACY_STORAGE_KEY = 'flux-view-market-sites'
 
 const sites = ref<SiteSource[]>([])
 const searchQuery = ref('')
@@ -102,7 +101,7 @@ const newSiteForm = ref({
 const categories = ['全部', '综合', '影视', '小说', '社区']
 
 const loadSites = () => {
-  const customJson = localStorage.getItem(STORAGE_KEY) || localStorage.getItem(LEGACY_STORAGE_KEY)
+  const customJson = localStorage.getItem(STORAGE_KEY)
   if (customJson) {
     try {
       const customSites = JSON.parse(customJson)
@@ -177,7 +176,7 @@ const handleAddSite = () => {
     isCustom: true
   }
 
-  const customJson = localStorage.getItem(STORAGE_KEY) || localStorage.getItem(LEGACY_STORAGE_KEY)
+  const customJson = localStorage.getItem(STORAGE_KEY)
   const currentCustom: SiteSource[] = customJson ? JSON.parse(customJson) : []
   currentCustom.push(newSite)
   localStorage.setItem(STORAGE_KEY, JSON.stringify(currentCustom))
@@ -195,7 +194,7 @@ const handleAddSite = () => {
 }
 
 const removeCustomSite = (id: string, name: string) => {
-  const customJson = localStorage.getItem(STORAGE_KEY) || localStorage.getItem(LEGACY_STORAGE_KEY)
+  const customJson = localStorage.getItem(STORAGE_KEY)
   if (!customJson) return
   try {
     let currentCustom: SiteSource[] = JSON.parse(customJson)

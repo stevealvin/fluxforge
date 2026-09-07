@@ -7,7 +7,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 /**
- * FluxView 根目录全栈一体化 Vite 配置文件 (Unified Dev Server)
+ * 根目录全栈一体化 Vite 配置文件 (Unified Dev Server)
  * 
  * 核心原理：
  * 1. 动态加载 web/vite.config.ts 中的子配置 (Vue 3、Tailwind CSS、路径别名等)

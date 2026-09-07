@@ -16,7 +16,7 @@ if (fs.existsSync(serverEnvPath)) {
 import { app } from './index.js';
 
 const port = parseInt(process.env.PORT || '3300', 10);
-console.log(`🚀 FluxView Standalone Hono Server running at http://localhost:${port}`);
+console.log(`🚀 Standalone Hono Server running at http://localhost:${port}`);
 
 serve({
   fetch: app.fetch,

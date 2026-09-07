@@ -14,7 +14,7 @@
               class="min-h-screen h-screen flex flex-col transition-colors duration-300 font-sans overflow-hidden relative"
               :class="themeStore.isDark ? 'bg-[#08100d] text-zinc-100' : 'bg-[#f6f9f8] text-zinc-800'"
             >
-              <!-- 🌟 FluxView 幻夜极光·翠影幽绿柔和微光晕 (使用全局 primary 变量与微光光斑) -->
+              <!-- 🌟 幻夜极光·翠影幽绿柔和微光晕 (使用全局 primary 变量与微光光斑) -->
               <div class="absolute -top-36 -left-36 w-[440px] h-[440px] bg-primary/10 dark:bg-primary/15 rounded-full blur-[140px] pointer-events-none z-0"></div>
               <div class="absolute top-1/3 -right-36 w-[440px] h-[440px] bg-teal-500/8 dark:bg-teal-500/12 rounded-full blur-[140px] pointer-events-none z-0"></div>
               <div class="absolute -bottom-36 left-1/3 w-[400px] h-[400px] bg-cyan-500/6 dark:bg-cyan-500/10 rounded-full blur-[140px] pointer-events-none z-0"></div>
@@ -52,7 +52,7 @@ import { useThemeStore } from '@/stores/theme';
 const themeStore = useThemeStore();
 
 /**
- * 🌟 FluxView 全局主题色彩规范 (直接内置于 App.vue)
+ * 🌟 全局主题色彩规范 (直接内置于 App.vue)
  * 供 Naive UI 组件库直接使用真实 Hex 色值进行底层 seemly 颜色混合运算
  */
 const themeColors = {
@@ -100,7 +100,7 @@ const commonBorderRadius = {
   borderRadiusLarge: '18px',
 };
 
-// 🌟 FluxView 浅色主题：基于内联 themeColors 单一源配置 Naive UI
+// 🌟 浅色主题：基于内联 themeColors 单一源配置 Naive UI
 const lightThemeOverrides: GlobalThemeOverrides = {
   common: {
     ...commonBorderRadius,
@@ -210,7 +210,7 @@ const lightThemeOverrides: GlobalThemeOverrides = {
   }
 };
 
-// 🌟 FluxView 深色主题：基于 themeColors 单一源配置 Naive UI
+// 🌟 深色主题：基于 themeColors 单一源配置 Naive UI
 const darkThemeOverrides: GlobalThemeOverrides = {
   common: {
     ...commonBorderRadius,

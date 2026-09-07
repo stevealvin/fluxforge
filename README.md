@@ -29,7 +29,8 @@ FluxForge 的核心在于其**沙箱 JavaScript 动态规则引擎**。如同“
 ## 📁 目录结构
 
 ```text
-flux-view/
+fluxforge/
+├── app/                   # Flutter 跨平台移动客户端 (iOS / Android / Desktop)
 ├── web/                   # Vue 3 + Vite 网页前端
 │   ├── src/
 │   │   ├── components/    # 粒子背景、ArtPlayer 播放器、代码编辑器等组件
@@ -42,6 +43,7 @@ flux-view/
 │   └── package.json
 ├── api/                   # Vercel Serverless Function 入口
 │   └── index.ts
+├── docs/                  # 跨端架构白皮书与规则引擎契约标准
 ├── vite.config.ts         # 根目录一体化全栈配置文件 (内嵌 Hono API 与 Vite SPA)
 ├── vercel.json            # Vercel 云端部署配置
 ├── package.json           # Monorepo 根节点 Workspace 配置文件
@@ -60,8 +62,8 @@ flux-view/
 
 ```bash
 # 1. 克隆仓库
-git clone https://github.com/stevealvin/flux-view.git
-cd flux-view
+git clone https://github.com/stevealvin/fluxforge.git
+cd fluxforge
 
 # 2. 安装根目录及所有工作区依赖
 npm install
@@ -111,5 +113,5 @@ vercel
 
 ## 📄 开源协议
 
-[MIT License](LICENSE) © 2026 FluxView Team
+[MIT License](LICENSE) © 2026 FluxForge Team
 

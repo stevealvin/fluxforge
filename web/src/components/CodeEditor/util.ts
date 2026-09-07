@@ -150,7 +150,7 @@ export const addGlobalSandboxTypes = (monaco: typeof import('monaco-editor')) =>
       }
 
       /**
-       * 辅助函数：定义 FluxForge 规范规则对象（提供完整的参数与返回值类型推导）
+       * 辅助函数：定义规范规则对象（提供完整的参数与返回值类型推导）
        */
       function defineRule<T extends RuleDefinition>(rule: T): T;
     }

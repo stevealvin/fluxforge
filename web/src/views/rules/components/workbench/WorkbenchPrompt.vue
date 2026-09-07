@@ -8,7 +8,8 @@ import {
   Loader2,
   FileText,
   Copy,
-  CheckCheck
+  CheckCheck,
+  Bot
 } from '@lucide/vue'
 
 export interface AiGenerationResult {
@@ -38,6 +39,20 @@ const emit = defineEmits<{
 
 const message = useMessage()
 const aiStore = useAiSettingsStore()
+
+// 快速切换 Profile 下拉菜单选项
+const profileQuickOptions = computed(() => {
+  return aiStore.profiles.map((p) => ({
+    label: `${p.name} (${p.model})`,
+    value: p.id
+  }))
+})
+
+// 处理工作台直接快速切换 AI 节点
+const handleQuickSwitchProfile = (id: string) => {
+  aiStore.setActiveProfile(id)
+  message.success(`已切换生效 AI 配置: ${aiStore.activeProfile.name}`)
+}
 
 const userPrompt = ref('')
 const aiLoading = ref(false)
@@ -83,7 +98,7 @@ const handleRunAi = async (options?: {
 }) => {
   if (aiLoading.value) return
 
-  if (!aiStore.baseUrl || !aiStore.model) {
+  if (!aiStore.activeProfile?.baseUrl || !aiStore.activeProfile?.model) {
     message.error('请先在「系统设置」中配置 AI API Key 与模型提供商')
     return
   }
@@ -182,16 +197,37 @@ defineExpose({
             <Sparkles class="w-3.5 h-3.5 text-emerald-500" />
             <span>AI 规则需求与调整指令:</span>
           </span>
-          <span class="text-[10px] text-zinc-400">按 Enter 发送，Shift+Enter 换行</span>
+
+          <div class="flex items-center gap-2">
+            <!-- 快捷切换生效配置 -->
+            <n-popselect
+              v-if="aiStore.profiles.length > 0"
+              :value="aiStore.activeProfileId"
+              :options="profileQuickOptions"
+              size="small"
+              @update:value="handleQuickSwitchProfile"
+            >
+              <button
+                type="button"
+                class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/15 text-[10px] font-bold transition-colors cursor-pointer border border-emerald-500/20"
+                :title="`当前生效配置: ${aiStore.activeProfile.name} (${aiStore.activeProfile.model})，点击可切换`"
+              >
+                <Bot class="w-3 h-3 text-emerald-500" />
+                <span class="max-w-[100px] truncate">{{ aiStore.activeProfile.name }}</span>
+                <span class="text-[9px] opacity-75 font-mono">({{ aiStore.activeProfile.model }})</span>
+              </button>
+            </n-popselect>
+            <span class="text-[10px] text-zinc-400 hidden sm:inline">按 Enter 发送</span>
+          </div>
         </div>
 
         <n-input
           v-model:value="userPrompt"
           type="textarea"
-          :rows="2"
+          :rows="4"
           :disabled="aiLoading"
-          :placeholder="isFreshStart ? '请输入生成需求（如：提取列表标题、封面高清原图、过滤广告节点等）...' : '输入优化需求或问题（如：选集正序排列、正文保留段落、翻页失效等）...'"
-          class="!rounded-xl text-xs"
+          :placeholder="isFreshStart ? '请输入生成需求，或直接粘贴外部规则配置、爬虫脚本、接口定义与数据样本，AI 将自动分析转译...' : '请输入优化调整需求、待转译规则或问题排查说明（按 Enter 发送）...'"
+          class="rounded-xl! text-xs"
           @keydown.enter.exact.prevent="!$event.isComposing && handleRunAi()"
         />
       </div>

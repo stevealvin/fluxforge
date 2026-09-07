@@ -110,7 +110,7 @@
   box-shadow: var(--shadow-card-hover);
 }
 
-/* 🌟 FluxView 幻夜极光·翠影幽绿多维渐变文字 (翡翠绿 ➔ 青绿 ➔ 极光薄荷) */
+/* 🌟 幻夜极光·翠影幽绿多维渐变文字 (翡翠绿 ➔ 青绿 ➔ 极光薄荷) */
 .gradient-text,
 .gradient-flux {
   background: var(--gradient-flux);

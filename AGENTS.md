@@ -30,7 +30,9 @@ npm run start         # 启动后端生产服务
 ## Architecture
 
 ```
-flux-view/
+fluxforge/
+  app/                # Flutter 跨平台移动客户端 (iOS / Android / Desktop)
+  docs/               # 跨端架构白皮书与规则引擎契约标准
   package.json        # Monorepo 根配置与一键启动脚本
   vite.config.ts      # 根目录一体化全栈配置文件 (动态继承 web 并内嵌 server API)
   vercel.json         # Vercel 一键部署配置文件 (Vite SPA + Serverless Rewrites)
