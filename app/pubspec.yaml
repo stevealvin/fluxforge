@@ -13,9 +13,9 @@ dependencies:
   flutter_localizations:
     sdk: flutter
 
-  animations: ^3.0.0
   # 官方 Material UI 解耦组件库 (Flutter 3.47+)
   material_ui: ^1.1.1
+  animations: ^3.0.0
   # 路由
   go_router: ^18.0.1
   # js引擎quickJS
@@ -35,7 +35,7 @@ dependencies:
   hive_ce: ^2.15.0
   hive_ce_flutter: ^2.3.3
   # 权限
-  permission_handler: ^13.0.2
+  permission_handler: ^12.0.3
   # 获取appx信息
   package_info_plus: ^10.2.1
   # 设备信息

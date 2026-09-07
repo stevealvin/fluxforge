@@ -6,7 +6,7 @@ plugins {
 
 android {
     namespace = "com.nl.fluxforge"
-    compileSdk = 37
+    compileSdk = flutter.compileSdkVersion
     ndkVersion = "29.0.14206865"
 
     compileOptions {
@@ -29,7 +29,8 @@ android {
         versionName = flutter.versionName
 
         ndk {
-            abiFilters += setOf("arm64-v8a")
+            abiFilters.clear()
+            abiFilters.add("arm64-v8a")
         }
 
     }
