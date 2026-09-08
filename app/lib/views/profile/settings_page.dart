@@ -6,6 +6,7 @@ import '../../core/storage/app_storage.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/utils/app_logger.dart';
 import '../../services/di.dart';
+import '../../widgets/app_card.dart';
 
 /// 应用全局设置与系统配置页面
 class SettingsPage extends StatefulWidget {
@@ -220,15 +221,8 @@ class _SettingsPageState extends State<SettingsPage> {
 
   /// 主题外观配置模块
   Widget _buildThemeSection(bool isDark) {
-    return Container(
-      decoration: BoxDecoration(
-        color: isDark ? AppColors.darkCard : AppColors.lightCard,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
-          width: 0.8,
-        ),
-      ),
+    return AppCard(
+      padding: EdgeInsets.zero,
       child: Column(
         children: [
           ValueListenableBuilder<ThemeMode>(
@@ -256,15 +250,8 @@ class _SettingsPageState extends State<SettingsPage> {
 
   /// 规则沙箱与引擎更新配置
   Widget _buildEngineSection(bool isDark) {
-    return Container(
-      decoration: BoxDecoration(
-        color: isDark ? AppColors.darkCard : AppColors.lightCard,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
-          width: 0.8,
-        ),
-      ),
+    return AppCard(
+      padding: EdgeInsets.zero,
       child: Column(
         children: [
           SwitchListTile(
@@ -293,15 +280,8 @@ class _SettingsPageState extends State<SettingsPage> {
 
   /// 缓存与维护模块
   Widget _buildMaintenanceSection(bool isDark) {
-    return Container(
-      decoration: BoxDecoration(
-        color: isDark ? AppColors.darkCard : AppColors.lightCard,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
-          width: 0.8,
-        ),
-      ),
+    return AppCard(
+      padding: EdgeInsets.zero,
       child: Column(
         children: [
           ListTile(

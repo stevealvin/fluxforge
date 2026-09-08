@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -26,7 +27,8 @@ class RuleEngine {
         };
       ''');
 
-      // 加载内置 JS 运行库 (axios 与 cheerio)
+      // 加载内置 JS 运行库 (标准 Web API polyfill, axios 与 cheerio)
+      await _loadJSFile('assets/js/url.polyfill.js');
       await _loadJSFile('assets/js/axios.min.js');
       await _loadJSFile('assets/js/cheerio.js');
 
@@ -188,7 +190,10 @@ class RuleEngine {
     }
 
     try {
-      var data = await _jsRuntime.handlePromise(jsResult);
+      var data = await _jsRuntime.handlePromise(
+        jsResult,
+        timeout: const Duration(seconds: 60),
+      );
       if (!data.isError) {
         final raw = data.stringResult;
         if (raw.isEmpty || raw == 'undefined' || raw == 'null') {
@@ -198,6 +203,9 @@ class RuleEngine {
       } else {
         throw Exception(data.rawResult?.toString() ?? 'Promise rejected in sandbox');
       }
+    } on TimeoutException {
+      debugPrint('【RuleEngine】规则沙箱执行超时 (60s)');
+      throw TimeoutException('规则执行超时 (超过 60 秒未响应，目标站点可能不可达或网络受阻)');
     } catch (e) {
       debugPrint('Rule execution error: $e');
       rethrow;
@@ -205,14 +213,20 @@ class RuleEngine {
   }
 
   /// 快捷生命周期动作：分类发现 (discovery)
-  static Future<dynamic> discovery(Rule rule, {int page = 1, String? category}) async {
+  static Future<dynamic> discovery(
+    Rule rule, {
+    int page = 1,
+    String? category,
+    String? tab,
+  }) async {
+    final effectiveTab = tab ?? category;
     return await executeRule(
       code: rule.code,
       action: 'discovery',
       params: {
         'page': page,
-        'tab': ?category,
-        'category': ?category,
+        'tab': ?effectiveTab,
+        'category': ?effectiveTab,
         'baseUrl': rule.baseUrl,
       },
       baseUrl: rule.baseUrl,

@@ -59,4 +59,10 @@ class AppService {
     }
     await AppStorage.setString(_themeModeKey, modeString);
   }
+
+  /// 便捷切换深浅主题模式
+  Future<void> toggleThemeMode({bool? currentIsDark}) async {
+    final bool dark = currentIsDark ?? (themeModeNotifier.value == ThemeMode.dark);
+    await updateThemeMode(dark ? ThemeMode.light : ThemeMode.dark);
+  }
 }

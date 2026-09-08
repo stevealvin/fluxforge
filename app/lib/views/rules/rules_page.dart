@@ -5,6 +5,8 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../models/rule.dart';
 import '../../services/di.dart';
 import '../../services/rule_service.dart';
+import '../../widgets/app_card.dart';
+import '../../widgets/loading_indicator.dart';
 
 /// 客户端本地规则管理页面
 /// 支持响应式规则列表、状态启停、网络/JSON多源导入、快速跳转市场与发现测试
@@ -202,11 +204,7 @@ class _RulesPageState extends State<RulesPage> {
                               }
                             },
                       child: isSubmitting
-                          ? const SizedBox(
-                              height: 20,
-                              width: 20,
-                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                            )
+                          ? const LoadingIndicator.compact(size: 20, color: Colors.white)
                           : const Text('立即导入', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
                     ),
                   ],
@@ -252,35 +250,15 @@ class _RulesPageState extends State<RulesPage> {
   }
 
   /// 构建单张规则卡片
-  Widget _buildRuleCard(BuildContext context, Rule rule, bool isDark) {
-    return Container(
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF131D19) : Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: rule.enabled
-              ? const Color(0xFF10B981).withValues(alpha: isDark ? 0.35 : 0.25)
-              : (isDark ? const Color(0xFF1E2D27) : const Color(0xFFE5E7EB)),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.04),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Material(
-        color: Colors.transparent,
-        borderRadius: BorderRadius.circular(16),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(16),
-          onTap: () {
-            context.push('/rule_discovery', extra: {'rule': rule});
-          },
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
+  Widget _buildRuleCard(BuildContext context, Rule rule) {
+    return AppCard(
+      borderColor: rule.enabled
+          ? const Color(0xFF10B981).withValues(alpha: 0.35)
+          : null,
+      onTap: () {
+        context.push('/rule_discovery', extra: {'rule': rule});
+      },
+      child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 // 头部：类型标签、规则名称、开关
@@ -332,7 +310,7 @@ class _RulesPageState extends State<RulesPage> {
                     rule.description!,
                     style: TextStyle(
                       fontSize: 13,
-                      color: isDark ? const Color(0xFFA1A1AA) : const Color(0xFF52525B),
+                      color: Theme.of(context).textTheme.bodySmall?.color,
                     ),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
@@ -394,9 +372,6 @@ class _RulesPageState extends State<RulesPage> {
                 ),
               ],
             ),
-          ),
-        ),
-      ),
     );
   }
 
@@ -497,15 +472,12 @@ class _RulesPageState extends State<RulesPage> {
             itemBuilder: (context, index) {
               if (index == 0) {
                 // 顶部统计信息卡
-                return Container(
+                return AppCard(
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: isDark ? const Color(0xFF131D19) : const Color(0xFFECFDF5),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: const Color(0xFF10B981).withValues(alpha: 0.2),
-                    ),
-                  ),
+                  borderRadius: 12,
+                  showShadow: false,
+                  color: isDark ? const Color(0xFF131D19) : const Color(0xFFECFDF5),
+                  borderColor: const Color(0xFF10B981).withValues(alpha: 0.2),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
@@ -539,7 +511,7 @@ class _RulesPageState extends State<RulesPage> {
               }
 
               final rule = rules[index - 1];
-              return _buildRuleCard(context, rule, isDark);
+              return _buildRuleCard(context, rule);
             },
           );
         },

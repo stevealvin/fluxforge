@@ -1,10 +1,11 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:go_router/go_router.dart';
 
 import 'models/rule.dart';
 import 'views/browser/browser_page.dart';
 import 'views/detail/media_detail_page.dart';
 import 'views/market/market_page.dart';
+import 'views/profile/card_gallery_page.dart';
 import 'views/profile/settings_page.dart';
 import 'views/rules/rule_detail_page.dart';
 import 'views/rules/rule_discovery_page.dart';
@@ -46,7 +47,11 @@ final GoRouter router = GoRouter(
         GoRoute(
           path: 'search',
           builder: (BuildContext context, GoRouterState state) {
-            return const SearchPage();
+            final extra = state.extra as Map<String, dynamic>?;
+            return SearchPage(
+              initialKeyword: extra?['keyword']?.toString() ?? state.uri.queryParameters['keyword'],
+              targetRule: extra?['rule'] as Rule?,
+            );
           },
         ),
 
@@ -54,9 +59,27 @@ final GoRouter router = GoRouter(
         GoRoute(
           path: 'rule_discovery',
           builder: (BuildContext context, GoRouterState state) {
-            final extra = state.extra as Map<String, dynamic>?;
+            final extra = state.extra;
+            Rule? rule;
+            if (extra is Rule) {
+              rule = extra;
+            } else if (extra is Map) {
+              final r = extra['rule'];
+              if (r is Rule) {
+                rule = r;
+              } else if (r is Map) {
+                rule = Rule.fromJson(Map<String, dynamic>.from(r));
+              }
+            }
+
+            if (rule == null) {
+              return const Scaffold(
+                body: Center(child: Text('未指定有效规则')),
+              );
+            }
+
             return RuleDiscoveryPage(
-              rule: extra?['rule'] ?? '',
+              rule: rule,
             );
           },
         ),
@@ -65,18 +88,18 @@ final GoRouter router = GoRouter(
         GoRoute(
           path: 'rule_detail',
           builder: (BuildContext context, GoRouterState state) {
-            final extra = state.extra as Map<String, dynamic>?;
+            final extra = state.extra is Map ? (state.extra as Map) : null;
             final ruleData = extra?['rule'];
             Rule? rule;
             if (ruleData is Rule) {
               rule = ruleData;
-            } else if (ruleData is Map<String, dynamic>) {
-              rule = Rule.fromJson(ruleData);
+            } else if (ruleData is Map) {
+              rule = Rule.fromJson(Map<String, dynamic>.from(ruleData));
             }
 
             return RuleDetailPage(
               title: extra?['title']?.toString() ?? '',
-              href: extra?['href']?.toString() ?? '',
+              href: extra?['url']?.toString() ?? extra?['href']?.toString() ?? '',
               cover: extra?['cover']?.toString() ?? '',
               rule: rule,
             );
@@ -110,6 +133,14 @@ final GoRouter router = GoRouter(
           path: 'market',
           builder: (BuildContext context, GoRouterState state) {
             return const MarketPage();
+          },
+        ),
+
+        // 卡片设计系统视觉展廊
+        GoRoute(
+          path: 'card_gallery',
+          builder: (BuildContext context, GoRouterState state) {
+            return const CardGalleryPage();
           },
         ),
       ],

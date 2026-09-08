@@ -8,6 +8,7 @@ import 'package:video_player/video_player.dart';
 import '../../core/theme/app_colors.dart';
 import '../../models/rule.dart';
 import '../../services/rule_engine.dart';
+import '../../widgets/app_card.dart';
 import '../../widgets/empty_state.dart';
 import '../../widgets/loading_indicator.dart';
 import '../detail/photo_gallery_page.dart';
@@ -121,7 +122,10 @@ class _RuleDetailPageState extends State<RuleDetailPage> {
     final declaredType = widget.rule?.type.toLowerCase() ?? '';
 
     // 1. 优先检查声明类型是否为图片/相册，或返回的是纯数组
-    if (declaredType == 'image' || declaredType == 'photo' || declaredType == 'gallery') {
+    if (declaredType == 'image' ||
+        declaredType == 'picture' ||
+        declaredType == 'photo' ||
+        declaredType == 'gallery') {
       _extractImages(result);
       _mediaType = MediaType.image;
       return;
@@ -150,8 +154,12 @@ class _RuleDetailPageState extends State<RuleDetailPage> {
 
     if (result is Map) {
       // 检查是否包含显式图片字段
-      if (result.containsKey('images') || result.containsKey('photos')) {
-        final rawImgs = result['images'] ?? result['photos'];
+      if (result.containsKey('images') ||
+          result.containsKey('photos') ||
+          result.containsKey('pics') ||
+          result.containsKey('picList')) {
+        final rawImgs =
+            result['images'] ?? result['photos'] ?? result['pics'] ?? result['picList'];
         if (rawImgs is List) {
           _extractImages(rawImgs);
           _mediaType = MediaType.image;
@@ -206,21 +214,35 @@ class _RuleDetailPageState extends State<RuleDetailPage> {
         if (item is String && item.isNotEmpty) {
           list.add(item);
         } else if (item is Map) {
-          final url = item['src'] ?? item['url'] ?? item['cover'];
+          final url = item['src'] ??
+              item['url'] ??
+              item['cover'] ??
+              item['image'] ??
+              item['data-original'];
           if (url != null && url.toString().isNotEmpty) {
             list.add(url.toString());
           }
         }
       }
     } else if (rawData is Map) {
-      final innerList = rawData['images'] ?? rawData['list'] ?? rawData['photos'];
+      final innerList = rawData['images'] ??
+          rawData['photos'] ??
+          rawData['pics'] ??
+          rawData['picList'] ??
+          rawData['list'];
       if (innerList is List) {
         for (final item in innerList) {
           if (item is String && item.isNotEmpty) {
             list.add(item);
           } else if (item is Map) {
-            final url = item['src'] ?? item['url'] ?? item['cover'];
-            if (url != null) list.add(url.toString());
+            final url = item['src'] ??
+                item['url'] ??
+                item['cover'] ??
+                item['image'] ??
+                item['data-original'];
+            if (url != null && url.toString().isNotEmpty) {
+              list.add(url.toString());
+            }
           }
         }
       }
@@ -416,11 +438,7 @@ class _RuleDetailPageState extends State<RuleDetailPage> {
                     return Container(
                       color: isDark ? AppColors.darkCard : Colors.black12,
                       child: const Center(
-                        child: SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        ),
+                        child: LoadingIndicator.compact(size: 20),
                       ),
                     );
                   case LoadState.failed:
@@ -472,10 +490,12 @@ class _RuleDetailPageState extends State<RuleDetailPage> {
                       if (_videoUrl == null && _error == null)
                         Container(
                           color: Colors.black54,
-                          child: const Center(
+                          child: Center(
                             child: Text(
-                              '正在连接播放流，或请从下方选择播放选集',
-                              style: TextStyle(color: Colors.white, fontSize: 13),
+                              _episodes.isNotEmpty
+                                  ? '请从下方选择需要播放的剧集'
+                                  : '暂未解析到可直接播放的视频流地址',
+                              style: const TextStyle(color: Colors.white, fontSize: 13),
                             ),
                           ),
                         ),
@@ -564,16 +584,8 @@ class _RuleDetailPageState extends State<RuleDetailPage> {
       padding: const EdgeInsets.all(16),
       children: [
         if (_textContent != null && _textContent!.isNotEmpty) ...[
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: isDark ? AppColors.darkCard : AppColors.lightCard,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
-                width: 0.8,
-              ),
-            ),
+          AppCard(
+            borderRadius: 12,
             child: Text(
               _textContent!,
               style: TextStyle(

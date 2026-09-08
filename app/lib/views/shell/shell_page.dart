@@ -1,4 +1,4 @@
-﻿import 'dart:ui' as ui;
+import 'dart:ui' as ui;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -62,11 +62,12 @@ class ShellPage extends HookWidget {
             ),
           ],
         ),
-        // Apple 级高级高斯模糊毛玻璃底部导航栏 (参考 C:\dev\app\nltime-app 规范)
-        bottomNavigationBar: ClipRect(
-          child: BackdropFilter(
-            filter: ui.ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-            child: Container(
+        // 高级高斯模糊毛玻璃底部导航栏
+        bottomNavigationBar: RepaintBoundary(
+          child: ClipRect(
+            child: BackdropFilter(
+              filter: ui.ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+              child: Container(
               decoration: BoxDecoration(
                 color: isDark
                     ? AppColors.darkBg.withValues(alpha: 0.72)
@@ -112,6 +113,7 @@ class ShellPage extends HookWidget {
           ),
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 }

@@ -5,6 +5,8 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../models/rule.dart';
 import '../../services/di.dart';
 import '../../services/rule_service.dart';
+import '../../widgets/app_card.dart';
+import '../../widgets/loading_indicator.dart';
 
 class MarketPage extends StatefulWidget {
   const MarketPage({super.key});
@@ -163,7 +165,7 @@ class _MarketPageState extends State<MarketPage> {
                 ),
                 onPressed: _importingAll ? null : _importAllRules,
                 icon: _importingAll
-                    ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
+                    ? const LoadingIndicator.compact(size: 14, strokeWidth: 1.8)
                     : const Icon(LucideIcons.download, size: 16),
                 label: Text(_importingAll ? '导入中...' : '一键全部导入'),
               ),
@@ -175,13 +177,8 @@ class _MarketPageState extends State<MarketPage> {
         builder: (context, localRules, _) {
           if (_loading) {
             return const Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  CircularProgressIndicator(strokeWidth: 3, color: Color(0xFF10B981)),
-                  SizedBox(height: 16),
-                  Text('正在连接公共规则市场...', style: TextStyle(color: Colors.grey)),
-                ],
+              child: LoadingIndicator(
+                message: '正在连接公共规则市场...',
               ),
             );
           }
@@ -237,26 +234,11 @@ class _MarketPageState extends State<MarketPage> {
                 final rule = _marketRules[index];
                 final isImported = _ruleService.isRuleImported(rule);
 
-                return Container(
-                  decoration: BoxDecoration(
-                    color: isDark ? const Color(0xFF131D19) : Colors.white,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      color: isDark
-                          ? (isImported ? const Color(0xFF10B981).withValues(alpha: 0.3) : const Color(0xFF1E2D27))
-                          : (isImported ? const Color(0xFF10B981).withValues(alpha: 0.3) : const Color(0xFFE5E7EB)),
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.04),
-                        blurRadius: 10,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
+                return AppCard(
+                  borderColor: isImported
+                      ? const Color(0xFF10B981).withValues(alpha: 0.3)
+                      : null,
+                  child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Row(
@@ -361,7 +343,6 @@ class _MarketPageState extends State<MarketPage> {
                         ),
                       ],
                     ),
-                  ),
                 );
               },
             ),

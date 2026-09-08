@@ -1,4 +1,4 @@
-﻿import 'package:cached_network_image/cached_network_image.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -7,6 +7,8 @@ import '../../core/theme/app_colors.dart';
 import '../../models/rule.dart';
 import '../../services/di.dart';
 import '../../services/rule_engine.dart';
+import '../../widgets/app_card.dart';
+import '../../widgets/loading_indicator.dart';
 
 /// 现代化多规则动态发现推荐流视图
 class DiscoverPage extends StatefulWidget {
@@ -81,14 +83,22 @@ class _DiscoverPageState extends State<DiscoverPage> {
     }
   }
 
-  /// 构建横向规则选择器
+  /// 构建横向规则选择器（固定在顶部）
   Widget _buildRuleSelector(List<Rule> enabledRules, bool isDark) {
     return Container(
-      height: 42,
-      margin: const EdgeInsets.symmetric(vertical: 8),
+      height: 48,
+      decoration: BoxDecoration(
+        color: isDark ? AppColors.darkSurface : AppColors.lightSurface,
+        border: Border(
+          bottom: BorderSide(
+            color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
+            width: 0.5,
+          ),
+        ),
+      ),
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 16),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
         itemCount: enabledRules.length,
         separatorBuilder: (_, _) => const SizedBox(width: 8),
         itemBuilder: (context, index) {
@@ -98,11 +108,11 @@ class _DiscoverPageState extends State<DiscoverPage> {
           return ChoiceChip(
             label: Text(rule.name),
             selected: isSelected,
-            selectedColor: AppColors.primary.withValues(alpha: 0.15),
+            selectedColor: AppColors.primary.withValues(alpha: 0.16),
             labelStyle: TextStyle(
               color: isSelected
                   ? AppColors.primary
-                  : (isDark ? Colors.white70 : Colors.black87),
+                  : (isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary),
               fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
               fontSize: 13,
             ),
@@ -111,6 +121,7 @@ class _DiscoverPageState extends State<DiscoverPage> {
                   ? AppColors.primary
                   : (isDark ? AppColors.darkCardBorder : AppColors.lightCardBorder),
             ),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
             onSelected: (selected) {
               if (selected && _selectedRule?.id != rule.id) {
                 setState(() {
@@ -171,7 +182,61 @@ class _DiscoverPageState extends State<DiscoverPage> {
     );
   }
 
-  /// 构建瀑布流与媒体网格
+  /// 构建单个媒体海报卡片
+  Widget _buildMediaCard(Map item, Rule currentRule) {
+    final title = item['title']?.toString() ?? '';
+    final href = item['url']?.toString() ?? item['href']?.toString() ?? '';
+    final cover = item['cover']?.toString() ?? '';
+
+    return AppCard(
+      padding: EdgeInsets.zero,
+      borderRadius: 12,
+      onTap: () {
+        context.push('/rule_detail', extra: {
+          'href': href,
+          'title': title,
+          'cover': cover,
+          'rule': currentRule,
+        });
+      },
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                CachedNetworkImage(
+                  imageUrl: cover,
+                  fit: BoxFit.cover,
+                  httpHeaders: {
+                    'referer': currentRule.baseUrl,
+                    'user-agent':
+                        'Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1',
+                  },
+                  errorWidget: (_, _, _) => Container(
+                    color: Colors.grey.withValues(alpha: 0.15),
+                    child: const Icon(Icons.broken_image_rounded, color: Colors.grey),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(8),
+            child: Text(
+              title,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 构建瀑布流与媒体网格 (用于嵌套专区)
   Widget _buildCategoryGrid(List items, Rule currentRule) {
     return GridView.builder(
       shrinkWrap: true,
@@ -186,61 +251,88 @@ class _DiscoverPageState extends State<DiscoverPage> {
       ),
       itemBuilder: (BuildContext context, int index) {
         final item = items[index];
-        final title = item['title']?.toString() ?? '';
-        final href = item['url']?.toString() ?? item['href']?.toString() ?? '';
-        final cover = item['cover']?.toString() ?? '';
-
-        return Card(
-          clipBehavior: Clip.hardEdge,
-          elevation: 0,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          child: InkWell(
-            onTap: () {
-              context.push('/rule_detail', extra: {
-                'href': href,
-                'title': title,
-                'cover': cover,
-                'rule': currentRule,
-              });
-            },
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      CachedNetworkImage(
-                        imageUrl: cover,
-                        fit: BoxFit.cover,
-                        httpHeaders: {
-                          'referer': currentRule.baseUrl,
-                          'user-agent':
-                              'Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1',
-                        },
-                        errorWidget: (_, _, _) => Container(
-                          color: Colors.grey.withValues(alpha: 0.15),
-                          child: const Icon(Icons.broken_image_rounded, color: Colors.grey),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.all(8),
-                  child: Text(
-                    title,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
+        if (item is! Map) return const SizedBox.shrink();
+        return _buildMediaCard(item, currentRule);
       },
     );
+  }
+
+  /// 构建 Sliver 内容区域 (自适应分组与扁平列表)
+  List<Widget> _buildSliverContent(List<dynamic> data, Rule currentRule) {
+    final isGrouped = data.isNotEmpty &&
+        data.first is Map &&
+        data.first.containsKey('items') &&
+        data.first['items'] is List;
+
+    if (isGrouped) {
+      return [
+        SliverList(
+          delegate: SliverChildBuilderDelegate(
+            (context, index) {
+              final section = data[index];
+              if (section is Map && section.containsKey('items') && section['items'] is List) {
+                final title = section['title']?.toString() ?? '推荐专区';
+                final items = section['items'] as List;
+
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 4,
+                              height: 16,
+                              decoration: BoxDecoration(
+                                color: AppColors.primary,
+                                borderRadius: BorderRadius.circular(2),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              title,
+                              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                            ),
+                          ],
+                        ),
+                      ),
+                      _buildCategoryGrid(items, currentRule),
+                    ],
+                  ),
+                );
+              }
+              return const SizedBox.shrink();
+            },
+            childCount: data.length,
+          ),
+        ),
+      ];
+    } else {
+      return [
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+          sliver: SliverGrid(
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2,
+              childAspectRatio: 1.15,
+              crossAxisSpacing: 12,
+              mainAxisSpacing: 12,
+            ),
+            delegate: SliverChildBuilderDelegate(
+              (context, index) {
+                final item = data[index];
+                if (item is! Map) return const SizedBox.shrink();
+                return _buildMediaCard(item, currentRule);
+              },
+              childCount: data.length,
+            ),
+          ),
+        ),
+      ];
+    }
   }
 
   @override
@@ -294,106 +386,68 @@ class _DiscoverPageState extends State<DiscoverPage> {
             _loadDiscovery(_selectedRule!);
           }
 
-          return RefreshIndicator(
-            color: AppColors.primary,
-            onRefresh: () async {
-              if (_selectedRule != null) {
-                await _loadDiscovery(_selectedRule!);
-              }
-            },
-            child: CustomScrollView(
-              slivers: [
-                SliverToBoxAdapter(
-                  child: _buildRuleSelector(enabledRules, isDark),
-                ),
-                if (_loading)
-                  const SliverFillRemaining(
-                    child: Center(
-                      child: CircularProgressIndicator(color: AppColors.primary),
-                    ),
-                  )
-                else if (_error != null)
-                  SliverFillRemaining(
-                    child: Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(24),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(Icons.error_outline_rounded, size: 40, color: Colors.orange),
-                            const SizedBox(height: 12),
-                            Text(_error!, textAlign: TextAlign.center, style: const TextStyle(color: Colors.grey)),
-                            const SizedBox(height: 16),
-                            FilledButton.tonal(
-                              onPressed: () => _loadDiscovery(_selectedRule!),
-                              child: const Text('重试'),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  )
-                else if (_discoveryData.isEmpty)
-                  const SliverFillRemaining(
-                    child: Center(
-                      child: Text('当前规则暂无推荐内容', style: TextStyle(color: Colors.grey)),
-                    ),
-                  )
-                else
-                  SliverList(
-                    delegate: SliverChildBuilderDelegate(
-                      (context, index) {
-                        final section = _discoveryData[index];
-                        if (section is Map && section.containsKey('items') && section['items'] is List) {
-                          final title = section['title']?.toString() ?? '推荐专区';
-                          final items = section['items'] as List;
+          return Column(
+            children: [
+              // 顶部固定规则选择栏 (固定在顶部，不随下方列表滑动)
+              _buildRuleSelector(enabledRules, isDark),
 
-                          return Padding(
-                            padding: const EdgeInsets.only(bottom: 16),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Padding(
-                                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-                                  child: Row(
-                                    children: [
-                                      Container(
-                                        width: 4,
-                                        height: 16,
-                                        decoration: BoxDecoration(
-                                          color: AppColors.primary,
-                                          borderRadius: BorderRadius.circular(2),
-                                        ),
-                                      ),
-                                      const SizedBox(width: 8),
-                                      Text(
-                                        title,
-                                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                                      ),
-                                    ],
+              // 下方独立滚动的媒体发现流
+              Expanded(
+                child: RefreshIndicator(
+                  color: AppColors.primary,
+                  onRefresh: () async {
+                    if (_selectedRule != null) {
+                      await _loadDiscovery(_selectedRule!);
+                    }
+                  },
+                  child: CustomScrollView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    slivers: [
+                      if (_loading)
+                        const SliverFillRemaining(
+                          child: Center(
+                            child: LoadingIndicator(message: '正在调用沙箱加载发现内容...'),
+                          ),
+                        )
+                      else if (_error != null)
+                        SliverFillRemaining(
+                          child: Center(
+                            child: Padding(
+                              padding: const EdgeInsets.all(24),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(Icons.error_outline_rounded, size: 40, color: Colors.orange),
+                                  const SizedBox(height: 12),
+                                  Text(_error!, textAlign: TextAlign.center, style: const TextStyle(color: Colors.grey)),
+                                  const SizedBox(height: 16),
+                                  FilledButton.tonal(
+                                    onPressed: () => _loadDiscovery(_selectedRule!),
+                                    child: const Text('重试'),
                                   ),
-                                ),
-                                _buildCategoryGrid(items, _selectedRule!),
-                              ],
+                                ],
+                              ),
                             ),
-                          );
-                        } else if (section is Map) {
-                          if (index == 0) {
-                            return _buildCategoryGrid(_discoveryData, _selectedRule!);
-                          }
-                          return const SizedBox.shrink();
-                        }
-                        return const SizedBox.shrink();
-                      },
-                      childCount: _discoveryData.length,
-                    ),
+                          ),
+                        )
+                      else if (_discoveryData.isEmpty)
+                        const SliverFillRemaining(
+                          child: Center(
+                            child: Text('当前规则暂无推荐内容', style: TextStyle(color: Colors.grey)),
+                          ),
+                        )
+                      else
+                        ..._buildSliverContent(_discoveryData, _selectedRule!),
+
+                      // 底部避让毛玻璃导航栏
+                      const SliverToBoxAdapter(
+                        child: SizedBox(height: 96),
+                      ),
+                    ],
                   ),
-                // 底部避让毛玻璃导航栏
-                const SliverToBoxAdapter(
-                  child: SizedBox(height: 96),
                 ),
-              ],
-            ),
+              ),
+            ],
           );
         },
       ),

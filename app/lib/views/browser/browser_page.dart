@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -7,6 +7,7 @@ import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
 
 import '../../core/theme/app_colors.dart';
+import '../../widgets/app_card.dart';
 import 'adblock_engine.dart';
 
 /// 现代化内置聚合浏览器页面
@@ -207,16 +208,10 @@ class _BrowserPageState extends State<BrowserPage> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Container(
+            AppCard(
               padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: isDark ? AppColors.darkCard : AppColors.lightCard,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
-                  width: 0.8,
-                ),
-              ),
+              borderRadius: 12,
+              showShadow: false,
               child: Icon(icon, size: 24, color: AppColors.primary),
             ),
             const SizedBox(height: 8),

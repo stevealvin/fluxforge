@@ -15,7 +15,7 @@
  └── 修复 GitHub MCP 配置与 .gitignore 规则忽略 (.agents/)
       │
 [2. 视觉与交互体验演进]
- ├── 深度吸收 C:\dev\projects\mori-box 现代设计体系
+ ├── 深度吸收 mori-box 现代设计体系
  ├── 实现双主题毛玻璃 (.glass-panel) 与双轨道星轨极光 (.ambient-glow)
  ├── 实现顶部 Apple 质感 Segmented 多标签栏与 Vue KeepAlive 双向缓存
  └── 增加「规则集市」生态导航页 (汇聚源仓库、源小二、阅读3.0等精选社区)
