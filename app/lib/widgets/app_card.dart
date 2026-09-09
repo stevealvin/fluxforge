@@ -1,13 +1,15 @@
+import 'dart:ui' as ui;
 import 'package:material_ui/material_ui.dart';
 import '../core/theme/app_colors.dart';
 
 /// 全局统一现代化卡片组件 (AppCard)
 ///
 /// 遵循 FluxForge 设计规范：
-/// - 自动感应「曜夜极光翡翠 / 纯净星暮白」双主题色彩与微光边框；
-/// - 统一 16px 现代圆角与柔和环境微阴影；
+/// - 自动感应「曜夜极光翡翠 / 纯净星暮白」双主题色彩与 0.5px 微光倒角边框；
+/// - 默认集成 Apple 级纯正磨砂透光毛玻璃 (BackdropFilter) 与冷调环境柔光微阴影；
+/// - 统一 16px 现代圆角与柔和微距环境阴影 (Offset(0, 3), blur: 14)；
 /// - 自带防溢出水波纹点击反馈（Material + InkWell）与可选 Apple 质感弹性微缩；
-/// - 提供标准、平铺 (flat)、描边弱底 (outlined)、流光渐变 (gradient) 等多种场景预设。
+/// - 提供标准、平铺 (flat)、描边弱底 (outlined)、流光渐变 (gradient)、纯毛玻璃 (glass) 等多种场景预设。
 class AppCard extends StatefulWidget {
   /// 卡片内容
   final Widget child;
@@ -27,7 +29,7 @@ class AppCard extends StatefulWidget {
   /// 圆角半径（缺省为 16.0）
   final double borderRadius;
 
-  /// 自定义背景色（缺省自动根据深浅主题获取 AppColors.darkCard / lightCard）
+  /// 自定义背景色（缺省自动根据深浅主题获取微透质感底色以呈现磨砂透光）
   final Color? color;
 
   /// 自定义边框颜色（缺省自动根据主题获取 AppColors.darkCardBorder / lightCardBorder）
@@ -39,8 +41,14 @@ class AppCard extends StatefulWidget {
   /// 是否显示微边框
   final bool showBorder;
 
-  /// 是否显示微阴影
+  /// 是否显示环境柔光微阴影（缺省为 true）
   final bool showShadow;
+
+  /// 是否启用磨砂毛玻璃背景穿透滤镜（缺省为 true，默认呈现半透磨砂高级质感）
+  final bool enableBlur;
+
+  /// 磨砂高斯模糊半径（缺省为 12.0）
+  final double blur;
 
   /// 自定义渐变背景
   final Gradient? gradient;
@@ -57,7 +65,7 @@ class AppCard extends StatefulWidget {
   /// 内容裁切行为
   final Clip clipBehavior;
 
-  /// 1. 标准卡片构造
+  /// 1. 标准卡片构造（实体冷白瓷/曜石黑材质与柔光微阴影，支持弹性微缩）
   const AppCard({
     super.key,
     required this.child,
@@ -65,20 +73,22 @@ class AppCard extends StatefulWidget {
     this.margin,
     this.width,
     this.height,
-    this.borderRadius = 16.0,
+    this.borderRadius = 20.0,
     this.color,
     this.borderColor,
     this.borderWidth = 0.8,
     this.showBorder = false,
     this.showShadow = true,
+    this.enableBlur = false,
+    this.blur = 12.0,
     this.gradient,
     this.onTap,
     this.onLongPress,
-    this.enablePressScale = false,
+    this.enablePressScale = true,
     this.clipBehavior = Clip.antiAlias,
   });
 
-  /// 2. 纯净平铺态卡片构造（无边框、无阴影，纯净色块）
+  /// 2. 纯净平铺态卡片构造（无边框、无阴影、无模糊，纯净色块）
   const AppCard.flat({
     super.key,
     required this.child,
@@ -94,6 +104,8 @@ class AppCard extends StatefulWidget {
     this.clipBehavior = Clip.antiAlias,
   })  : showBorder = false,
         showShadow = false,
+        enableBlur = false,
+        blur = 0.0,
         borderColor = null,
         borderWidth = 0.0,
         gradient = null;
@@ -110,6 +122,8 @@ class AppCard extends StatefulWidget {
     this.color = Colors.transparent,
     this.borderColor,
     this.borderWidth = 0.8,
+    this.enableBlur = false,
+    this.blur = 0.0,
     this.onTap,
     this.onLongPress,
     this.enablePressScale = false,
@@ -132,11 +146,35 @@ class AppCard extends StatefulWidget {
     this.borderWidth = 0.8,
     this.showBorder = true,
     this.showShadow = true,
+    this.enableBlur = false,
+    this.blur = 0.0,
     this.onTap,
     this.onLongPress,
     this.enablePressScale = false,
     this.clipBehavior = Clip.antiAlias,
   }) : color = null;
+
+  /// 5. 纯正磨砂毛玻璃卡片构造（特化强磨砂透光场景）
+  const AppCard.glass({
+    super.key,
+    required this.child,
+    this.padding = const EdgeInsets.all(16),
+    this.margin,
+    this.width,
+    this.height,
+    this.borderRadius = 20.0,
+    this.color,
+    this.borderColor,
+    this.borderWidth = 0.8,
+    this.showBorder = false,
+    this.showShadow = true,
+    this.blur = 14.0,
+    this.gradient,
+    this.onTap,
+    this.onLongPress,
+    this.enablePressScale = true,
+    this.clipBehavior = Clip.antiAlias,
+  }) : enableBlur = true;
 
   @override
   State<AppCard> createState() => _AppCardState();
@@ -150,13 +188,25 @@ class _AppCardState extends State<AppCard> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final resolvedRadius = BorderRadius.circular(widget.borderRadius);
 
-    // 计算背景色
+    // 计算背景色：启用毛玻璃时默认使用微透高级底色以透出背景模糊，否则使用常规实体底色
     final resolvedBgColor = widget.color ??
-        (isDark ? AppColors.darkCard : AppColors.lightCard);
+        (isDark
+            ? (widget.enableBlur
+                ? const Color(0xFF161E2E).withValues(alpha: 0.82)
+                : const Color(0xFF161E2E))
+            : (widget.enableBlur
+                ? Colors.white.withValues(alpha: 0.85)
+                : Colors.white));
 
-    // 计算边框颜色
-    final resolvedBorderColor = widget.borderColor ??
-        (isDark ? AppColors.darkCardBorder : AppColors.lightCardBorder);
+    // 计算边框：显式边框优先；未显式指定边框时，深色模式下保留 0.5px 极微光边缘以呈现精磨玻璃反光
+    BoxBorder? resolvedBorder;
+    if (widget.showBorder) {
+      final borderColor = widget.borderColor ??
+          (isDark ? AppColors.darkCardBorder : AppColors.lightCardBorder);
+      resolvedBorder = Border.all(color: borderColor, width: widget.borderWidth);
+    } else if (isDark) {
+      resolvedBorder = Border.all(color: Colors.white.withValues(alpha: 0.04), width: 0.5);
+    }
 
     // 内部点击水波与 Padding 处理
     final hasInteraction = widget.onTap != null || widget.onLongPress != null;
@@ -190,16 +240,8 @@ class _AppCardState extends State<AppCard> {
       );
     }
 
-    // 边框计算：若显式开启边框则用指定或主题边框；若未开启边框，深色模式下自动赋予 0.5px 微光倒角以形成通透立体层次
-    BoxBorder? resolvedBorder;
-    if (widget.showBorder) {
-      resolvedBorder = Border.all(color: resolvedBorderColor, width: widget.borderWidth);
-    } else if (isDark && widget.showShadow) {
-      resolvedBorder = Border.all(color: Colors.white.withValues(alpha: 0.05), width: 0.5);
-    }
-
-    // 外层容器与微边框、阴影
-    Widget card = Container(
+    // 材质表面层（承载背景微透色/渐变、边框与内容）
+    Widget surface = Container(
       width: widget.width,
       height: widget.height,
       clipBehavior: widget.clipBehavior,
@@ -208,19 +250,39 @@ class _AppCardState extends State<AppCard> {
         gradient: widget.gradient,
         borderRadius: resolvedRadius,
         border: resolvedBorder,
-        boxShadow: widget.showShadow
-            ? [
-                BoxShadow(
-                  color: isDark
-                      ? Colors.black.withValues(alpha: 0.22)
-                      : const Color(0xFF0F172A).withValues(alpha: 0.04),
-                  blurRadius: 16,
-                  offset: const Offset(0, 4),
-                ),
-              ]
-            : null,
       ),
       child: innerContent,
+    );
+
+    // 磨砂透光层（BackdropFilter 由 ClipRRect 精准约束在圆角范围内）
+    if (widget.enableBlur) {
+      surface = ClipRRect(
+        borderRadius: resolvedRadius,
+        child: BackdropFilter(
+          filter: ui.ImageFilter.blur(sigmaX: widget.blur, sigmaY: widget.blur),
+          child: surface,
+        ),
+      );
+    }
+
+    // 环境柔光微阴影与外层容器（阴影置于 ClipRRect 外部，向外平滑自然发散）
+    Widget card = Container(
+      margin: widget.margin,
+      decoration: widget.showShadow
+          ? BoxDecoration(
+              borderRadius: resolvedRadius,
+              boxShadow: [
+                BoxShadow(
+                  color: isDark
+                      ? Colors.black.withValues(alpha: 0.20)
+                      : const Color(0xFF0F172A).withValues(alpha: 0.04),
+                  blurRadius: 14,
+                  offset: const Offset(0, 3),
+                ),
+              ],
+            )
+          : null,
+      child: surface,
     );
 
     // 按压弹性微缩效果
@@ -229,14 +291,6 @@ class _AppCardState extends State<AppCard> {
         scale: _isPressed ? 0.98 : 1.0,
         duration: const Duration(milliseconds: 90),
         curve: Curves.easeOutQuad,
-        child: card,
-      );
-    }
-
-    // 外边距包裹
-    if (widget.margin != null) {
-      card = Padding(
-        padding: widget.margin!,
         child: card,
       );
     }

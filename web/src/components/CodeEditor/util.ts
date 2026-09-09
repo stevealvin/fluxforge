@@ -111,14 +111,16 @@ export const addGlobalSandboxTypes = (monaco: typeof import('monaco-editor')) =>
         author?: string;
         /** 视频直链地址 (MP4 / M3U8) */
         playUrl?: string;
-        /** 写真/漫画大图数组 (支持九宫格缩略图预览与长图浏览) */
-        images?: string[];
         /** 小说正文内容 (若为小说源) */
         content?: string;
+        /** 子资源列表 (视频选集、小说章节、图集大图等全类型统一字段) */
+        items?: Array<{ title?: string; url: string } | string>;
         /** 选集/分集线路列表 */
         groups?: EpisodeGroup[];
-        /** 底部相关推荐/同模特作品 */
-        recommendations?: MediaItem[];
+        /** 剧照 / 截图 / 插图预览图流 */
+        previews?: string[];
+        /** 底部相关推荐/关联作品 */
+        related?: MediaItem[];
       }
 
       /**

@@ -150,11 +150,12 @@ export const ruleService = {
       tags: res.tags || [],
       author: res.author,
       playUrl: res.playUrl,
-      images: res.images || [],
+      items: res.items || [],
       content: res.content,
       headers: res.headers,
       groups: res.groups || [],
-      recommendations: res.recommendations || []
+      previews: res.previews || [],
+      related: res.related || []
     }
   },
 

@@ -81,6 +81,13 @@ class _BrowserPageState extends State<BrowserPage> {
               });
             }
             _fetchDocumentTitle();
+            _controller.canGoBack().then((value) {
+              if (mounted) {
+                setState(() {
+                  _canGoBack = value;
+                });
+              }
+            });
           },
           onNavigationRequest: (NavigationRequest request) {
             // 如果启用了广告拦截引擎
@@ -233,12 +240,21 @@ class _BrowserPageState extends State<BrowserPage> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return PopScope(
-      canPop: false,
-      onPopInvokedWithResult: (didPop, result) {
+      // 当网页无法再在内部后退时，允许系统/导航器直接出栈退出本页面，支持原生侧滑返回手势
+      canPop: !_canGoBack,
+      onPopInvokedWithResult: (didPop, result) async {
+        // 若系统或上一级已经成功出栈，直接退出，避免重入和双重 pop
+        if (didPop) return;
+
+        // 若网页内部还有上一级历史记录，则优先在网页内部后退
         if (_canGoBack) {
-          _controller.goBack();
-        } else {
-          context.pop();
+          await _controller.goBack();
+          final can = await _controller.canGoBack();
+          if (mounted) {
+            setState(() {
+              _canGoBack = can;
+            });
+          }
         }
       },
       child: Scaffold(
@@ -251,9 +267,15 @@ class _BrowserPageState extends State<BrowserPage> {
           ),
           leading: IconButton(
             icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
-            onPressed: () {
+            onPressed: () async {
               if (_canGoBack) {
-                _controller.goBack();
+                await _controller.goBack();
+                final can = await _controller.canGoBack();
+                if (mounted) {
+                  setState(() {
+                    _canGoBack = can;
+                  });
+                }
               } else {
                 context.pop();
               }

@@ -175,7 +175,7 @@ onMounted(() => {
         <!-- 2. 图集画廊 -->
         <ImageGallery
           v-else-if="rule?.type === 'picture'"
-          :images="detail.images || []"
+          :images="detail.items || []"
           :title="detail.title"
           :desc="detail.desc"
         />

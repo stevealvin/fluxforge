@@ -72,6 +72,10 @@ class _RuleDetailPageState extends State<RuleDetailPage> {
   String? _textContent;
   List<Map<String, dynamic>> _chapters = [];
 
+  // 扩展展示数据 (剧照/截图预览与相关推荐)
+  List<String> _previews = [];
+  List<Map<String, dynamic>> _related = [];
+
   @override
   void initState() {
     super.initState();
@@ -90,6 +94,8 @@ class _RuleDetailPageState extends State<RuleDetailPage> {
     setState(() {
       _loading = true;
       _error = null;
+      _previews = [];
+      _related = [];
     });
 
     if (widget.rule == null) {
@@ -121,7 +127,7 @@ class _RuleDetailPageState extends State<RuleDetailPage> {
   void _parseResult(dynamic result) {
     final declaredType = widget.rule?.type.toLowerCase() ?? '';
 
-    // 1. 优先检查声明类型是否为图片/相册，或返回的是纯数组
+    // 1. 图片/相册类型
     if (declaredType == 'image' ||
         declaredType == 'picture' ||
         declaredType == 'photo' ||
@@ -131,57 +137,66 @@ class _RuleDetailPageState extends State<RuleDetailPage> {
       return;
     }
 
-    // 2. 检查声明类型是否为小说/文本
+    // 2. 小说/文本类型
     if (declaredType == 'novel' || declaredType == 'book' || declaredType == 'text') {
       _extractNovel(result);
       _mediaType = MediaType.novel;
       return;
     }
 
-    // 3. 自适应数据结构推断 (当 declaredType 为空或通用时的智能兜底)
+    // 3. 数组结果推断
     if (result is List) {
-      // 若列表中的元素是图片链接字符串，自动切为图片图集模式
       if (result.isNotEmpty && _looksLikeImageUrl(result.first.toString())) {
         _extractImages(result);
         _mediaType = MediaType.image;
         return;
       }
-      // 否则作为多剧集视频列表处理
       _extractEpisodesFromList(result);
       _mediaType = MediaType.video;
       return;
     }
 
     if (result is Map) {
-      // 检查是否包含显式图片字段
-      if (result.containsKey('images') ||
-          result.containsKey('photos') ||
-          result.containsKey('pics') ||
-          result.containsKey('picList')) {
-        final rawImgs =
-            result['images'] ?? result['photos'] ?? result['pics'] ?? result['picList'];
-        if (rawImgs is List) {
-          _extractImages(rawImgs);
-          _mediaType = MediaType.image;
-          return;
-        }
+      // 提取预览图与推荐列表
+      if (result['previews'] is List) {
+        _previews = (result['previews'] as List)
+            .map((e) => e.toString())
+            .where((s) => s.isNotEmpty)
+            .toList();
+      }
+      if (result['related'] is List) {
+        _related = (result['related'] as List)
+            .whereType<Map>()
+            .map((m) => Map<String, dynamic>.from(m))
+            .toList();
       }
 
-      // 检查是否包含文本/小说正文字段
-      if (result.containsKey('content') || result.containsKey('chapters')) {
+      // 统一提取 items
+      final rawItems = result['items'];
+
+      // 检查 items 中的元素是否为图片 URL
+      if (rawItems is List &&
+          rawItems.isNotEmpty &&
+          _looksLikeImageUrl(rawItems.first is Map
+              ? (rawItems.first['url'] ?? '').toString()
+              : rawItems.first.toString())) {
+        _extractImages(rawItems);
+        _mediaType = MediaType.image;
+        return;
+      }
+
+      // 检查小说正文
+      if (result.containsKey('content')) {
         _extractNovel(result);
         _mediaType = MediaType.novel;
         return;
       }
 
-      // 检查视频播放地址或剧集
-      final String? videoUrl = result['videoUrl']?.toString() ??
-          result['playUrl']?.toString() ??
-          result['url']?.toString();
+      // 检查视频播放地址或剧集 items
+      final String? videoUrl = result['playUrl']?.toString();
 
-      final rawList = result['list'] ?? result['episodes'];
-      if (rawList is List) {
-        _extractEpisodesFromList(rawList);
+      if (rawItems is List) {
+        _extractEpisodesFromList(rawItems);
       }
 
       if (videoUrl != null && videoUrl.isNotEmpty) {
@@ -202,47 +217,25 @@ class _RuleDetailPageState extends State<RuleDetailPage> {
       }
     }
 
-    // 默认回退为视频模式尝试渲染
+    // 默认作为视频模式处理
     _mediaType = MediaType.video;
   }
 
-  /// 从返回数据中提取图集列表
+  /// 从返回数据中提取图集列表 (统一读取 items 数组及 item.url)
   void _extractImages(dynamic rawData) {
     final List<String> list = [];
-    if (rawData is List) {
-      for (final item in rawData) {
+    final List? itemsList = rawData is List
+        ? rawData
+        : (rawData is Map && rawData['items'] is List ? rawData['items'] as List : null);
+
+    if (itemsList != null) {
+      for (final item in itemsList) {
         if (item is String && item.isNotEmpty) {
           list.add(item);
         } else if (item is Map) {
-          final url = item['src'] ??
-              item['url'] ??
-              item['cover'] ??
-              item['image'] ??
-              item['data-original'];
+          final url = item['url'];
           if (url != null && url.toString().isNotEmpty) {
             list.add(url.toString());
-          }
-        }
-      }
-    } else if (rawData is Map) {
-      final innerList = rawData['images'] ??
-          rawData['photos'] ??
-          rawData['pics'] ??
-          rawData['picList'] ??
-          rawData['list'];
-      if (innerList is List) {
-        for (final item in innerList) {
-          if (item is String && item.isNotEmpty) {
-            list.add(item);
-          } else if (item is Map) {
-            final url = item['src'] ??
-                item['url'] ??
-                item['cover'] ??
-                item['image'] ??
-                item['data-original'];
-            if (url != null && url.toString().isNotEmpty) {
-              list.add(url.toString());
-            }
           }
         }
       }
@@ -250,13 +243,16 @@ class _RuleDetailPageState extends State<RuleDetailPage> {
     _imageList = list;
   }
 
-  /// 从返回数据中提取剧集列表
+  /// 从返回数据中提取剧集列表 (统一读取 items 数组及 item.title / item.url)
   void _extractEpisodesFromList(List rawList) {
     final List<Map<String, dynamic>> episodes = [];
     for (int i = 0; i < rawList.length; i++) {
       final item = rawList[i];
       if (item is Map) {
-        episodes.add(Map<String, dynamic>.from(item));
+        episodes.add({
+          'title': item['title']?.toString() ?? '第 ${i + 1} 集',
+          'url': item['url']?.toString() ?? '',
+        });
       } else if (item is String) {
         episodes.add({
           'title': '第 ${i + 1} 集',
@@ -267,13 +263,24 @@ class _RuleDetailPageState extends State<RuleDetailPage> {
     _episodes = episodes;
   }
 
-  /// 提取小说/文本内容
+  /// 提取小说/文本内容 (统一读取 content 正文与 items 章节列表)
   void _extractNovel(dynamic rawData) {
     if (rawData is Map) {
       _textContent = rawData['content']?.toString();
-      final chs = rawData['chapters'];
+      final chs = rawData['items'];
       if (chs is List) {
-        _chapters = chs.map((e) => Map<String, dynamic>.from(e is Map ? e : {'title': e.toString()})).toList();
+        _chapters = chs.map((e) {
+          if (e is Map) {
+            return {
+              'title': e['title']?.toString() ?? '',
+              'url': e['url']?.toString() ?? '',
+            };
+          }
+          return {
+            'title': e.toString(),
+            'url': e.toString(),
+          };
+        }).toList();
       }
     } else if (rawData is String) {
       _textContent = rawData;
@@ -573,6 +580,22 @@ class _RuleDetailPageState extends State<RuleDetailPage> {
               ),
             ),
           ],
+
+          // 剧照 / 预览图流
+          if (_previews.isNotEmpty) ...[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              child: _buildPreviewsSection(isDark),
+            ),
+          ],
+
+          // 相关推荐
+          if (_related.isNotEmpty) ...[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              child: _buildRelatedSection(isDark),
+            ),
+          ],
         ],
       ),
     );
@@ -627,6 +650,176 @@ class _RuleDetailPageState extends State<RuleDetailPage> {
             },
           ),
         ],
+        if (_related.isNotEmpty) ...[
+          const SizedBox(height: 24),
+          _buildRelatedSection(isDark),
+        ],
+      ],
+    );
+  }
+
+  /// 剧照 / 截图 / 插图预览横向滑动流
+  Widget _buildPreviewsSection(bool isDark) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Container(
+              width: 3.5,
+              height: 14,
+              decoration: BoxDecoration(
+                color: AppColors.primary,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              '剧照与预览 (${_previews.length})',
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.bold,
+                color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        SizedBox(
+          height: 110,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: _previews.length,
+            separatorBuilder: (_, _) => const SizedBox(width: 10),
+            itemBuilder: (context, index) {
+              final imgUrl = _previews[index];
+              return ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: AspectRatio(
+                  aspectRatio: 16 / 10,
+                  child: CachedNetworkImage(
+                    imageUrl: imgUrl,
+                    fit: BoxFit.cover,
+                    httpHeaders: {
+                      if (widget.rule?.baseUrl != null) 'Referer': widget.rule!.baseUrl,
+                    },
+                    placeholder: (_, _) => Container(
+                      color: isDark ? AppColors.darkSurface : AppColors.lightSurface,
+                    ),
+                    errorWidget: (_, _, _) => Container(
+                      color: isDark ? AppColors.darkSurface : AppColors.lightSurface,
+                      child: const Icon(Icons.broken_image_rounded, size: 20, color: Colors.grey),
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// 相关推荐卡片横向滑动流
+  Widget _buildRelatedSection(bool isDark) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Container(
+              width: 3.5,
+              height: 14,
+              decoration: BoxDecoration(
+                color: AppColors.primary,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              '相关推荐 (${_related.length})',
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.bold,
+                color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        SizedBox(
+          height: 155,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: _related.length,
+            separatorBuilder: (_, _) => const SizedBox(width: 10),
+            itemBuilder: (context, index) {
+              final item = _related[index];
+              final title = item['title']?.toString() ?? '无标题';
+              final cover = item['cover']?.toString() ?? '';
+              final url = item['url']?.toString() ?? '';
+
+              return GestureDetector(
+                onTap: () {
+                  if (url.isNotEmpty && widget.rule != null) {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => RuleDetailPage(
+                          rule: widget.rule!,
+                          href: url,
+                          title: title,
+                          cover: cover,
+                        ),
+                      ),
+                    );
+                  }
+                },
+                child: SizedBox(
+                  width: 95,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: AspectRatio(
+                          aspectRatio: 3 / 4,
+                          child: cover.isNotEmpty
+                              ? CachedNetworkImage(
+                                  imageUrl: cover,
+                                  fit: BoxFit.cover,
+                                  httpHeaders: {
+                                    if (widget.rule?.baseUrl != null) 'Referer': widget.rule!.baseUrl,
+                                  },
+                                  errorWidget: (_, _, _) => Container(
+                                    color: isDark ? AppColors.darkSurface : AppColors.lightSurface,
+                                    child: const Icon(Icons.broken_image_rounded, size: 20, color: Colors.grey),
+                                  ),
+                                )
+                              : Container(
+                                  color: isDark ? AppColors.darkSurface : AppColors.lightSurface,
+                                  child: const Icon(Icons.movie_outlined, size: 20, color: Colors.grey),
+                                ),
+                        ),
+                      ),
+                      const SizedBox(height: 5),
+                      Text(
+                        title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
       ],
     );
   }

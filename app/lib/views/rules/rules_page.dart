@@ -2,6 +2,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../../core/theme/app_colors.dart';
 import '../../models/rule.dart';
 import '../../services/di.dart';
 import '../../services/rule_service.dart';
@@ -19,6 +20,69 @@ class RulesPage extends StatefulWidget {
 
 class _RulesPageState extends State<RulesPage> {
   final RuleService _ruleService = ruleService;
+  String _searchQuery = '';
+  final TextEditingController _searchController = TextEditingController();
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  IconData _getTypeIcon(String type) {
+    switch (type.toLowerCase()) {
+      case 'video':
+        return LucideIcons.film;
+      case 'novel':
+        return LucideIcons.bookOpen;
+      case 'picture':
+      case 'comic':
+      case 'image':
+        return LucideIcons.image;
+      case 'audio':
+        return LucideIcons.headphones;
+      case 'crawler':
+      default:
+        return LucideIcons.globe;
+    }
+  }
+
+  Color _getTypeColor(String type) {
+    switch (type.toLowerCase()) {
+      case 'video':
+        return const Color(0xFF10B981); // Emerald
+      case 'novel':
+        return const Color(0xFFF59E0B); // Amber
+      case 'picture':
+      case 'comic':
+      case 'image':
+        return const Color(0xFF8B5CF6); // Violet
+      case 'audio':
+        return const Color(0xFF0EA5E9); // Sky
+      case 'crawler':
+      default:
+        return const Color(0xFF14B8A6); // Teal
+    }
+  }
+
+  String _getTypeLabel(String type) {
+    switch (type.toLowerCase()) {
+      case 'video':
+        return '视频源';
+      case 'novel':
+        return '小说源';
+      case 'picture':
+      case 'comic':
+      case 'image':
+        return '图集源';
+      case 'audio':
+        return '音频源';
+      case 'crawler':
+        return '通用解析';
+      default:
+        return type.toUpperCase();
+    }
+  }
 
   /// 弹出添加/导入规则对话框
   void _showImportDialog(BuildContext context) {
@@ -249,129 +313,218 @@ class _RulesPageState extends State<RulesPage> {
     );
   }
 
-  /// 构建单张规则卡片
+  /// 构建单张现代化规则卡片
   Widget _buildRuleCard(BuildContext context, Rule rule) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final typeColor = _getTypeColor(rule.type);
+    final hasUrl = rule.baseUrl.isNotEmpty &&
+        (rule.baseUrl.startsWith('http://') || rule.baseUrl.startsWith('https://'));
+
     return AppCard(
-      borderColor: rule.enabled
-          ? const Color(0xFF10B981).withValues(alpha: 0.35)
-          : null,
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      padding: const EdgeInsets.all(16),
+      borderRadius: 20,
       onTap: () {
         context.push('/rule_discovery', extra: {'rule': rule});
       },
       child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // 头部：类型标签、规则名称、开关
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF10B981).withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        rule.type.toUpperCase(),
-                        style: const TextStyle(
-                          color: Color(0xFF10B981),
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        rule.name,
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: rule.enabled ? null : Colors.grey,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    Switch(
-                      value: rule.enabled,
-                      activeThumbColor: const Color(0xFF10B981),
-                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      onChanged: (val) {
-                        _ruleService.toggleRule(rule.id, val);
-                      },
-                    ),
-                  ],
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 顶部：图标容器 + 规则名称/版本/类型Badge + 启停Switch
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // 44x44 图标容器
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: typeColor.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: typeColor.withValues(alpha: 0.2)),
                 ),
-                // 规则描述
-                if (rule.description != null && rule.description!.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    rule.description!,
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: Theme.of(context).textTheme.bodySmall?.color,
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
+                child: Center(
+                  child: Icon(
+                    _getTypeIcon(rule.type),
+                    color: typeColor,
+                    size: 22,
                   ),
-                ],
-                const SizedBox(height: 12),
-                // 底部信息与快捷动作
-                Row(
+                ),
+              ),
+              const SizedBox(width: 12),
+
+              // 规则名称与标签
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Icon(LucideIcons.globe, size: 14, color: Colors.grey),
-                    const SizedBox(width: 4),
-                    Expanded(
-                      child: Text(
-                        rule.baseUrl,
-                        style: const TextStyle(fontSize: 12, color: Colors.grey),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      'v${rule.version ?? '1.0.0'}',
-                      style: const TextStyle(fontSize: 11, color: Colors.grey),
-                    ),
-                    const SizedBox(width: 8),
-                    PopupMenuButton<String>(
-                      icon: const Icon(Icons.more_vert, size: 18, color: Colors.grey),
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(),
-                      onSelected: (action) {
-                        if (action == 'discovery') {
-                          context.push('/rule_discovery', extra: {'rule': rule});
-                        } else if (action == 'delete') {
-                          _confirmDeleteRule(context, rule);
-                        }
-                      },
-                      itemBuilder: (ctx) => [
-                        const PopupMenuItem(
-                          value: 'discovery',
-                          child: Row(
-                            children: [
-                              Icon(LucideIcons.compass, size: 16),
-                              SizedBox(width: 8),
-                              Text('测试发现流'),
-                            ],
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            rule.name,
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                              color: rule.enabled
+                                  ? (isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary)
+                                  : (isDark ? AppColors.darkTextTertiary : AppColors.lightTextTertiary),
+                              letterSpacing: -0.3,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
-                        const PopupMenuItem(
-                          value: 'delete',
-                          child: Row(
-                            children: [
-                              Icon(LucideIcons.trash2, size: 16, color: Colors.redAccent),
-                              SizedBox(width: 8),
-                              Text('删除规则', style: TextStyle(color: Colors.redAccent)),
-                            ],
+                        if (rule.version != null && rule.version!.isNotEmpty) ...[
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: isDark
+                                  ? Colors.white.withValues(alpha: 0.08)
+                                  : const Color(0xFFF1F5F9),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              'v${rule.version}',
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w600,
+                                color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
+                              ),
+                            ),
                           ),
-                        ),
+                        ],
                       ],
                     ),
+                    const SizedBox(height: 4),
+
+                    // 类型 Badge
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: typeColor.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(_getTypeIcon(rule.type), size: 10, color: typeColor),
+                          const SizedBox(width: 4),
+                          Text(
+                            _getTypeLabel(rule.type),
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              color: typeColor,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ],
                 ),
-              ],
+              ),
+
+              const SizedBox(width: 8),
+
+              // 启停 Switch (无水波外扩)
+              Transform.scale(
+                scale: 0.85,
+                child: Switch(
+                  value: rule.enabled,
+                  activeThumbColor: const Color(0xFF10B981),
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  onChanged: (val) {
+                    _ruleService.toggleRule(rule.id, val);
+                  },
+                ),
+              ),
+            ],
+          ),
+
+          // 规则描述
+          if (rule.description != null && rule.description!.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Text(
+              rule.description!,
+              style: TextStyle(
+                fontSize: 13,
+                height: 1.4,
+                color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
+              ),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
             ),
+          ],
+
+          const SizedBox(height: 12),
+
+          // 底部：左侧站点链接 + 右侧访问网页按钮 (进入 Webview) + 删除按钮
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              // 站点链接与地球小图标
+              Icon(
+                LucideIcons.globe,
+                size: 13,
+                color: isDark ? AppColors.darkTextTertiary : AppColors.lightTextTertiary,
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  rule.baseUrl.isNotEmpty ? rule.baseUrl : '无指定源站地址',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: isDark ? AppColors.darkTextTertiary : AppColors.lightTextSecondary,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+
+              const SizedBox(width: 8),
+
+              // 访问网页按钮（进入应用内 Webview）
+              if (hasUrl)
+                TextButton.icon(
+                  onPressed: () {
+                    final encodedUrl = Uri.encodeComponent(rule.baseUrl);
+                    final encodedTitle = Uri.encodeComponent(rule.name);
+                    context.push('/web?url=$encodedUrl&title=$encodedTitle');
+                  },
+                  icon: const Icon(LucideIcons.arrowUpRight, size: 13, color: AppColors.primary),
+                  label: const Text(
+                    '访问站点',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.primary,
+                    ),
+                  ),
+                  style: TextButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  ),
+                ),
+
+              // 删除规则按钮
+              IconButton(
+                icon: Icon(
+                  LucideIcons.trash2,
+                  size: 15,
+                  color: isDark ? Colors.redAccent.withValues(alpha: 0.85) : Colors.redAccent,
+                ),
+                tooltip: '删除规则',
+                visualDensity: VisualDensity.compact,
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                constraints: const BoxConstraints(),
+                onPressed: () => _confirmDeleteRule(context, rule),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 
@@ -463,56 +616,112 @@ class _RulesPageState extends State<RulesPage> {
             return _buildEmptyState(context);
           }
 
-          final enabledCount = rules.where((r) => r.enabled).length;
+          // 根据输入框即时过滤
+          final filteredRules = rules.where((r) {
+            if (_searchQuery.isEmpty) return true;
+            final q = _searchQuery.toLowerCase();
+            final nameMatch = r.name.toLowerCase().contains(q);
+            final urlMatch = r.baseUrl.toLowerCase().contains(q);
+            final typeMatch = r.type.toLowerCase().contains(q);
+            final descMatch = (r.description ?? '').toLowerCase().contains(q);
+            return nameMatch || urlMatch || typeMatch || descMatch;
+          }).toList();
 
-          return ListView.separated(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
-            itemCount: rules.length + 1,
-            separatorBuilder: (_, index) => const SizedBox(height: 12),
-            itemBuilder: (context, index) {
-              if (index == 0) {
-                // 顶部统计信息卡
-                return AppCard(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                  borderRadius: 12,
-                  showShadow: false,
-                  color: isDark ? const Color(0xFF131D19) : const Color(0xFFECFDF5),
-                  borderColor: const Color(0xFF10B981).withValues(alpha: 0.2),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Row(
+          return CustomScrollView(
+            physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
+            slivers: [
+              // 1. 顶部即时搜索栏
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 6),
+                  child: TextField(
+                    controller: _searchController,
+                    style: const TextStyle(fontSize: 13),
+                    decoration: InputDecoration(
+                      hintText: '搜索规则名称、地址、类型或描述...',
+                      hintStyle: TextStyle(
+                        fontSize: 13,
+                        color: isDark ? AppColors.darkTextTertiary : AppColors.lightTextTertiary,
+                      ),
+                      prefixIcon: const Icon(LucideIcons.search, size: 16),
+                      suffixIcon: _searchQuery.isNotEmpty
+                          ? IconButton(
+                              icon: const Icon(LucideIcons.x, size: 16),
+                              onPressed: () {
+                                _searchController.clear();
+                                setState(() => _searchQuery = '');
+                              },
+                            )
+                          : null,
+                      isDense: true,
+                      filled: true,
+                      fillColor: isDark
+                          ? const Color(0xFF161E2E)
+                          : const Color(0xFFF1F5F9),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide: BorderSide.none,
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    ),
+                    onChanged: (val) => setState(() => _searchQuery = val.trim()),
+                  ),
+                ),
+              ),
+
+              // 2. 规则列表
+              if (filteredRules.isEmpty)
+                SliverFillRemaining(
+                  hasScrollBody: false,
+                  child: Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(32),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
                         children: [
-                          const Icon(LucideIcons.layers, size: 16, color: Color(0xFF10B981)),
-                          const SizedBox(width: 8),
+                          Icon(
+                            LucideIcons.packageOpen,
+                            size: 44,
+                            color: isDark ? AppColors.darkTextTertiary : AppColors.lightTextTertiary,
+                          ),
+                          const SizedBox(height: 12),
                           Text(
-                            '已启用 $enabledCount / 总计 ${rules.length} 条规则',
-                            style: const TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                              color: Color(0xFF10B981),
+                            '未找到符合条件的规则',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
                             ),
+                          ),
+                          const SizedBox(height: 12),
+                          OutlinedButton.icon(
+                            onPressed: () {
+                              _searchController.clear();
+                              setState(() => _searchQuery = '');
+                            },
+                            icon: const Icon(LucideIcons.rotateCcw, size: 14),
+                            label: const Text('重置搜索'),
                           ),
                         ],
                       ),
-                      TextButton.icon(
-                        style: TextButton.styleFrom(
-                          visualDensity: VisualDensity.compact,
-                          foregroundColor: const Color(0xFF059669),
-                          padding: EdgeInsets.zero,
-                        ),
-                        onPressed: () => context.push('/market'),
-                        icon: const Icon(LucideIcons.externalLink, size: 14),
-                        label: const Text('发现更多', style: TextStyle(fontSize: 12)),
-                      ),
-                    ],
+                    ),
                   ),
-                );
-              }
+                )
+              else
+                SliverList(
+                  delegate: SliverChildBuilderDelegate(
+                    (context, index) {
+                      final rule = filteredRules[index];
+                      return _buildRuleCard(context, rule);
+                    },
+                    childCount: filteredRules.length,
+                  ),
+                ),
 
-              final rule = rules[index - 1];
-              return _buildRuleCard(context, rule);
-            },
+              // 底部避让导航栏
+              const SliverToBoxAdapter(
+                child: SizedBox(height: 96),
+              ),
+            ],
           );
         },
       ),

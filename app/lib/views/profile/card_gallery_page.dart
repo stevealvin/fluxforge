@@ -64,10 +64,12 @@ class _CardGalleryPageState extends State<CardGalleryPage> {
           _buildBanner(isDark),
           const SizedBox(height: 20),
 
-          // 1. 四大核心形态
-          _buildSectionHeader('1. 四大核心卡片构造形态', LucideIcons.layoutGrid, isDark),
+          // 1. 五大核心形态
+          _buildSectionHeader('1. 五大核心卡片构造形态', LucideIcons.layoutGrid, isDark),
           const SizedBox(height: 12),
           _buildTypeStandard(isDark),
+          const SizedBox(height: 12),
+          _buildTypeGlass(isDark),
           const SizedBox(height: 12),
           _buildTypeFlat(isDark),
           const SizedBox(height: 12),
@@ -224,7 +226,7 @@ class _CardGalleryPageState extends State<CardGalleryPage> {
           ),
           const SizedBox(height: 8),
           Text(
-            '自带 16px 圆角、主题自适应微阴影 (BoxShadow) 与柔和微光边框 (0.8px)。常用于规则列表、设置分组卡片与主看板。',
+            '默认开启 Apple 级纯正磨砂透光 (BackdropFilter) 与冷调环境柔光微阴影 (0, 3, blur: 14)，配合 0.5px 微光倒角，营造悬浮立体通透感。',
             style: TextStyle(
               fontSize: 12,
               height: 1.4,
@@ -236,7 +238,62 @@ class _CardGalleryPageState extends State<CardGalleryPage> {
     );
   }
 
-  /// 1.2 纯净平铺卡片
+  /// 1.2 纯正磨砂毛玻璃卡片
+  Widget _buildTypeGlass(bool isDark) {
+    return AppCard.glass(
+      blur: 16.0,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: AppColors.accentBlue.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: const Text(
+                  'AppCard.glass()',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.accentBlue,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                '纯正磨砂毛玻璃卡片 (Glass)',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                  color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
+                ),
+              ),
+              const Spacer(),
+              Icon(
+                LucideIcons.sparkles,
+                size: 14,
+                color: isDark ? AppColors.darkTextTertiary : AppColors.lightTextTertiary,
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '强力磨砂高斯模糊 (blur: 16) 配合半透明底色，穿透底层背景极光与色彩，呈现纯正 Liquid Glass 质感。',
+            style: TextStyle(
+              fontSize: 12,
+              height: 1.4,
+              color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 1.3 纯净平铺卡片
   Widget _buildTypeFlat(bool isDark) {
     return AppCard.flat(
       color: isDark
@@ -287,7 +344,7 @@ class _CardGalleryPageState extends State<CardGalleryPage> {
     );
   }
 
-  /// 1.3 描边弱底色卡片
+  /// 1.4 描边弱底色卡片
   Widget _buildTypeOutlined(bool isDark) {
     return AppCard.outlined(
       borderColor: isDark
@@ -339,7 +396,7 @@ class _CardGalleryPageState extends State<CardGalleryPage> {
     );
   }
 
-  /// 1.4 流光渐变卡片
+  /// 1.5 流光渐变卡片
   Widget _buildTypeGradient(bool isDark) {
     return AppCard.gradient(
       borderRadius: 18,

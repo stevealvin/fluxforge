@@ -102,14 +102,8 @@ const parsedVisualData = computed(() => {
   let items: any[] | null = null
   if (Array.isArray(r)) {
     items = r
-  } else if (r && typeof r === 'object') {
-    if (Array.isArray(r.items)) items = r.items
-    else if (Array.isArray(r.list)) items = r.list
-    else if (Array.isArray(r.data)) items = r.data
-    else if (Array.isArray(r.results)) items = r.results
-    else if (Array.isArray(r.books)) items = r.books
-    else if (Array.isArray(r.images)) items = r.images
-    else if (Array.isArray(r.pictures)) items = r.pictures
+  } else if (r && typeof r === 'object' && Array.isArray(r.items)) {
+    items = r.items
   }
 
   const tabs = r && typeof r === 'object' && Array.isArray(r.tabs) ? r.tabs : []
@@ -630,6 +624,83 @@ defineExpose({
                   @click="testParseWithEpisode(ep, group.name)"
                 >
                   {{ ep.title }}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 统一子条目列表 (平铺 items: 视频选集 / 小说章节 / 图集大图) -->
+          <div v-else-if="parsedVisualData.raw.items && parsedVisualData.raw.items.length > 0" class="space-y-2">
+            <!-- 图集网格 -->
+            <div v-if="props.ruleType === 'picture' || (typeof parsedVisualData.raw.items[0] === 'string' && String(parsedVisualData.raw.items[0]).match(/\.(jpg|jpeg|png|webp|gif)/i)) || (parsedVisualData.raw.items[0]?.url && String(parsedVisualData.raw.items[0].url).match(/\.(jpg|jpeg|png|webp|gif)/i))" class="space-y-1.5">
+              <div class="text-xs font-bold text-zinc-700 dark:text-zinc-300 flex items-center gap-1.5">
+                <Layers class="w-3.5 h-3.5 text-emerald-500" />
+                <span>图集列表 (共 {{ parsedVisualData.raw.items.length }} 张)</span>
+              </div>
+              <div class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
+                <div v-for="(img, imgIdx) in parsedVisualData.raw.items" :key="imgIdx" class="aspect-[3/4] rounded-lg overflow-hidden bg-zinc-100 dark:bg-zinc-800 border border-zinc-200/50 dark:border-white/5">
+                  <img :src="typeof img === 'string' ? img : img.url" referrerpolicy="no-referrer" class="w-full h-full object-cover hover:scale-105 transition-transform" loading="lazy" />
+                </div>
+              </div>
+            </div>
+            <!-- 选集/章节通用按钮 -->
+            <div v-else class="space-y-1.5">
+              <div class="text-xs font-bold text-zinc-700 dark:text-zinc-300 flex items-center gap-1.5">
+                <Layers class="w-3.5 h-3.5 text-emerald-500" />
+                <span>内容条目 (共 {{ parsedVisualData.raw.items.length }} 项)</span>
+              </div>
+              <div class="flex flex-wrap gap-1.5">
+                <button
+                  v-for="(ep, epIdx) in parsedVisualData.raw.items"
+                  :key="epIdx"
+                  type="button"
+                  class="px-2 py-1 text-xs rounded-lg bg-zinc-100 dark:bg-white/[0.06] hover:bg-emerald-500 hover:text-white transition-colors cursor-pointer text-zinc-700 dark:text-zinc-300 truncate max-w-[120px]"
+                  :title="`${typeof ep === 'object' ? (ep.title || ep.url) : ep}`"
+                  @click="testParseWithEpisode(typeof ep === 'object' ? ep : { title: `第 ${Number(epIdx) + 1} 项`, url: ep }, '默认')"
+                >
+                  {{ typeof ep === 'object' ? (ep.title || `第 ${Number(epIdx) + 1} 项`) : `第 ${Number(epIdx) + 1} 项` }}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 剧照 / 截图 / 插图预览流 (previews) -->
+          <div v-if="parsedVisualData.raw.previews && parsedVisualData.raw.previews.length > 0" class="space-y-1.5">
+            <div class="text-xs font-bold text-zinc-700 dark:text-zinc-300 flex items-center gap-1.5">
+              <Layers class="w-3.5 h-3.5 text-emerald-500" />
+              <span>剧照/插图预览 (共 {{ parsedVisualData.raw.previews.length }} 张)</span>
+            </div>
+            <div class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
+              <div v-for="(img, imgIdx) in parsedVisualData.raw.previews" :key="imgIdx" class="aspect-[16/10] rounded-lg overflow-hidden bg-zinc-100 dark:bg-zinc-800 border border-zinc-200/50 dark:border-white/5">
+                <img :src="img" referrerpolicy="no-referrer" class="w-full h-full object-cover hover:scale-105 transition-transform" loading="lazy" />
+              </div>
+            </div>
+          </div>
+
+          <!-- 相关推荐列表 (related) -->
+          <div v-if="parsedVisualData.raw.related && parsedVisualData.raw.related.length > 0" class="space-y-1.5">
+            <div class="text-xs font-bold text-zinc-700 dark:text-zinc-300 flex items-center gap-1.5">
+              <Sparkles class="w-3.5 h-3.5 text-emerald-500" />
+              <span>相关推荐 (共 {{ parsedVisualData.raw.related.length }} 项)</span>
+            </div>
+            <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
+              <div
+                v-for="(item, idx) in parsedVisualData.raw.related"
+                :key="idx"
+                class="group rounded-xl overflow-hidden border border-zinc-200/60 dark:border-white/5 bg-white dark:bg-zinc-900/60 p-1.5 flex flex-col justify-between"
+              >
+                <div class="aspect-[3/4] rounded-lg overflow-hidden bg-zinc-100 dark:bg-zinc-800 relative mb-1.5">
+                  <img v-if="item.cover" :src="item.cover" referrerpolicy="no-referrer" class="w-full h-full object-cover" />
+                  <div v-else class="w-full h-full flex items-center justify-center text-zinc-400 text-[10px]">无封面</div>
+                  <span v-if="item.badge" class="absolute top-1 right-1 px-1 py-0.2 rounded text-[8px] font-bold bg-black/60 text-white">{{ item.badge }}</span>
+                </div>
+                <div class="text-[11px] font-bold text-zinc-800 dark:text-zinc-200 truncate mb-1" :title="item.title">{{ item.title || '无标题' }}</div>
+                <button
+                  type="button"
+                  class="w-full py-0.5 rounded text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-500 hover:text-white transition-all cursor-pointer"
+                  @click="testDetailWithItem(item)"
+                >
+                  测试详情
                 </button>
               </div>
             </div>

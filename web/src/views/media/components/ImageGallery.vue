@@ -15,7 +15,7 @@ withDefaults(defineProps<Props>(), {
 
 const getImageUrl = (img: any): string => {
   if (typeof img === 'string') return img
-  return img?.url || img?.src || img?.cover || ''
+  return img?.url || ''
 }
 </script>
 

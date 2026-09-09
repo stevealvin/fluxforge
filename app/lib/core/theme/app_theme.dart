@@ -1,4 +1,4 @@
-﻿import 'package:material_ui/material_ui.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'app_colors.dart';
 
@@ -10,6 +10,8 @@ class AppTheme {
   static ThemeData get lightTheme {
     final colorScheme = ColorScheme.fromSeed(
       seedColor: AppColors.primary,
+      // 启用 Material 3 Expressive 动态色彩表现力算法（跳跃色相与中高彩度）
+      dynamicSchemeVariant: DynamicSchemeVariant.expressive,
       brightness: Brightness.light,
       surface: AppColors.lightBg,
     ).copyWith(
@@ -134,6 +136,8 @@ class AppTheme {
   static ThemeData get darkTheme {
     final colorScheme = ColorScheme.fromSeed(
       seedColor: AppColors.primary,
+      // 启用 Material 3 Expressive 动态色彩表现力算法（跳跃色相与中高彩度）
+      dynamicSchemeVariant: DynamicSchemeVariant.expressive,
       brightness: Brightness.dark,
       surface: AppColors.darkBg,
     ).copyWith(

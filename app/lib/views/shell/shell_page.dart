@@ -72,14 +72,6 @@ class ShellPage extends HookWidget {
                 color: isDark
                     ? AppColors.darkBg.withValues(alpha: 0.72)
                     : Colors.white.withValues(alpha: 0.72),
-                border: Border(
-                  top: BorderSide(
-                    color: isDark
-                        ? Colors.white.withValues(alpha: 0.06)
-                        : const Color(0xFFE2E8F0).withValues(alpha: 0.6),
-                    width: 0.5,
-                  ),
-                ),
               ),
               child: NavigationBar(
                 backgroundColor: Colors.transparent,

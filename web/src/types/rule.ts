@@ -44,8 +44,7 @@ export interface MediaItem {
  */
 export interface MediaEpisode {
   url: string                   // 选集/章节相对或绝对 URL
-  title: string                 // 选集/章节标题 (如 "第 01 集", "第 1 章 开篇")
-  cover?: string                // 选集封面图 (可选)
+  title?: string                // 选集/章节标题 (如 "第 01 集", "第 1 章 开篇")
   desc?: string                 // 选集简介 (可选)
   extra?: Record<string, any>   // 附加上下文
 }
@@ -59,7 +58,7 @@ export interface MediaGroup {
 }
 
 /**
- * 通用媒体详情结构 (detail 方法返回的扁平化标准)
+ * 通用媒体详情结构 (detail 方法返回的标准规范)
  */
 export interface MediaDetail {
   title: string                 // 主标题
@@ -69,14 +68,17 @@ export interface MediaDetail {
   author?: string               // 作者 / 演员 / 导演
   rating?: string | number      // 评分
 
+  // 统一通用子资源条目字段 (全类型标准: 视频选集、小说章节、图集大图等)
+  items?: Array<MediaEpisode | string | { url: string; title?: string }>
+
   // 扁平化媒体内容 (直接挂载在顶层)
   playUrl?: string              // 视频播放直链 / M3U8 / MP4
-  images?: string[]             // 图集画廊包含的完整大图 URL 列表 / 剧照
   content?: string              // 小说/长文本正文内容
   headers?: Record<string, string> // 播放器/图片需要的请求头 (如 Referer)
 
   groups?: MediaGroup[]         // 选集 / 章节分组
-  recommendations?: MediaItem[] // 相关相似推荐列表
+  previews?: string[]           // 预览图 / 剧照 / 截图 / 插图列表 (大图 URL 数组)
+  related?: MediaItem[]         // 相关推荐 / 关联条目 / 猜你喜欢
   extra?: Record<string, any>   // 扩展数据
 }
 

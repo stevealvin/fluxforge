@@ -525,15 +525,16 @@ export const useAiSettingsStore = defineStore('aiSettings', () => {
    - defineRule: 全局规则定义辅助函数
 3. 核心返回值契约（严格遵循标准属性名，所有链接统一为 url，严禁使用 key、href、path 或其他别名）：
    - MediaItem: { title: string, url: string, cover?: string, desc?: string, badge?: string }
-   - 选集项: { title: string, url: string }
-   - 视频/音频直链: playUrl?: string
-   - 图集大图数组: images?: string[]
-   - 小说正文文本: content?: string
+    - 子资源条目(全类型统一): items?: Array<{ title?: string, url: string } | string>
+    - 视频/音频直链: playUrl?: string
+    - 小说正文文本: content?: string
+    - 剧照/截图预览图流: previews?: string[]
+    - 相关推荐条目: related?: MediaItem[]
 4. 四大生命周期方法契约：
-   - async discovery({ tab, page = 1 }): 返回 { tabs?: Array<{ title: string, url: string }>, items: MediaItem[], hasMore?: boolean } 或 MediaItem[]
-   - async search({ keyword, page = 1 }): 返回 { items: MediaItem[], hasMore?: boolean } 或 MediaItem[]
-   - async detail({ url, item }): 返回 { title: string, cover?: string, desc?: string, tags?: string[], author?: string, playUrl?: string, images?: string[], content?: string, groups?: [{ name: string, items: [{ title: string, url: string }] }], recommendations?: MediaItem[] }
-   - async parse({ url, groupName }): 返回 { playUrl?: string, content?: string, headers?: Record<string, string> }
+    - async discovery({ tab, page = 1 }): 返回 { tabs?: Array<{ title: string, url: string }>, items: MediaItem[], hasMore?: boolean } 或 MediaItem[]
+    - async search({ keyword, page = 1 }): 返回 { items: MediaItem[], hasMore?: boolean } 或 MediaItem[]
+    - async detail({ url, item }): 返回 { title: string, cover?: string, desc?: string, tags?: string[], author?: string, playUrl?: string, content?: string, items?: Array<{ title?: string, url: string } | string>, groups?: [{ name: string, items: [{ title: string, url: string }] }], previews?: string[], related?: MediaItem[] }
+    - async parse({ url, groupName }): 返回 { playUrl?: string, content?: string, headers?: Record<string, string> }
 
 【多模态输入自适应识别与处理引擎（核心泛化能力）】：
 无论用户的输入呈现何种形式，你都必须自动识别其本质意图并自适应融会贯通：
@@ -668,6 +669,11 @@ export const useAiSettingsStore = defineStore('aiSettings', () => {
 
     // 1. 本地精准 DOM 嗅探 (0 Token 消耗，秒级完成)
     const localMeta = extractMetadataFallback(html, params.url)
+
+    // 若无网页 HTML 内容，直接返回兜底结果，中断大模型盲猜
+    if (!html.trim()) {
+      return localMeta
+    }
 
     // 如果未开启 AI 润色，或本地已经提取到站点名称，优先直接返回
     if (!params.useAi && localMeta.name) {
@@ -805,6 +811,7 @@ ${html.slice(0, 8000)}
     deleteProfile,
     applyPreset,
     testConnection,
+    callLlm,
     processRuleCode,
     extractSiteMetadata,
     fetchRemoteModels

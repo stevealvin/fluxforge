@@ -79,23 +79,30 @@ const RULE_TEMPLATE = `export default defineRule({
     }
   },
 
-  // 3. 详情信息与选集
+  // 3. 详情信息与子资源
   async detail({ url, item }) {
-    // TODO: 请求并提取详情数据与选集列表
-
+    // 全类型统一使用 items:
+    // - 视频类型: items 为选集列表 [{ title: '第01集', url: '/play-1' }]
+    // - 图集类型: items 为大图列表 [{ url: 'https://...1.jpg' }] 或纯链接数组
+    // - 小说类型: items 为章节列表 [{ title: '第1章', url: '/c-1' }]
     return {
       title: item?.title || '',
       cover: item?.cover || '',
       desc: '',
       tags: [],
       author: '',
-      groups: [
-        // { name: '默认线路', items: [{ title: '第01集', url: '/play-url' }] }
+      items: [
+        { title: '第01集 / 第一章', url: '/resource-url' }
       ]
-      // 其它类型直出字段（按需选择）:
-      // playUrl: ''  // 视频播放直链
-      // images: []   // 图集写真大图列表
-      // content: ''  // 小说章节正文
+      // 多线路/多卷可选支持:
+      // groups: [
+      //   { name: '默认线路', items: [{ title: '第01集', url: '/play-url' }] }
+      // ]
+      // 其它直出与扩展字段（按需选择）:
+      // playUrl: '',   // 视频播放直链
+      // content: '',   // 小说/文章单篇正文
+      // previews: [],  // 剧照/截图/插图预览大图数组 ['https://...1.jpg']
+      // related: []    // 相关推荐/相似作品 [{ title: '标题', url: '/url', cover: '' }]
     }
   },
 
@@ -283,14 +290,16 @@ const handleIdentifySite = async () => {
 
   identifyingSite.value = true
   try {
-    let html = ''
-    try {
-      const res: any = await http.post('/rules/fetch-page', { url: targetUrl })
-      html = res?.data || ''
-    } catch (e: any) {
-      console.warn('抓取站点首页失败，将仅基于 URL 域名进行智能识别:', e.message)
+    // 1. 抓取站点首页 HTML，若失败直接抛错中断，绝不盲目继续调用大模型
+    const res: any = await http.post('/rules/fetch-page', { url: targetUrl })
+    const html = res?.data || (typeof res === 'string' ? res : '')
+
+    if (!html || !html.trim()) {
+      message.error('抓取站点首页失败: 未获取到有效的网页内容，已中断识别')
+      return
     }
 
+    // 2. 成功抓取后，才执行元数据提取与 AI 提炼
     const meta = await aiStore.extractSiteMetadata({
       url: targetUrl,
       htmlContent: html,
@@ -306,7 +315,8 @@ const handleIdentifySite = async () => {
 
     message.success(`✨ 已成功识别站点信息: ${meta.name}`)
   } catch (err: any) {
-    message.error(`识别站点信息失败: ${err.message || '网络或模型异常'}`)
+    const msg = err.response?.data?.message || err.message || '网络请求超时或目标站点不可达'
+    message.error(`网页抓取失败，已中断识别: ${msg}`)
   } finally {
     identifyingSite.value = false
   }

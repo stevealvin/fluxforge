@@ -19,9 +19,12 @@ const currentVideoUrl = ref<string>(props.detail.playUrl || '')
 const parsing = ref(false)
 const parseError = ref('')
 
-// 若有选集分组，默认高亮第一集
+// 若有选集分组或平铺 items，默认高亮第一集
 if (props.detail.groups && props.detail.groups.length > 0 && props.detail.groups[0].items.length > 0) {
   activeEpisodeUrl.value = props.detail.groups[0].items[0].url
+} else if (props.detail.items && props.detail.items.length > 0) {
+  const first = props.detail.items[0]
+  activeEpisodeUrl.value = typeof first === 'string' ? first : first.url
 }
 
 const handleEpisodeClick = async (ep: MediaEpisode, groupName: string) => {
@@ -128,13 +131,36 @@ const handleEpisodeClick = async (ep: MediaEpisode, groupName: string) => {
             </div>
           </div>
         </div>
+
+        <!-- 扁平单线路选集列表 (若无 groups 且有 items) -->
+        <div v-else-if="detail.items && detail.items.length > 0" class="glass-panel rounded-2xl p-5 space-y-4 shadow-sm">
+          <div class="space-y-2.5">
+            <div class="flex items-center gap-2 pb-1 border-b border-emerald-100/50 dark:border-white/5">
+              <div class="w-1.5 h-4 rounded-full bg-gradient-to-b from-emerald-500 via-teal-500 to-cyan-500"></div>
+              <h3 class="text-xs font-bold text-zinc-800 dark:text-zinc-100">选集播放</h3>
+            </div>
+            <div class="flex flex-wrap gap-2 max-h-60 overflow-y-auto pr-1">
+              <n-button
+                v-for="(ep, idx) in detail.items"
+                :key="typeof ep === 'string' ? ep : ep.url"
+                size="small"
+                :type="activeEpisodeUrl === (typeof ep === 'string' ? ep : ep.url) ? 'primary' : 'default'"
+                :secondary="activeEpisodeUrl !== (typeof ep === 'string' ? ep : ep.url)"
+                class="!rounded-xl !font-semibold"
+                @click="handleEpisodeClick(typeof ep === 'string' ? { title: `第 ${idx + 1} 集`, url: ep } : { title: ep.title || `第 ${idx + 1} 集`, url: ep.url }, '默认')"
+              >
+                {{ typeof ep === 'string' ? `第 ${idx + 1} 集` : (ep.title || `第 ${idx + 1} 集`) }}
+              </n-button>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 
     <!-- 下半部分：剧照预览与相关推荐 (平铺于播放器下方) -->
     <div class="space-y-8 w-full">
       <!-- 剧照 / 预览图片流 (如有) -->
-      <div v-if="detail.images && detail.images.length > 0" class="space-y-3">
+      <div v-if="detail.previews && detail.previews.length > 0" class="space-y-3">
         <div class="flex items-center gap-2 pb-1.5 border-b border-emerald-100/50 dark:border-white/5">
           <div class="w-1.5 h-4.5 rounded-full bg-gradient-to-b from-emerald-500 via-teal-500 to-cyan-500"></div>
           <h3 class="text-sm font-bold text-zinc-800 dark:text-zinc-100">剧照与画廊预览</h3>
@@ -142,7 +168,7 @@ const handleEpisodeClick = async (ep: MediaEpisode, groupName: string) => {
         <n-image-group>
           <div class="grid gap-3 sm:gap-4 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
             <div
-              v-for="(img, idx) in detail.images"
+              v-for="(img, idx) in detail.previews"
               :key="idx"
               class="group rounded-2xl overflow-hidden bg-zinc-200 dark:bg-zinc-900 border border-emerald-100/60 dark:border-white/5 aspect-[16/10] cursor-pointer relative"
             >
@@ -158,14 +184,14 @@ const handleEpisodeClick = async (ep: MediaEpisode, groupName: string) => {
       </div>
 
       <!-- 相关推荐列表 (置于下方宽幅网格) -->
-      <div v-if="detail.recommendations && detail.recommendations.length > 0" class="space-y-3">
+      <div v-if="detail.related && detail.related.length > 0" class="space-y-3">
         <div class="flex items-center gap-2 pb-1.5 border-b border-emerald-100/50 dark:border-white/5">
           <div class="w-1.5 h-4.5 rounded-full bg-gradient-to-b from-emerald-500 via-teal-500 to-cyan-500"></div>
           <h3 class="text-sm font-bold text-zinc-800 dark:text-zinc-100">相关推荐</h3>
         </div>
         <div class="grid gap-3 sm:gap-4.5 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
           <div
-            v-for="(item, idx) in detail.recommendations"
+            v-for="(item, idx) in detail.related"
             :key="item.url || idx"
             class="group relative flex flex-col rounded-2xl overflow-hidden bg-white/70 dark:bg-white/[0.03] backdrop-blur-md border border-emerald-100/60 dark:border-white/5 hover:-translate-y-1.5 transition-all duration-300 cursor-pointer shadow-2xs hover:shadow-xl hover:shadow-emerald-500/10 active:scale-98"
             @click="emit('select', item)"

@@ -20,6 +20,11 @@ const errorMsg = ref('')
 const allChapters = ref<MediaEpisode[]>([])
 if (props.detail.groups && props.detail.groups.length > 0) {
   allChapters.value = props.detail.groups.flatMap((g) => g.items || [])
+} else if (props.detail.items && props.detail.items.length > 0) {
+  allChapters.value = props.detail.items.map((it, idx) => {
+    if (typeof it === 'string') return { title: `第 ${idx + 1} 章`, url: it }
+    return { title: it.title || `第 ${idx + 1} 章`, url: it.url }
+  })
 }
 
 const selectChapter = async (ch: MediaEpisode, autoScroll = true) => {

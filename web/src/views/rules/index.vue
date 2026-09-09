@@ -24,6 +24,8 @@ import {
   Globe
 } from '@lucide/vue'
 
+import BatchImportModal from './components/BatchImportModal.vue'
+
 const router = useRouter()
 const message = useMessage()
 
@@ -45,6 +47,7 @@ const loading = ref(false)
 
 // 导入导出相关的状态
 const showImportModal = ref(false)
+const showBatchImportModal = ref(false)
 const importText = ref('')
 const fileInputRef = ref<HTMLInputElement | null>(null)
 
@@ -296,8 +299,21 @@ loadData()
           </div>
         </div>
 
-        <!-- 动作按钮组 (新建、导入、导出) -->
+        <!-- 动作按钮组 (新建、AI批量转译导入、普通导入、导出) -->
         <div class="flex flex-wrap items-center gap-2">
+          <n-button
+            size="small"
+            type="primary"
+            secondary
+            class="!rounded-xl !font-bold shadow-xs border border-amber-500/30 dark:border-amber-400/30"
+            @click="showBatchImportModal = true"
+          >
+            <template #icon>
+              <Sparkles class="w-3.5 h-3.5 text-amber-500" />
+            </template>
+            <span>AI 批量转译导入</span>
+          </n-button>
+
           <n-button
             size="small"
             secondary
@@ -628,6 +644,12 @@ loadData()
         </div>
       </div>
     </n-modal>
+
+    <!-- AI 批量转译与规则导入 Modal -->
+    <BatchImportModal
+      v-model:show="showBatchImportModal"
+      @saved="loadData"
+    />
   </div>
 </template>
 
