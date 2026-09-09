@@ -68,19 +68,23 @@ class _RulesPageState extends State<RulesPage> {
   String _getTypeLabel(String type) {
     switch (type.toLowerCase()) {
       case 'video':
-        return '视频源';
+        return '视频';
       case 'novel':
-        return '小说源';
+        return '小说';
       case 'picture':
       case 'comic':
       case 'image':
-        return '图集源';
+        return '图集';
       case 'audio':
-        return '音频源';
+        return '音频';
       case 'crawler':
-        return '通用解析';
+        return '通用';
       default:
-        return type.toUpperCase();
+        final t = type.trim();
+        if (t.endsWith('源')) {
+          return t.substring(0, t.length - 1);
+        }
+        return t.toUpperCase();
     }
   }
 
@@ -323,7 +327,7 @@ class _RulesPageState extends State<RulesPage> {
     return AppCard(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       padding: const EdgeInsets.all(16),
-      borderRadius: 20,
+      borderRadius: 16,
       onTap: () {
         context.push('/rule_discovery', extra: {'rule': rule});
       },
@@ -334,24 +338,24 @@ class _RulesPageState extends State<RulesPage> {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // 44x44 图标容器
+              // 紧凑 36x36 图标容器
               Container(
-                width: 44,
-                height: 44,
+                width: 36,
+                height: 36,
                 decoration: BoxDecoration(
                   color: typeColor.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: typeColor.withValues(alpha: 0.2)),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: typeColor.withValues(alpha: 0.2), width: 0.8),
                 ),
                 child: Center(
                   child: Icon(
                     _getTypeIcon(rule.type),
                     color: typeColor,
-                    size: 22,
+                    size: 18,
                   ),
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 10),
 
               // 规则名称与标签
               Expanded(
@@ -364,7 +368,7 @@ class _RulesPageState extends State<RulesPage> {
                           child: Text(
                             rule.name,
                             style: TextStyle(
-                              fontSize: 16,
+                              fontSize: 15,
                               fontWeight: FontWeight.w700,
                               color: rule.enabled
                                   ? (isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary)
@@ -378,17 +382,17 @@ class _RulesPageState extends State<RulesPage> {
                         if (rule.version != null && rule.version!.isNotEmpty) ...[
                           const SizedBox(width: 6),
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            padding: const EdgeInsets.symmetric(horizontal: 4.5, vertical: 1),
                             decoration: BoxDecoration(
                               color: isDark
                                   ? Colors.white.withValues(alpha: 0.08)
                                   : const Color(0xFFF1F5F9),
-                              borderRadius: BorderRadius.circular(6),
+                              borderRadius: BorderRadius.circular(4),
                             ),
                             child: Text(
                               'v${rule.version}',
                               style: TextStyle(
-                                fontSize: 10,
+                                fontSize: 9,
                                 fontWeight: FontWeight.w600,
                                 color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
                               ),
@@ -397,24 +401,24 @@ class _RulesPageState extends State<RulesPage> {
                         ],
                       ],
                     ),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 3),
 
-                    // 类型 Badge
+                    // 类型 Badge（字号缩小一号）
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
                       decoration: BoxDecoration(
                         color: typeColor.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(6),
+                        borderRadius: BorderRadius.circular(4),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(_getTypeIcon(rule.type), size: 10, color: typeColor),
-                          const SizedBox(width: 4),
+                          Icon(_getTypeIcon(rule.type), size: 9, color: typeColor),
+                          const SizedBox(width: 3),
                           Text(
                             _getTypeLabel(rule.type),
                             style: TextStyle(
-                              fontSize: 10,
+                              fontSize: 9,
                               fontWeight: FontWeight.w700,
                               color: typeColor,
                             ),
@@ -430,7 +434,7 @@ class _RulesPageState extends State<RulesPage> {
 
               // 启停 Switch (无水波外扩)
               Transform.scale(
-                scale: 0.85,
+                scale: 0.8,
                 child: Switch(
                   value: rule.enabled,
                   activeThumbColor: const Color(0xFF10B981),
@@ -445,12 +449,12 @@ class _RulesPageState extends State<RulesPage> {
 
           // 规则描述
           if (rule.description != null && rule.description!.isNotEmpty) ...[
-            const SizedBox(height: 10),
+            const SizedBox(height: 6),
             Text(
               rule.description!,
               style: TextStyle(
-                fontSize: 13,
-                height: 1.4,
+                fontSize: 12,
+                height: 1.35,
                 color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
               ),
               maxLines: 2,
@@ -458,68 +462,77 @@ class _RulesPageState extends State<RulesPage> {
             ),
           ],
 
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
 
-          // 底部：左侧站点链接 + 右侧访问网页按钮 (进入 Webview) + 删除按钮
+          // 底部：左侧站点直达链接（点击跳转 WebView） + 右侧删除按钮
           Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              // 站点链接与地球小图标
-              Icon(
-                LucideIcons.globe,
-                size: 13,
-                color: isDark ? AppColors.darkTextTertiary : AppColors.lightTextTertiary,
-              ),
-              const SizedBox(width: 6),
+              // 站点链接与地球小图标（点击直接打开站点）
               Expanded(
-                child: Text(
-                  rule.baseUrl.isNotEmpty ? rule.baseUrl : '无指定源站地址',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: isDark ? AppColors.darkTextTertiary : AppColors.lightTextSecondary,
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(4),
+                  onTap: hasUrl
+                      ? () {
+                          final encodedUrl = Uri.encodeComponent(rule.baseUrl);
+                          final encodedTitle = Uri.encodeComponent(rule.name);
+                          context.push('/web?url=$encodedUrl&title=$encodedTitle');
+                        }
+                      : null,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 2),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          LucideIcons.globe,
+                          size: 12,
+                          color: hasUrl
+                              ? (isDark ? const Color(0xFF34D399) : const Color(0xFF059669))
+                              : (isDark ? AppColors.darkTextTertiary : AppColors.lightTextTertiary),
+                        ),
+                        const SizedBox(width: 4),
+                        Flexible(
+                          child: Text(
+                            rule.baseUrl.isNotEmpty ? rule.baseUrl : '无指定源站地址',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: hasUrl
+                                  ? (isDark ? const Color(0xFF34D399) : const Color(0xFF059669))
+                                  : (isDark ? AppColors.darkTextTertiary : AppColors.lightTextSecondary),
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        if (hasUrl) ...[
+                          const SizedBox(width: 2),
+                          Icon(
+                            LucideIcons.arrowUpRight,
+                            size: 11,
+                            color: isDark ? const Color(0xFF34D399) : const Color(0xFF059669),
+                          ),
+                        ],
+                      ],
+                    ),
                   ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
                 ),
               ),
 
               const SizedBox(width: 8),
 
-              // 访问网页按钮（进入应用内 Webview）
-              if (hasUrl)
-                TextButton.icon(
-                  onPressed: () {
-                    final encodedUrl = Uri.encodeComponent(rule.baseUrl);
-                    final encodedTitle = Uri.encodeComponent(rule.name);
-                    context.push('/web?url=$encodedUrl&title=$encodedTitle');
-                  },
-                  icon: const Icon(LucideIcons.arrowUpRight, size: 13, color: AppColors.primary),
-                  label: const Text(
-                    '访问站点',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.primary,
-                    ),
-                  ),
-                  style: TextButton.styleFrom(
-                    visualDensity: VisualDensity.compact,
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              // 删除规则按钮（消除原生 IconButton 默认占用的 48px 隐形点击高度）
+              InkWell(
+                borderRadius: BorderRadius.circular(6),
+                onTap: () => _confirmDeleteRule(context, rule),
+                child: Padding(
+                  padding: const EdgeInsets.all(4),
+                  child: Icon(
+                    LucideIcons.trash2,
+                    size: 14,
+                    color: isDark ? Colors.redAccent.withValues(alpha: 0.85) : Colors.redAccent,
                   ),
                 ),
-
-              // 删除规则按钮
-              IconButton(
-                icon: Icon(
-                  LucideIcons.trash2,
-                  size: 15,
-                  color: isDark ? Colors.redAccent.withValues(alpha: 0.85) : Colors.redAccent,
-                ),
-                tooltip: '删除规则',
-                visualDensity: VisualDensity.compact,
-                padding: const EdgeInsets.symmetric(horizontal: 4),
-                constraints: const BoxConstraints(),
-                onPressed: () => _confirmDeleteRule(context, rule),
               ),
             ],
           ),
@@ -633,38 +646,140 @@ class _RulesPageState extends State<RulesPage> {
               // 1. 顶部即时搜索栏
               SliverToBoxAdapter(
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 6),
-                  child: TextField(
-                    controller: _searchController,
-                    style: const TextStyle(fontSize: 13),
-                    decoration: InputDecoration(
-                      hintText: '搜索规则名称、地址、类型或描述...',
-                      hintStyle: TextStyle(
-                        fontSize: 13,
-                        color: isDark ? AppColors.darkTextTertiary : AppColors.lightTextTertiary,
-                      ),
-                      prefixIcon: const Icon(LucideIcons.search, size: 16),
-                      suffixIcon: _searchQuery.isNotEmpty
-                          ? IconButton(
-                              icon: const Icon(LucideIcons.x, size: 16),
-                              onPressed: () {
-                                _searchController.clear();
-                                setState(() => _searchQuery = '');
-                              },
-                            )
-                          : null,
-                      isDense: true,
-                      filled: true,
-                      fillColor: isDark
-                          ? const Color(0xFF161E2E)
-                          : const Color(0xFFF1F5F9),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(14),
-                        borderSide: BorderSide.none,
-                      ),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: isDark ? AppColors.darkCard : AppColors.lightCard,
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: isDark ? 0.20 : 0.03),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
                     ),
-                    onChanged: (val) => setState(() => _searchQuery = val.trim()),
+                    child: TextField(
+                      controller: _searchController,
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
+                      ),
+                      decoration: InputDecoration(
+                        hintText: '搜索规则名称、类型或地址...',
+                        hintStyle: TextStyle(
+                          fontSize: 13,
+                          color: isDark ? AppColors.darkTextTertiary : AppColors.lightTextTertiary,
+                        ),
+                        prefixIconConstraints: const BoxConstraints(minWidth: 38, minHeight: 38),
+                        prefixIcon: Padding(
+                          padding: const EdgeInsets.only(left: 4),
+                          child: Icon(
+                            LucideIcons.search,
+                            size: 16,
+                            color: _searchQuery.isNotEmpty
+                                ? AppColors.primary
+                                : (isDark ? AppColors.darkTextTertiary : AppColors.lightTextTertiary),
+                          ),
+                        ),
+                        suffixIconConstraints: const BoxConstraints(minHeight: 38),
+                        suffixIcon: _searchQuery.isNotEmpty
+                            ? Padding(
+                                padding: const EdgeInsets.only(right: 8),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: AppColors.primary.withValues(alpha: 0.12),
+                                        borderRadius: BorderRadius.circular(6),
+                                      ),
+                                      child: Text(
+                                        '${filteredRules.length} 条',
+                                        style: const TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w600,
+                                          color: AppColors.primary,
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    GestureDetector(
+                                      behavior: HitTestBehavior.opaque,
+                                      onTap: () {
+                                        _searchController.clear();
+                                        setState(() => _searchQuery = '');
+                                      },
+                                      child: Container(
+                                        width: 20,
+                                        height: 20,
+                                        decoration: BoxDecoration(
+                                          color: isDark
+                                              ? Colors.white.withValues(alpha: 0.12)
+                                              : Colors.black.withValues(alpha: 0.07),
+                                          shape: BoxShape.circle,
+                                        ),
+                                        child: Center(
+                                          child: Icon(
+                                            Icons.close_rounded,
+                                            size: 13,
+                                            color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              )
+                            : Padding(
+                                padding: const EdgeInsets.only(right: 12),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                                  decoration: BoxDecoration(
+                                    color: isDark
+                                        ? Colors.white.withValues(alpha: 0.05)
+                                        : Colors.black.withValues(alpha: 0.04),
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: Text(
+                                    '共 ${rules.length} 条',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w500,
+                                      color: isDark ? AppColors.darkTextTertiary : AppColors.lightTextTertiary,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                        isDense: true,
+                        filled: true,
+                        fillColor: Colors.transparent,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(
+                            color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
+                            width: 0.8,
+                          ),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(
+                            color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
+                            width: 0.8,
+                          ),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(
+                            color: AppColors.primary,
+                            width: 1.2,
+                          ),
+                        ),
+                      ),
+                      onChanged: (val) => setState(() => _searchQuery = val.trim()),
+                    ),
                   ),
                 ),
               ),
@@ -694,12 +809,20 @@ class _RulesPageState extends State<RulesPage> {
                           ),
                           const SizedBox(height: 12),
                           OutlinedButton.icon(
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: AppColors.primary,
+                              side: const BorderSide(color: AppColors.primary, width: 0.8),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                            ),
                             onPressed: () {
                               _searchController.clear();
                               setState(() => _searchQuery = '');
                             },
                             icon: const Icon(LucideIcons.rotateCcw, size: 14),
-                            label: const Text('重置搜索'),
+                            label: const Text('重置搜索', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
                           ),
                         ],
                       ),

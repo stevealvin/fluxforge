@@ -8,6 +8,7 @@ import '../../models/rule.dart';
 import '../../services/di.dart';
 import '../../services/rule_engine.dart';
 import '../../widgets/app_card.dart';
+import '../../widgets/app_button.dart';
 import '../../widgets/empty_state.dart';
 import '../../widgets/loading_indicator.dart';
 import '../../widgets/net_image.dart';
@@ -133,6 +134,7 @@ class _SearchPageState extends State<SearchPage> {
     _historyList = historyService.searchHistory.toList();
 
     _scrollController.addListener(_onScroll);
+    ruleService.rulesNotifier.addListener(_onRulesChanged);
 
     // 处理初始关键词入参自动触发搜索
     if (widget.initialKeyword != null && widget.initialKeyword!.trim().isNotEmpty) {
@@ -147,8 +149,13 @@ class _SearchPageState extends State<SearchPage> {
     }
   }
 
+  void _onRulesChanged() {
+    if (mounted) setState(() {});
+  }
+
   @override
   void dispose() {
+    ruleService.rulesNotifier.removeListener(_onRulesChanged);
     _controller.dispose();
     _focusNode.dispose();
     _scrollController.dispose();
@@ -195,7 +202,15 @@ class _SearchPageState extends State<SearchPage> {
   /// 发起全局多源并发流式检索
   Future<void> _performSearch(String text) async {
     final query = text.trim();
-    if (query.isEmpty) return;
+    if (query.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('请输入搜索关键词'),
+          duration: Duration(seconds: 1),
+        ),
+      );
+      return;
+    }
 
     _focusNode.unfocus();
     final thisEpoch = ++_searchEpoch;
@@ -227,25 +242,51 @@ class _SearchPageState extends State<SearchPage> {
       setState(() {
         _loading = false;
       });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('暂无可用的规则源，请先在规则市场中导入并启用规则'),
+          action: SnackBarAction(
+            label: '去导入',
+            onPressed: () => context.push('/market'),
+          ),
+        ),
+      );
       return;
     }
 
-    // 并发启动所有规则的独立沙箱检索任务（流式更新，单源完成即刻渲染）
-    final searchFutures = targetRules.map((rule) async {
+    // 逐源流式执行检索任务（单源完成即刻更新 UI，避免 QuickJS 并发冲突与死锁）
+    for (final rule in targetRules) {
+      if (!mounted || _searchEpoch != thisEpoch) break;
       final key = rule.id.isNotEmpty ? rule.id : rule.name;
-      try {
-        final raw = await RuleEngine.search(rule, query, page: 1);
 
-        // 如果在此期间用户发起了新的检索，丢弃过期响应
-        if (!mounted || _searchEpoch != thisEpoch) return;
+      try {
+        final raw = await RuleEngine.search(rule, query, page: 1)
+            .timeout(const Duration(seconds: 20));
+
+        if (!mounted || _searchEpoch != thisEpoch) break;
 
         List<dynamic> items = [];
         if (raw is List) {
           items = raw;
         } else if (raw is Map) {
-          if (raw['items'] is List) items = raw['items'];
-          if (raw['list'] is List) items = raw['list'];
-          if (raw['results'] is List) items = raw['results'];
+          if (raw['items'] is List) {
+            items = raw['items'];
+          } else if (raw['list'] is List) {
+            items = raw['list'];
+          } else if (raw['results'] is List) {
+            items = raw['results'];
+          } else if (raw['data'] is List) {
+            items = raw['data'];
+          } else if (raw['data'] is Map) {
+            final dataMap = raw['data'] as Map;
+            if (dataMap['items'] is List) {
+              items = dataMap['items'];
+            } else if (dataMap['list'] is List) {
+              items = dataMap['list'];
+            } else if (dataMap['results'] is List) {
+              items = dataMap['results'];
+            }
+          }
         }
 
         final List<_NormalizedSearchResult> parsed = [];
@@ -278,10 +319,7 @@ class _SearchPageState extends State<SearchPage> {
           });
         }
       }
-    });
-
-    // 等待所有源并发检索结束
-    await Future.wait(searchFutures);
+    }
 
     if (mounted && _searchEpoch == thisEpoch) {
       setState(() {
@@ -303,21 +341,38 @@ class _SearchPageState extends State<SearchPage> {
       _loadingMore = true;
     });
 
-    final loadFutures = targetRules.map((rule) async {
+    for (final rule in targetRules) {
+      if (!mounted || _searchEpoch != thisEpoch) break;
       final key = rule.id.isNotEmpty ? rule.id : rule.name;
       final nextPage = (_rulePageMap[key] ?? 1) + 1;
 
       try {
-        final raw = await RuleEngine.search(rule, _currentQuery, page: nextPage);
-        if (!mounted || _searchEpoch != thisEpoch) return;
+        final raw = await RuleEngine.search(rule, _currentQuery, page: nextPage)
+            .timeout(const Duration(seconds: 20));
+        if (!mounted || _searchEpoch != thisEpoch) break;
 
         List<dynamic> items = [];
         if (raw is List) {
           items = raw;
         } else if (raw is Map) {
-          if (raw['items'] is List) items = raw['items'];
-          if (raw['list'] is List) items = raw['list'];
-          if (raw['results'] is List) items = raw['results'];
+          if (raw['items'] is List) {
+            items = raw['items'];
+          } else if (raw['list'] is List) {
+            items = raw['list'];
+          } else if (raw['results'] is List) {
+            items = raw['results'];
+          } else if (raw['data'] is List) {
+            items = raw['data'];
+          } else if (raw['data'] is Map) {
+            final dataMap = raw['data'] as Map;
+            if (dataMap['items'] is List) {
+              items = dataMap['items'];
+            } else if (dataMap['list'] is List) {
+              items = dataMap['list'];
+            } else if (dataMap['results'] is List) {
+              items = dataMap['results'];
+            }
+          }
         }
 
         final List<_NormalizedSearchResult> parsed = [];
@@ -340,9 +395,7 @@ class _SearchPageState extends State<SearchPage> {
       } catch (e) {
         debugPrint('【搜索分页】源 [${rule.name}] 第 $nextPage 页加载失败: $e');
       }
-    });
-
-    await Future.wait(loadFutures);
+    }
 
     if (mounted && _searchEpoch == thisEpoch) {
       setState(() {
@@ -422,80 +475,91 @@ class _SearchPageState extends State<SearchPage> {
   /// 顶部搜索栏与操作区
   PreferredSizeWidget _buildSearchBar(bool isDark) {
     return AppBar(
+      automaticallyImplyLeading: false,
+      centerTitle: false,
       titleSpacing: 0,
-      leading: IconButton(
-        icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
-        onPressed: _handleBack,
+      title: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        child: Row(
+          children: [
+            IconButton(
+              icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
+              onPressed: _handleBack,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+              tooltip: '返回',
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Container(
+                height: 38,
+                decoration: BoxDecoration(
+                  color: isDark ? AppColors.darkCard : AppColors.lightSurface,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
+                    width: 0.8,
+                  ),
+                ),
+                child: TextField(
+                  controller: _controller,
+                  focusNode: _focusNode,
+                  autofocus: widget.initialKeyword == null,
+                  textInputAction: TextInputAction.search,
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
+                  ),
+                  decoration: InputDecoration(
+                    hintText: widget.targetRule != null
+                        ? '在「${widget.targetRule!.name}」中搜索...'
+                        : '搜索海量影视、番剧、小说...',
+                    hintStyle: TextStyle(
+                      fontSize: 13,
+                      color: isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted,
+                    ),
+                    prefixIconConstraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                    prefixIcon: const Icon(
+                      Icons.search_rounded,
+                      size: 18,
+                      color: AppColors.primary,
+                    ),
+                    suffixIconConstraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                    suffixIcon: _controller.text.isNotEmpty
+                        ? GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: () {
+                              _controller.clear();
+                              setState(() {
+                                _showHistory = true;
+                                _allResults.clear();
+                              });
+                            },
+                            child: const Padding(
+                              padding: EdgeInsets.symmetric(horizontal: 8),
+                              child: Icon(Icons.clear_rounded, size: 16),
+                            ),
+                          )
+                        : null,
+                    isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(vertical: 8),
+                    border: InputBorder.none,
+                  ),
+                  onChanged: (val) {
+                    setState(() {});
+                  },
+                  onSubmitted: (val) => _performSearch(val),
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            AppButton.compact(
+              label: '搜索',
+              onPressed: () => _performSearch(_controller.text),
+            ),
+          ],
+        ),
       ),
-      title: Container(
-        height: 40,
-        margin: const EdgeInsets.only(right: 6),
-        decoration: BoxDecoration(
-          color: isDark ? AppColors.darkCard : AppColors.lightSurface,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(
-            color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
-            width: 0.8,
-          ),
-        ),
-        child: TextField(
-          controller: _controller,
-          focusNode: _focusNode,
-          autofocus: widget.initialKeyword == null,
-          textInputAction: TextInputAction.search,
-          style: TextStyle(
-            fontSize: 14,
-            color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
-          ),
-          decoration: InputDecoration(
-            hintText: widget.targetRule != null
-                ? '在「${widget.targetRule!.name}」中搜索...'
-                : '搜索海量影视、番剧、小说...',
-            hintStyle: TextStyle(
-              fontSize: 13,
-              color: isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted,
-            ),
-            prefixIcon: const Icon(
-              Icons.search_rounded,
-              size: 20,
-              color: AppColors.primary,
-            ),
-            suffixIcon: _controller.text.isNotEmpty
-                ? IconButton(
-                    icon: const Icon(Icons.clear_rounded, size: 18),
-                    onPressed: () {
-                      _controller.clear();
-                      setState(() {
-                        _showHistory = true;
-                        _allResults.clear();
-                      });
-                    },
-                  )
-                : null,
-            contentPadding: const EdgeInsets.symmetric(vertical: 8),
-            border: InputBorder.none,
-          ),
-          onChanged: (val) {
-            setState(() {});
-          },
-          onSubmitted: (val) => _performSearch(val),
-        ),
-      ),
-      actions: [
-        // 搜索提交按钮
-        Padding(
-          padding: const EdgeInsets.only(right: 8),
-          child: TextButton(
-            style: TextButton.styleFrom(
-              foregroundColor: AppColors.primary,
-              textStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-            ),
-            onPressed: () => _performSearch(_controller.text),
-            child: const Text('搜索'),
-          ),
-        ),
-      ],
     );
   }
 
@@ -717,7 +781,7 @@ class _SearchPageState extends State<SearchPage> {
             spacing: 8,
             runSpacing: 8,
             children: _historyList.map((text) {
-              return Chip(
+              return InputChip(
                 avatar: const Icon(LucideIcons.clock, size: 13, color: AppColors.primary),
                 label: Text(
                   text,
@@ -734,6 +798,10 @@ class _SearchPageState extends State<SearchPage> {
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                 deleteIcon: const Icon(Icons.close_rounded, size: 14),
                 deleteIconColor: isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted,
+                onPressed: () {
+                  _controller.text = text;
+                  _performSearch(text);
+                },
                 onDeleted: () => _removeHistoryItem(text),
               );
             }).toList(),

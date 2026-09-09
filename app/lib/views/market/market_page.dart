@@ -6,6 +6,7 @@ import '../../models/rule.dart';
 import '../../services/di.dart';
 import '../../services/rule_service.dart';
 import '../../widgets/app_card.dart';
+import '../../widgets/app_button.dart';
 import '../../widgets/loading_indicator.dart';
 
 class MarketPage extends StatefulWidget {
@@ -155,19 +156,12 @@ class _MarketPageState extends State<MarketPage> {
         actions: [
           if (!_loading && _marketRules.isNotEmpty)
             Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: FilledButton.tonalIcon(
-                style: FilledButton.styleFrom(
-                  backgroundColor: const Color(0xFF10B981).withValues(alpha: 0.18),
-                  foregroundColor: const Color(0xFF10B981),
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                ),
+              padding: const EdgeInsets.only(right: 12),
+              child: AppButton.compactTonal(
                 onPressed: _importingAll ? null : _importAllRules,
-                icon: _importingAll
-                    ? const LoadingIndicator.compact(size: 14, strokeWidth: 1.8)
-                    : const Icon(LucideIcons.download, size: 16),
-                label: Text(_importingAll ? '导入中...' : '一键全部导入'),
+                loading: _importingAll,
+                icon: const Icon(LucideIcons.download),
+                label: _importingAll ? '导入中...' : '全部导入',
               ),
             ),
         ],
@@ -310,34 +304,33 @@ class _MarketPageState extends State<MarketPage> {
                             const SizedBox(width: 12),
                             if (isImported)
                               Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                height: 30,
+                                padding: const EdgeInsets.symmetric(horizontal: 10),
                                 decoration: BoxDecoration(
                                   color: const Color(0xFF10B981).withValues(alpha: 0.12),
-                                  borderRadius: BorderRadius.circular(10),
+                                  borderRadius: BorderRadius.circular(8),
                                 ),
                                 child: const Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    Icon(LucideIcons.check, size: 14, color: Color(0xFF10B981)),
+                                    Icon(LucideIcons.check, size: 13, color: Color(0xFF10B981)),
                                     SizedBox(width: 4),
                                     Text(
                                       '已导入',
-                                      style: TextStyle(fontSize: 12, color: Color(0xFF10B981), fontWeight: FontWeight.w600),
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: Color(0xFF10B981),
+                                        fontWeight: FontWeight.w600,
+                                      ),
                                     ),
                                   ],
                                 ),
                               )
                             else
-                              FilledButton.icon(
-                                style: FilledButton.styleFrom(
-                                  backgroundColor: const Color(0xFF059669),
-                                  foregroundColor: Colors.white,
-                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                                ),
+                              AppButton.compact(
                                 onPressed: () => _importSingleRule(rule),
-                                icon: const Icon(LucideIcons.download, size: 14),
-                                label: const Text('一键导入', style: TextStyle(fontSize: 12)),
+                                icon: const Icon(LucideIcons.download),
+                                label: '一键导入',
                               ),
                           ],
                         ),

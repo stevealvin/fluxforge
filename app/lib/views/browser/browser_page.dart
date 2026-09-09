@@ -1,3 +1,4 @@
+import 'dart:ui' as ui;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
@@ -7,7 +8,6 @@ import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
 
 import '../../core/theme/app_colors.dart';
-import '../../widgets/app_card.dart';
 import 'adblock_engine.dart';
 
 /// 现代化内置聚合浏览器页面
@@ -143,57 +143,169 @@ class _BrowserPageState extends State<BrowserPage> {
     });
   }
 
-  /// 弹出底部快捷工具抽屉
+  /// 弹出底部磨砂玻璃操作抽屉 (方案 A：底部抽屉 + 顶部居中药丸拖拽句柄条)
   void _showActionMenu(BuildContext context, bool isDark) {
     showModalBottomSheet(
       context: context,
-      backgroundColor: isDark ? AppColors.darkSurface : AppColors.lightSurface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.black.withValues(alpha: 0.35),
       builder: (ctx) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                _buildActionButton(
-                  icon: Icons.refresh_rounded,
-                  label: '刷新',
-                  isDark: isDark,
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    _controller.reload();
-                  },
+        return ClipRRect(
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
+          child: BackdropFilter(
+            filter: ui.ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+            child: Container(
+              decoration: BoxDecoration(
+                color: isDark
+                    ? const Color(0xFF1E293B).withValues(alpha: 0.82)
+                    : Colors.white.withValues(alpha: 0.88),
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
+                border: Border(
+                  top: BorderSide(
+                    color: isDark
+                        ? Colors.white.withValues(alpha: 0.12)
+                        : Colors.white.withValues(alpha: 0.70),
+                    width: 0.8,
+                  ),
                 ),
-                _buildActionButton(
-                  icon: Icons.open_in_browser_rounded,
-                  label: '浏览器打开',
-                  isDark: isDark,
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    launchUrl(Uri.parse(widget.url), mode: LaunchMode.externalApplication);
-                  },
+              ),
+              child: SafeArea(
+                top: false,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // 顶部居中药丸拖拽句柄条 (Drag Handle)
+                    Center(
+                      child: Container(
+                        margin: const EdgeInsets.only(top: 10, bottom: 12),
+                        width: 36,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: isDark
+                              ? Colors.white.withValues(alpha: 0.28)
+                              : Colors.black.withValues(alpha: 0.18),
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    ),
+                    // 页面当前信息简报
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            LucideIcons.globe,
+                            size: 13,
+                            color: isDark
+                                ? AppColors.darkTextTertiary
+                                : AppColors.lightTextTertiary,
+                          ),
+                          const SizedBox(width: 6),
+                          Flexible(
+                            child: Text(
+                              _title.isNotEmpty ? _title : widget.url,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: isDark
+                                    ? AppColors.darkTextTertiary
+                                    : AppColors.lightTextTertiary,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    // 快捷功能操作按键组
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                        children: [
+                          _buildActionButton(
+                            icon: LucideIcons.rotateCw,
+                            label: '刷新页面',
+                            isDark: isDark,
+                            onTap: () {
+                              Navigator.pop(ctx);
+                              _controller.reload();
+                            },
+                          ),
+                          _buildActionButton(
+                            icon: LucideIcons.copy,
+                            label: '复制链接',
+                            isDark: isDark,
+                            onTap: () async {
+                              Navigator.pop(ctx);
+                              final currentUrl =
+                                  await _controller.currentUrl() ?? widget.url;
+                              await Clipboard.setData(
+                                ClipboardData(text: currentUrl),
+                              );
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('已复制网页链接至剪贴板'),
+                                    duration: Duration(seconds: 1),
+                                  ),
+                                );
+                              }
+                            },
+                          ),
+                          _buildActionButton(
+                            icon: LucideIcons.externalLink,
+                            label: '浏览器打开',
+                            isDark: isDark,
+                            onTap: () async {
+                              Navigator.pop(ctx);
+                              final currentUrl =
+                                  await _controller.currentUrl() ?? widget.url;
+                              launchUrl(
+                                Uri.parse(currentUrl),
+                                mode: LaunchMode.externalApplication,
+                              );
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+                    // 底部取消按钮
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                      child: SizedBox(
+                        width: double.infinity,
+                        height: 44,
+                        child: TextButton(
+                          onPressed: () => Navigator.pop(ctx),
+                          style: TextButton.styleFrom(
+                            backgroundColor: isDark
+                                ? Colors.white.withValues(alpha: 0.06)
+                                : Colors.black.withValues(alpha: 0.04),
+                            foregroundColor: isDark
+                                ? AppColors.darkTextSecondary
+                                : AppColors.lightTextSecondary,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          child: const Text(
+                            '取消',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-                _buildActionButton(
-                  icon: LucideIcons.copy,
-                  label: '复制链接',
-                  isDark: isDark,
-                  onTap: () async {
-                    Navigator.pop(ctx);
-                    final currentUrl = await _controller.currentUrl();
-                    if (currentUrl != null) {
-                      await Clipboard.setData(ClipboardData(text: currentUrl));
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('已复制网页链接至剪贴板')),
-                        );
-                      }
-                    }
-                  },
-                ),
-              ],
+              ),
             ),
           ),
         );
@@ -207,29 +319,54 @@ class _BrowserPageState extends State<BrowserPage> {
     required bool isDark,
     required VoidCallback onTap,
   }) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(12),
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            AppCard(
-              padding: const EdgeInsets.all(12),
-              borderRadius: 12,
-              showShadow: false,
-              child: Icon(icon, size: 24, color: AppColors.primary),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 12,
-                color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
+    final iconBgColor = isDark
+        ? Colors.white.withValues(alpha: 0.08)
+        : Colors.black.withValues(alpha: 0.05);
+    final iconColor =
+        isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary;
+    final labelColor =
+        isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary;
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        splashColor: AppColors.primary.withValues(alpha: 0.16),
+        highlightColor: AppColors.primary.withValues(alpha: 0.08),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 54,
+                height: 54,
+                decoration: BoxDecoration(
+                  color: iconBgColor,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: isDark
+                        ? Colors.white.withValues(alpha: 0.08)
+                        : Colors.black.withValues(alpha: 0.04),
+                    width: 0.8,
+                  ),
+                ),
+                child: Center(
+                  child: Icon(icon, size: 22, color: iconColor),
+                ),
               ),
-            ),
-          ],
+              const SizedBox(height: 8),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                  color: labelColor,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -283,13 +420,61 @@ class _BrowserPageState extends State<BrowserPage> {
           ),
           actions: [
             if (_canGoBack)
-              IconButton(
-                icon: const Icon(Icons.close_rounded),
-                onPressed: () => context.pop(),
+              Padding(
+                padding: const EdgeInsets.only(right: 6),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(10),
+                  onTap: () => context.pop(),
+                  child: Container(
+                    width: 34,
+                    height: 34,
+                    decoration: BoxDecoration(
+                      color: isDark
+                          ? Colors.white.withValues(alpha: 0.08)
+                          : Colors.black.withValues(alpha: 0.05),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
+                        width: 0.6,
+                      ),
+                    ),
+                    child: Center(
+                      child: Icon(
+                        Icons.close_rounded,
+                        size: 18,
+                        color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
+                      ),
+                    ),
+                  ),
+                ),
               ),
-            IconButton(
-              icon: const Icon(Icons.more_horiz_rounded),
-              onPressed: () => _showActionMenu(context, isDark),
+            Padding(
+              padding: const EdgeInsets.only(right: 12),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(10),
+                onTap: () => _showActionMenu(context, isDark),
+                child: Container(
+                  width: 34,
+                  height: 34,
+                  decoration: BoxDecoration(
+                    color: isDark
+                        ? Colors.white.withValues(alpha: 0.08)
+                        : Colors.black.withValues(alpha: 0.05),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
+                      width: 0.6,
+                    ),
+                  ),
+                  child: Center(
+                    child: Icon(
+                      Icons.more_horiz_rounded,
+                      size: 18,
+                      color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
+                    ),
+                  ),
+                ),
+              ),
             ),
           ],
         ),

@@ -18,11 +18,17 @@ class DiscoverPage extends StatefulWidget {
   State<DiscoverPage> createState() => _DiscoverPageState();
 }
 
-class _DiscoverPageState extends State<DiscoverPage> {
+class _DiscoverPageState extends State<DiscoverPage> with AutomaticKeepAliveClientMixin {
   Rule? _selectedRule;
   List<dynamic> _discoveryData = [];
   bool _loading = false;
   String? _error;
+
+  /// 发现页全局多源内存缓存 (Key: rule.id 或 rule.name)
+  static final Map<String, List<dynamic>> _discoveryCache = {};
+
+  @override
+  bool get wantKeepAlive => true;
 
   @override
   void initState() {
@@ -38,7 +44,23 @@ class _DiscoverPageState extends State<DiscoverPage> {
     }
   }
 
-  Future<void> _loadDiscovery(Rule rule) async {
+  String _getCacheKey(Rule rule) => rule.id?.toString() ?? rule.name;
+
+  Future<void> _loadDiscovery(Rule rule, {bool forceRefresh = false}) async {
+    final cacheKey = _getCacheKey(rule);
+
+    // 1. 命中缓存且非强制刷新时，立即秒级渲染缓存数据，彻底告别重复等待与闪烁
+    if (!forceRefresh &&
+        _discoveryCache.containsKey(cacheKey) &&
+        _discoveryCache[cacheKey]!.isNotEmpty) {
+      setState(() {
+        _discoveryData = _discoveryCache[cacheKey]!;
+        _loading = false;
+        _error = null;
+      });
+      return;
+    }
+
     setState(() {
       _loading = true;
       _error = null;
@@ -46,36 +68,36 @@ class _DiscoverPageState extends State<DiscoverPage> {
 
     try {
       final result = await RuleEngine.discovery(rule);
+      List<dynamic> parsed = [];
       if (result is List) {
-        setState(() {
-          _discoveryData = result;
-        });
+        parsed = result;
       } else if (result is Map) {
         if (result['items'] is List) {
-          setState(() {
-            _discoveryData = result['items'] as List;
-          });
+          parsed = result['items'] as List;
         } else if (result['list'] is List) {
-          setState(() {
-            _discoveryData = result['list'] as List;
-          });
-        } else {
-          setState(() {
-            _discoveryData = [];
-          });
+          parsed = result['list'] as List;
+        } else if (result['data'] is List) {
+          parsed = result['data'] as List;
         }
-      } else {
+      }
+
+      // 写入内存缓存
+      _discoveryCache[cacheKey] = parsed;
+
+      if (mounted && _selectedRule?.id == rule.id) {
         setState(() {
-          _discoveryData = [];
+          _discoveryData = parsed;
         });
       }
     } catch (e) {
       debugPrint('[DiscoverPage] error: $e');
-      setState(() {
-        _error = '发现内容加载失败: $e';
-      });
+      if (mounted && _selectedRule?.id == rule.id) {
+        setState(() {
+          _error = '发现内容加载失败: $e';
+        });
+      }
     } finally {
-      if (mounted) {
+      if (mounted && _selectedRule?.id == rule.id) {
         setState(() {
           _loading = false;
         });
@@ -83,18 +105,12 @@ class _DiscoverPageState extends State<DiscoverPage> {
     }
   }
 
-  /// 构建横向规则选择器（固定在顶部）
+  /// 构建横向规则选择器（透明无底色，融合整体背景）
   Widget _buildRuleSelector(List<Rule> enabledRules, bool isDark) {
     return Container(
       height: 48,
-      decoration: BoxDecoration(
-        color: isDark ? AppColors.darkSurface : AppColors.lightSurface,
-        border: Border(
-          bottom: BorderSide(
-            color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
-            width: 0.5,
-          ),
-        ),
+      decoration: const BoxDecoration(
+        color: Colors.transparent, // 彻底去掉背景底色
       ),
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
@@ -108,7 +124,9 @@ class _DiscoverPageState extends State<DiscoverPage> {
           return ChoiceChip(
             label: Text(rule.name),
             selected: isSelected,
-            selectedColor: AppColors.primary.withValues(alpha: 0.16),
+            showCheckmark: false,
+            backgroundColor: Colors.transparent, // 去掉未选中 tab 背景色
+            selectedColor: AppColors.primary.withValues(alpha: 0.12),
             labelStyle: TextStyle(
               color: isSelected
                   ? AppColors.primary
@@ -119,7 +137,8 @@ class _DiscoverPageState extends State<DiscoverPage> {
             side: BorderSide(
               color: isSelected
                   ? AppColors.primary
-                  : (isDark ? AppColors.darkCardBorder : AppColors.lightCardBorder),
+                  : (isDark ? AppColors.darkCardBorder.withValues(alpha: 0.5) : AppColors.lightCardBorder),
+              width: isSelected ? 1.0 : 0.8,
             ),
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
             onSelected: (selected) {
@@ -337,6 +356,7 @@ class _DiscoverPageState extends State<DiscoverPage> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
@@ -397,7 +417,7 @@ class _DiscoverPageState extends State<DiscoverPage> {
                   color: AppColors.primary,
                   onRefresh: () async {
                     if (_selectedRule != null) {
-                      await _loadDiscovery(_selectedRule!);
+                      await _loadDiscovery(_selectedRule!, forceRefresh: true);
                     }
                   },
                   child: CustomScrollView(
