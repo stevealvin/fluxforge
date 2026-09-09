@@ -682,76 +682,36 @@ class _RulesPageState extends State<RulesPage> {
                                 : (isDark ? AppColors.darkTextTertiary : AppColors.lightTextTertiary),
                           ),
                         ),
-                        suffixIconConstraints: const BoxConstraints(minHeight: 38),
+                        suffixIconConstraints: const BoxConstraints(minWidth: 36, minHeight: 38),
                         suffixIcon: _searchQuery.isNotEmpty
-                            ? Padding(
-                                padding: const EdgeInsets.only(right: 8),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                      decoration: BoxDecoration(
-                                        color: AppColors.primary.withValues(alpha: 0.12),
-                                        borderRadius: BorderRadius.circular(6),
-                                      ),
-                                      child: Text(
-                                        '${filteredRules.length} 条',
-                                        style: const TextStyle(
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.w600,
-                                          color: AppColors.primary,
-                                        ),
+                            ? GestureDetector(
+                                behavior: HitTestBehavior.opaque,
+                                onTap: () {
+                                  _searchController.clear();
+                                  setState(() => _searchQuery = '');
+                                },
+                                child: Padding(
+                                  padding: const EdgeInsets.only(right: 10),
+                                  child: Container(
+                                    width: 20,
+                                    height: 20,
+                                    decoration: BoxDecoration(
+                                      color: isDark
+                                          ? Colors.white.withValues(alpha: 0.12)
+                                          : Colors.black.withValues(alpha: 0.07),
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: Center(
+                                      child: Icon(
+                                        Icons.close_rounded,
+                                        size: 13,
+                                        color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
                                       ),
                                     ),
-                                    const SizedBox(width: 6),
-                                    GestureDetector(
-                                      behavior: HitTestBehavior.opaque,
-                                      onTap: () {
-                                        _searchController.clear();
-                                        setState(() => _searchQuery = '');
-                                      },
-                                      child: Container(
-                                        width: 20,
-                                        height: 20,
-                                        decoration: BoxDecoration(
-                                          color: isDark
-                                              ? Colors.white.withValues(alpha: 0.12)
-                                              : Colors.black.withValues(alpha: 0.07),
-                                          shape: BoxShape.circle,
-                                        ),
-                                        child: Center(
-                                          child: Icon(
-                                            Icons.close_rounded,
-                                            size: 13,
-                                            color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ],
+                                  ),
                                 ),
                               )
-                            : Padding(
-                                padding: const EdgeInsets.only(right: 12),
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
-                                  decoration: BoxDecoration(
-                                    color: isDark
-                                        ? Colors.white.withValues(alpha: 0.05)
-                                        : Colors.black.withValues(alpha: 0.04),
-                                    borderRadius: BorderRadius.circular(6),
-                                  ),
-                                  child: Text(
-                                    '共 ${rules.length} 条',
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w500,
-                                      color: isDark ? AppColors.darkTextTertiary : AppColors.lightTextTertiary,
-                                    ),
-                                  ),
-                                ),
-                              ),
+                            : null,
                         isDense: true,
                         filled: true,
                         fillColor: Colors.transparent,

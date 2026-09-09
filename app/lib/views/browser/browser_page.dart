@@ -158,14 +158,14 @@ class _BrowserPageState extends State<BrowserPage> {
             child: Container(
               decoration: BoxDecoration(
                 color: isDark
-                    ? const Color(0xFF1E293B).withValues(alpha: 0.82)
-                    : Colors.white.withValues(alpha: 0.88),
+                    ? const Color(0xFF0F172A).withValues(alpha: 0.82)
+                    : const Color(0xFFF1F5F9).withValues(alpha: 0.88),
                 borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
                 border: Border(
                   top: BorderSide(
                     color: isDark
                         ? Colors.white.withValues(alpha: 0.12)
-                        : Colors.white.withValues(alpha: 0.70),
+                        : Colors.white.withValues(alpha: 0.80),
                     width: 0.8,
                   ),
                 ),
@@ -184,7 +184,7 @@ class _BrowserPageState extends State<BrowserPage> {
                         decoration: BoxDecoration(
                           color: isDark
                               ? Colors.white.withValues(alpha: 0.28)
-                              : Colors.black.withValues(alpha: 0.18),
+                              : Colors.black.withValues(alpha: 0.15),
                           borderRadius: BorderRadius.circular(2),
                         ),
                       ),
@@ -274,30 +274,45 @@ class _BrowserPageState extends State<BrowserPage> {
                       ),
                     ),
                     const SizedBox(height: 18),
-                    // 底部取消按钮
+                    // 底部取消按钮 (纯白浮动实体卡片质感)
                     Padding(
                       padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                      child: SizedBox(
+                      child: Container(
                         width: double.infinity,
-                        height: 44,
-                        child: TextButton(
-                          onPressed: () => Navigator.pop(ctx),
-                          style: TextButton.styleFrom(
-                            backgroundColor: isDark
-                                ? Colors.white.withValues(alpha: 0.06)
-                                : Colors.black.withValues(alpha: 0.04),
-                            foregroundColor: isDark
-                                ? AppColors.darkTextSecondary
-                                : AppColors.lightTextSecondary,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
+                        height: 46,
+                        decoration: BoxDecoration(
+                          color: isDark ? const Color(0xFF1E293B) : Colors.white,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: isDark
+                                ? Colors.white.withValues(alpha: 0.08)
+                                : const Color(0xFFE2E8F0),
+                            width: 0.8,
                           ),
-                          child: const Text(
-                            '取消',
-                            style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: isDark ? 0.25 : 0.04),
+                              blurRadius: 8,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(14),
+                            onTap: () => Navigator.pop(ctx),
+                            child: Center(
+                              child: Text(
+                                '取消',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                  color: isDark
+                                      ? AppColors.darkTextPrimary
+                                      : const Color(0xFF1E293B),
+                                ),
+                              ),
                             ),
                           ),
                         ),
@@ -319,13 +334,15 @@ class _BrowserPageState extends State<BrowserPage> {
     required bool isDark,
     required VoidCallback onTap,
   }) {
-    final iconBgColor = isDark
+    final cardBgColor =
+        isDark ? const Color(0xFF1E293B) : Colors.white;
+    final cardBorderColor = isDark
         ? Colors.white.withValues(alpha: 0.08)
-        : Colors.black.withValues(alpha: 0.05);
+        : const Color(0xFFE2E8F0);
     final iconColor =
-        isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary;
+        isDark ? AppColors.darkTextPrimary : const Color(0xFF1E293B);
     final labelColor =
-        isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary;
+        isDark ? AppColors.darkTextSecondary : const Color(0xFF475569);
 
     return Material(
       color: Colors.transparent,
@@ -340,17 +357,22 @@ class _BrowserPageState extends State<BrowserPage> {
             mainAxisSize: MainAxisSize.min,
             children: [
               Container(
-                width: 54,
-                height: 54,
+                width: 56,
+                height: 56,
                 decoration: BoxDecoration(
-                  color: iconBgColor,
+                  color: cardBgColor,
                   borderRadius: BorderRadius.circular(16),
                   border: Border.all(
-                    color: isDark
-                        ? Colors.white.withValues(alpha: 0.08)
-                        : Colors.black.withValues(alpha: 0.04),
+                    color: cardBorderColor,
                     width: 0.8,
                   ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: isDark ? 0.25 : 0.05),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
                 ),
                 child: Center(
                   child: Icon(icon, size: 22, color: iconColor),
@@ -420,61 +442,13 @@ class _BrowserPageState extends State<BrowserPage> {
           ),
           actions: [
             if (_canGoBack)
-              Padding(
-                padding: const EdgeInsets.only(right: 6),
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(10),
-                  onTap: () => context.pop(),
-                  child: Container(
-                    width: 34,
-                    height: 34,
-                    decoration: BoxDecoration(
-                      color: isDark
-                          ? Colors.white.withValues(alpha: 0.08)
-                          : Colors.black.withValues(alpha: 0.05),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(
-                        color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
-                        width: 0.6,
-                      ),
-                    ),
-                    child: Center(
-                      child: Icon(
-                        Icons.close_rounded,
-                        size: 18,
-                        color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
-                      ),
-                    ),
-                  ),
-                ),
+              IconButton(
+                icon: const Icon(Icons.close_rounded),
+                onPressed: () => context.pop(),
               ),
-            Padding(
-              padding: const EdgeInsets.only(right: 12),
-              child: InkWell(
-                borderRadius: BorderRadius.circular(10),
-                onTap: () => _showActionMenu(context, isDark),
-                child: Container(
-                  width: 34,
-                  height: 34,
-                  decoration: BoxDecoration(
-                    color: isDark
-                        ? Colors.white.withValues(alpha: 0.08)
-                        : Colors.black.withValues(alpha: 0.05),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(
-                      color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
-                      width: 0.6,
-                    ),
-                  ),
-                  child: Center(
-                    child: Icon(
-                      Icons.more_horiz_rounded,
-                      size: 18,
-                      color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
-                    ),
-                  ),
-                ),
-              ),
+            IconButton(
+              icon: const Icon(Icons.more_horiz_rounded),
+              onPressed: () => _showActionMenu(context, isDark),
             ),
           ],
         ),
