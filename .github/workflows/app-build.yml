@@ -14,14 +14,13 @@ jobs:
       - name: Build Android
         uses: AcmeSoftwareLLC/flutter-build@v2
         with:
-          flutter-version: "3.47.2"
+          flutter-version-file: app/pubspec.yam
           script: flutter build apk --release
-          flutter-version-file: "app/pubspec.yaml"
           working-directory: app
 
       - name: Upload APK
         uses: actions/upload-artifact@v7
         with:
           name: android-apk
-          path: build/app/outputs/flutter-apk/app-release.apk
+          path: app/build/app/outputs/flutter-apk/app-release.apk
           retention-days: 14
