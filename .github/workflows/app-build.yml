@@ -22,10 +22,6 @@ jobs:
           pub-cache-key: "flutter-pub-:os:-:channel:-:version:-:arch:-:hash:" # optional, change this to force refresh cache of dart pub get dependencies
           pub-cache-path: "${{ runner.tool_cache }}/flutter/:channel:-:version:-:arch:" # optional, change this to specify the cache path
 
-          flutter-version-file: app/pubspec.yaml
-          script: flutter build apk --release
-          working-directory: app
-          
       - run: flutter --version
       - run: flutter pub get
       - run: flutter build apk
