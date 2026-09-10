@@ -1,9 +1,7 @@
 import 'dart:io';
 
-import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
-import 'package:wakelock_plus/wakelock_plus.dart';
 
 import 'core/storage/app_storage.dart';
 import 'core/theme/app_theme.dart';
@@ -14,11 +12,6 @@ import 'services/rule_engine.dart';
 void main() async {
   // 确保 Flutter 底层桥接层绑定就绪
   WidgetsFlutterBinding.ensureInitialized();
-
-  // 开发调试模式下保持屏幕常亮
-  if (kDebugMode) {
-    WakelockPlus.enable();
-  }
 
   // 1. 初始化底层高性能持久化存储
   await AppStorage.init();

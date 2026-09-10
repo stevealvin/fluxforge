@@ -2,6 +2,8 @@ import 'package:material_ui/material_ui.dart';
 import 'package:go_router/go_router.dart';
 
 import 'models/rule.dart';
+import 'services/di.dart';
+import 'views/browser/adblock_rules_page.dart';
 import 'views/browser/browser_page.dart';
 import 'views/detail/media_detail_page.dart';
 import 'views/market/market_page.dart';
@@ -40,6 +42,7 @@ final GoRouter router = GoRouter(
             return BrowserPage(
               url: state.uri.queryParameters['url'] ?? '',
               title: state.uri.queryParameters['title'],
+              enableAdBlock: appService.settingsNotifier.value.enableAdBlock,
             );
           },
         ),
@@ -150,6 +153,14 @@ final GoRouter router = GoRouter(
           path: 'favorites',
           builder: (BuildContext context, GoRouterState state) {
             return const FavoritesPage();
+          },
+        ),
+
+        // 广告拦截规则管理
+        GoRoute(
+          path: 'adblock',
+          builder: (BuildContext context, GoRouterState state) {
+            return const AdBlockRulesPage();
           },
         ),
       ],

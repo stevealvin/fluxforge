@@ -37,45 +37,47 @@ class _PhotoDetailPageState extends State<PhotoDetailPage> {
   /// 生成执行提取图集明细的沙箱脚本
   String _buildExtractScript(String targetUrl) {
     return '''
-    const getData = async (url) => {
-      try {
-        let { data } = await axios.get(url, {
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36',
-          }
-        });
-        let \$ = cheerio.load(data);
-        let list = \$('.content img').map((i, el) => {
-          return \$(el).attr('src');
-        }).toArray();
-        return list;
-      } catch (error) {
-        return [];
-      }
-    };
-    const getDetail = async (url) => {
-      try {
-        let { data } = await axios.get(url, {
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36',
-          }
-        });
-        let \$ = cheerio.load(data);
-        let list = \$('.page a').map((i, el) => {
-          return 'https://meirentu.cc' + \$(el).attr('href');
-        }).toArray();
-        list.pop();
-        let result = [];
-        for (const item of list) {
-          let arr = await getData(item);
-          result = result.concat(arr);
+    module.exports = async function() {
+      const getData = async (url) => {
+        try {
+          let { data } = await axios.get(url, {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36',
+            }
+          });
+          let \$ = cheerio.load(data);
+          let list = \$('.content img').map((i, el) => {
+            return \$(el).attr('src');
+          }).toArray();
+          return list;
+        } catch (error) {
+          return [];
         }
-        return result;
-      } catch (error) {
-        return [];
-      }
+      };
+      const getDetail = async (url) => {
+        try {
+          let { data } = await axios.get(url, {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36',
+            }
+          });
+          let \$ = cheerio.load(data);
+          let list = \$('.page a').map((i, el) => {
+            return 'https://meirentu.cc' + \$(el).attr('href');
+          }).toArray();
+          list.pop();
+          let result = [];
+          for (const item of list) {
+            let arr = await getData(item);
+            result = result.concat(arr);
+          }
+          return result;
+        } catch (error) {
+          return [];
+        }
+      };
+      return await getDetail("$targetUrl");
     };
-    return getDetail("$targetUrl");
     ''';
   }
 
@@ -90,7 +92,10 @@ class _PhotoDetailPageState extends State<PhotoDetailPage> {
       final result = await RuleEngine.execute(script);
       if (result is List && mounted) {
         setState(() {
-          _imageList = result.map((e) => e.toString()).toList();
+          _imageList = result
+              .map((e) => e.toString().trim())
+              .where((s) => s.isNotEmpty)
+              .toList();
         });
       }
     } catch (e) {
@@ -222,11 +227,13 @@ class PhotoViewPage extends StatefulWidget {
     required this.imageList,
     this.initialIndex = 0,
     this.referer = '',
+    this.headers,
   });
 
   final List<String> imageList;
   final int initialIndex;
   final String referer;
+  final Map<String, String>? headers;
 
   @override
   State<PhotoViewPage> createState() => _PhotoViewPageState();
@@ -235,6 +242,13 @@ class PhotoViewPage extends StatefulWidget {
 class _PhotoViewPageState extends State<PhotoViewPage> {
   late int _currentIndex;
   late final ExtendedPageController _pageController;
+
+  Map<String, String>? get _effectiveHeaders {
+    if (widget.headers != null && widget.headers!.isNotEmpty) {
+      return widget.headers;
+    }
+    return widget.referer.isNotEmpty ? {'Referer': widget.referer} : null;
+  }
 
   @override
   void initState() {
@@ -271,7 +285,7 @@ class _PhotoViewPageState extends State<PhotoViewPage> {
                 url,
                 fit: BoxFit.contain,
                 mode: ExtendedImageMode.gesture,
-                headers: widget.referer.isNotEmpty ? {'Referer': widget.referer} : null,
+                headers: _effectiveHeaders,
                 initGestureConfigHandler: (state) {
                   return GestureConfig(
                     inPageView: true,

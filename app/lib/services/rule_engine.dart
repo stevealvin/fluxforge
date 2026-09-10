@@ -4,6 +4,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_js/flutter_js.dart';
 import '../models/rule.dart';
+import 'app_service.dart';
+import 'di.dart';
 
 /// FluxForge 本地高性能 JavaScript 沙箱执行引擎
 /// 负责注入 axios、cheerio 与 Node.js 兼容环境，调度执行规则的 discovery、search、detail、parse 生命周期
@@ -11,13 +13,35 @@ class RuleEngine {
   static final JavascriptRuntime _jsRuntime = getJavascriptRuntime();
   static bool _initialized = false;
 
+  /// 获取当前配置的沙箱超时秒数（优先读取 AppSettings，降级为默认 30 秒）
+  static int get defaultTimeoutSeconds {
+    if (getIt.isRegistered<AppService>()) {
+      return appService.settingsNotifier.value.requestTimeoutSeconds;
+    }
+    return 30;
+  }
+
+  /// 获取当前配置的 User-Agent
+  static String get currentUserAgent {
+    if (getIt.isRegistered<AppService>()) {
+      final custom = appService.settingsNotifier.value.customUserAgent.trim();
+      if (custom.isNotEmpty) return custom;
+    }
+    return 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36';
+  }
+
   /// 初始化运行环境与注入核心依赖
+
   static Future<void> init() async {
     if (_initialized) return;
     try {
+      final defaultTimeout = defaultTimeoutSeconds;
+      final defaultUa = currentUserAgent;
+      final encodedUa = jsonEncode(defaultUa);
+
       _jsRuntime.evaluate('''
         var window = global = globalThis;
-        var ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36';
+        var ua = $encodedUa;
         // 关键沙箱环境支持：注入 defineRule 规则声明包裹器
         var defineRule = function(r) { return r; };
         var require = function(name) {
@@ -33,10 +57,14 @@ class RuleEngine {
       await _loadJSFile('assets/js/cheerio.js');
 
       _jsRuntime.evaluate('''
-        if (typeof axios !== 'undefined' && axios.defaults && axios.defaults.headers) {
-          axios.defaults.headers.common['User-Agent'] = ua;
+        if (typeof axios !== 'undefined' && axios.defaults) {
+          if (axios.defaults.headers) {
+            axios.defaults.headers.common['User-Agent'] = ua;
+          }
+          axios.defaults.timeout = ${defaultTimeout * 1000};
         }
       ''');
+
 
       _initialized = true;
     } catch (e) {
@@ -98,12 +126,14 @@ class RuleEngine {
     final action = ctx['action']?.toString() ?? 'discovery';
     final params = ctx['params'] as Map<String, dynamic>? ?? {};
     final baseUrl = ctx['baseUrl']?.toString() ?? params['baseUrl']?.toString();
+    final timeoutSeconds = ctx['timeoutSeconds'] as int?;
 
     return await executeRule(
       code: code,
       action: action,
       params: params,
       baseUrl: baseUrl,
+      timeoutSeconds: timeoutSeconds,
     );
   }
 
@@ -113,10 +143,15 @@ class RuleEngine {
     required String action,
     Map<String, dynamic>? params,
     String? baseUrl,
+    int? timeoutSeconds,
   }) async {
     if (!_initialized) {
       await init();
     }
+
+    final int timeoutSec = timeoutSeconds ?? defaultTimeoutSeconds;
+    final String currentUa = currentUserAgent;
+    final encodedUa = jsonEncode(currentUa);
 
     final effectiveParams = Map<String, dynamic>.from(params ?? {});
     final currentBaseUrl = baseUrl ?? effectiveParams['baseUrl']?.toString() ?? '';
@@ -134,7 +169,14 @@ class RuleEngine {
         var module = { exports: {} };
         var exports = module.exports;
         var baseUrl = $encodedBaseUrl;
-        var ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36';
+        var ua = $encodedUa;
+
+        if (typeof axios !== 'undefined' && axios.defaults) {
+          if (axios.defaults.headers) {
+            axios.defaults.headers.common['User-Agent'] = ua;
+          }
+          axios.defaults.timeout = ${timeoutSec * 1000};
+        }
 
         // 注入转译后的规则模块
         $transformedJs;
@@ -178,7 +220,7 @@ class RuleEngine {
     try {
       var data = await _jsRuntime.handlePromise(
         jsResult,
-        timeout: const Duration(seconds: 60),
+        timeout: Duration(seconds: timeoutSec),
       );
       if (!data.isError) {
         final raw = data.stringResult;
@@ -190,8 +232,8 @@ class RuleEngine {
         throw Exception(data.rawResult?.toString() ?? 'Promise rejected in sandbox');
       }
     } on TimeoutException {
-      debugPrint('【RuleEngine】规则沙箱执行超时 (60s)');
-      throw TimeoutException('规则执行超时 (超过 60 秒未响应，目标站点可能不可达或网络受阻)');
+      debugPrint('【RuleEngine】规则沙箱执行超时 (${timeoutSec}s)');
+      throw TimeoutException('规则执行超时 (超过 $timeoutSec 秒未响应，目标站点可能不可达或网络受阻)');
     } catch (e) {
       debugPrint('Rule execution error: $e');
       rethrow;
@@ -203,6 +245,7 @@ class RuleEngine {
     Rule rule, {
     int page = 1,
     String? tab,
+    int? timeoutSeconds,
   }) async {
     return await executeRule(
       code: rule.code,
@@ -213,11 +256,17 @@ class RuleEngine {
         'baseUrl': rule.baseUrl,
       },
       baseUrl: rule.baseUrl,
+      timeoutSeconds: timeoutSeconds,
     );
   }
 
   /// 快捷生命周期动作：全局搜索 (search)
-  static Future<dynamic> search(Rule rule, String keyword, {int page = 1}) async {
+  static Future<dynamic> search(
+    Rule rule,
+    String keyword, {
+    int page = 1,
+    int? timeoutSeconds,
+  }) async {
     return await executeRule(
       code: rule.code,
       action: 'search',
@@ -227,24 +276,37 @@ class RuleEngine {
         'baseUrl': rule.baseUrl,
       },
       baseUrl: rule.baseUrl,
+      timeoutSeconds: timeoutSeconds,
     );
   }
 
   /// 快捷生命周期动作：详情元数据与选集 (detail)
-  static Future<dynamic> detail(Rule rule, String url) async {
+  static Future<dynamic> detail(
+    Rule rule,
+    String url, {
+    Map<String, dynamic>? item,
+    int? timeoutSeconds,
+  }) async {
     return await executeRule(
       code: rule.code,
       action: 'detail',
       params: {
         'url': url,
         'baseUrl': rule.baseUrl,
+        'item': ?item,
       },
       baseUrl: rule.baseUrl,
+      timeoutSeconds: timeoutSeconds,
     );
   }
 
   /// 快捷生命周期动作：播放直链嗅探与解析 (parse)
-  static Future<dynamic> parse(Rule rule, String url, {String? groupName}) async {
+  static Future<dynamic> parse(
+    Rule rule,
+    String url, {
+    String? groupName,
+    int? timeoutSeconds,
+  }) async {
     return await executeRule(
       code: rule.code,
       action: 'parse',
@@ -254,8 +316,10 @@ class RuleEngine {
         'baseUrl': rule.baseUrl,
       },
       baseUrl: rule.baseUrl,
+      timeoutSeconds: timeoutSeconds,
     );
   }
+
 
   static void dispose() {
     _jsRuntime.dispose();

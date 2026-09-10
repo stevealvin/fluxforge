@@ -192,11 +192,19 @@ class _DiscoverPageState extends State<DiscoverPage> with AutomaticKeepAliveClie
     );
   }
 
+  bool _isVideoRule(Rule rule) {
+    final t = rule.type.toLowerCase().trim();
+    return t == 'video' || t == 'tv' || t == 'movie' || t == 'anime' || t == 'short' || t.isEmpty;
+  }
+
   /// 构建单个媒体海报卡片
   Widget _buildMediaCard(Map item, Rule currentRule) {
     final title = item['title']?.toString() ?? '';
     final url = item['url']?.toString() ?? '';
     final cover = item['cover']?.toString() ?? '';
+    final badge = item['badge']?.toString() ?? '';
+    final desc = item['desc']?.toString() ?? '';
+    final isVideo = _isVideoRule(currentRule);
 
     return AppCard(
       padding: EdgeInsets.zero,
@@ -209,53 +217,195 @@ class _DiscoverPageState extends State<DiscoverPage> with AutomaticKeepAliveClie
           'rule': currentRule,
         });
       },
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: Stack(
+      child: isVideo
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // 顶部 16:9 横屏封面（宽大于高）
+                AspectRatio(
+                  aspectRatio: 16 / 9,
+                  child: ClipRRect(
+                    borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        CachedNetworkImage(
+                          imageUrl: cover,
+                          fit: BoxFit.cover,
+                          httpHeaders: {
+                            'referer': currentRule.baseUrl,
+                            'user-agent':
+                                'Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1',
+                          },
+                          errorWidget: (_, _, _) => Container(
+                            color: Colors.grey.withValues(alpha: 0.15),
+                            child: const Icon(Icons.broken_image_rounded, color: Colors.grey),
+                          ),
+                        ),
+                        Positioned(
+                          left: 0,
+                          right: 0,
+                          bottom: 0,
+                          height: 28,
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                colors: [
+                                  Colors.transparent,
+                                  Colors.black.withValues(alpha: 0.65),
+                                ],
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                              ),
+                            ),
+                          ),
+                        ),
+                        if (badge.isNotEmpty)
+                          Positioned(
+                            right: 6,
+                            bottom: 5,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                              decoration: BoxDecoration(
+                                color: Colors.black.withValues(alpha: 0.75),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                badge,
+                                style: const TextStyle(
+                                  fontSize: 9.5,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+                // 底部标题与描述
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          title,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w600,
+                            height: 1.25,
+                          ),
+                        ),
+                        if (desc.isNotEmpty && desc != badge)
+                          Text(
+                            desc,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 10.5,
+                              color: Colors.grey,
+                            ),
+                          )
+                        else
+                          const SizedBox.shrink(),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            )
+          : Stack(
               fit: StackFit.expand,
               children: [
-                CachedNetworkImage(
-                  imageUrl: cover,
-                  fit: BoxFit.cover,
-                  httpHeaders: {
-                    'referer': currentRule.baseUrl,
-                    'user-agent':
-                        'Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1',
-                  },
-                  errorWidget: (_, _, _) => Container(
-                    color: Colors.grey.withValues(alpha: 0.15),
-                    child: const Icon(Icons.broken_image_rounded, color: Colors.grey),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: CachedNetworkImage(
+                    imageUrl: cover,
+                    fit: BoxFit.cover,
+                    httpHeaders: {
+                      'referer': currentRule.baseUrl,
+                      'user-agent':
+                          'Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1',
+                    },
+                    errorWidget: (_, _, _) => Container(
+                      color: Colors.grey.withValues(alpha: 0.15),
+                      child: const Icon(Icons.broken_image_rounded, color: Colors.grey),
+                    ),
+                  ),
+                ),
+                Positioned.fill(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(12),
+                      gradient: LinearGradient(
+                        colors: [
+                          Colors.transparent,
+                          Colors.black.withValues(alpha: 0.85),
+                        ],
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        stops: const [0.55, 1.0],
+                      ),
+                    ),
+                  ),
+                ),
+                if (badge.isNotEmpty)
+                  Positioned(
+                    top: 8,
+                    right: 8,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withValues(alpha: 0.9),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        badge,
+                        style: const TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ),
+                Positioned(
+                  left: 8,
+                  right: 8,
+                  bottom: 8,
+                  child: Text(
+                    title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
                   ),
                 ),
               ],
             ),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(8),
-            child: Text(
-              title,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
-            ),
-          ),
-        ],
-      ),
     );
   }
 
   /// 构建瀑布流与媒体网格 (用于嵌套专区)
   Widget _buildCategoryGrid(List items, Rule currentRule) {
+    final isVideo = _isVideoRule(currentRule);
     return GridView.builder(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       itemCount: items.length,
       padding: const EdgeInsets.symmetric(horizontal: 16),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 2,
-        childAspectRatio: 1.15,
+        childAspectRatio: isVideo ? 1.12 : 0.72,
         crossAxisSpacing: 12,
         mainAxisSpacing: 12,
       ),
@@ -273,6 +423,7 @@ class _DiscoverPageState extends State<DiscoverPage> with AutomaticKeepAliveClie
         data.first is Map &&
         data.first.containsKey('items') &&
         data.first['items'] is List;
+    final isVideo = _isVideoRule(currentRule);
 
     if (isGrouped) {
       return [
@@ -325,9 +476,9 @@ class _DiscoverPageState extends State<DiscoverPage> with AutomaticKeepAliveClie
         SliverPadding(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
           sliver: SliverGrid(
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: 2,
-              childAspectRatio: 1.15,
+              childAspectRatio: isVideo ? 1.12 : 0.72,
               crossAxisSpacing: 12,
               mainAxisSpacing: 12,
             ),

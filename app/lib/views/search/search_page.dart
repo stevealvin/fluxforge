@@ -258,8 +258,9 @@ class _SearchPageState extends State<SearchPage> {
       final key = rule.id.isNotEmpty ? rule.id : rule.name;
 
       try {
-        final raw = await RuleEngine.search(rule, query, page: 1)
-            .timeout(const Duration(seconds: 20));
+        final timeoutSec = appService.settingsNotifier.value.requestTimeoutSeconds;
+        final raw = await RuleEngine.search(rule, query, page: 1, timeoutSeconds: timeoutSec)
+            .timeout(Duration(seconds: timeoutSec + 2));
 
         if (!mounted || _searchEpoch != thisEpoch) break;
 
@@ -325,8 +326,9 @@ class _SearchPageState extends State<SearchPage> {
       final nextPage = (_rulePageMap[key] ?? 1) + 1;
 
       try {
-        final raw = await RuleEngine.search(rule, _currentQuery, page: nextPage)
-            .timeout(const Duration(seconds: 20));
+        final timeoutSec = appService.settingsNotifier.value.requestTimeoutSeconds;
+        final raw = await RuleEngine.search(rule, _currentQuery, page: nextPage, timeoutSeconds: timeoutSec)
+            .timeout(Duration(seconds: timeoutSec + 2));
         if (!mounted || _searchEpoch != thisEpoch) break;
 
         final List items = raw is List
@@ -870,14 +872,23 @@ class _SearchPageState extends State<SearchPage> {
     );
   }
 
+  bool _isVideoRule(Rule rule) {
+    final t = rule.type.toLowerCase().trim();
+    return t == 'video' || t == 'tv' || t == 'movie' || t == 'anime' || t == 'short' || t.isEmpty;
+  }
+
   /// 双列瀑布流海报网格视图
   Widget _buildGridView(List<_NormalizedSearchResult> results, bool isDark) {
+    final isMostlyVideo = widget.targetRule != null
+        ? _isVideoRule(widget.targetRule!)
+        : (results.isEmpty || results.where((r) => _isVideoRule(r.rule)).length >= results.length / 2);
+
     return GridView.builder(
       controller: _scrollController,
       padding: const EdgeInsets.fromLTRB(12, 10, 12, 24),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 2,
-        childAspectRatio: 0.65,
+        childAspectRatio: isMostlyVideo ? 1.12 : 0.65,
         crossAxisSpacing: 10,
         mainAxisSpacing: 10,
       ),
@@ -893,13 +904,143 @@ class _SearchPageState extends State<SearchPage> {
         }
 
         final item = results[index];
-        return _buildGridCard(item, isDark);
+        final isVideo = _isVideoRule(item.rule);
+        return isVideo ? _buildVideoGridCard(item, isDark) : _buildGridCard(item, isDark);
       },
     );
   }
 
   /// 单条列表卡片
   Widget _buildResultCard(_NormalizedSearchResult item, bool isDark) {
+    if (_isVideoRule(item.rule)) {
+      return _buildVideoResultCard(item, isDark);
+    }
+    return _buildPortraitResultCard(item, isDark);
+  }
+
+  /// 单条横屏视频列表卡片（缩略图 140x80，宽大于高）
+  Widget _buildVideoResultCard(_NormalizedSearchResult item, bool isDark) {
+    return AppCard(
+      borderRadius: 12,
+      padding: const EdgeInsets.all(8),
+      onTap: () => _navigateToDetail(item),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 横屏视频封面 16:9 (140x80，宽大于高)
+          ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: SizedBox(
+              width: 140,
+              height: 80,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  NetImage(
+                    imageUrl: item.cover,
+                    fit: BoxFit.cover,
+                    headers: item.baseUrl.isNotEmpty ? {'referer': item.baseUrl} : null,
+                  ),
+                  Builder(
+                    builder: (context) {
+                      final displayTag = item.badge ??
+                          (item.tags != null && item.tags!.isNotEmpty ? item.tags!.first : null);
+                      if (displayTag == null || displayTag.isEmpty) {
+                        return const SizedBox.shrink();
+                      }
+                      return Positioned(
+                        right: 4,
+                        bottom: 4,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1.5),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.75),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            displayTag,
+                            style: const TextStyle(
+                              fontSize: 9.5,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: SizedBox(
+              height: 80,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        item.title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.bold,
+                          color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
+                          height: 1.25,
+                        ),
+                      ),
+                      if (item.desc.isNotEmpty) ...[
+                        const SizedBox(height: 3),
+                        Text(
+                          item.desc,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                        decoration: BoxDecoration(
+                          color: AppColors.primary.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          item.rule.name,
+                          style: const TextStyle(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.primary,
+                          ),
+                        ),
+                      ),
+                      const Icon(LucideIcons.playCircle, size: 16, color: AppColors.primary),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 单条竖屏列表卡片（适用于图集、小说等）
+  Widget _buildPortraitResultCard(_NormalizedSearchResult item, bool isDark) {
     return AppCard(
       borderRadius: 12,
       padding: const EdgeInsets.all(10),
@@ -999,6 +1140,137 @@ class _SearchPageState extends State<SearchPage> {
               ),
             ],
           ),
+    );
+  }
+
+  /// 单条横屏视频网格卡片（16:9 封面，宽大于高）
+  Widget _buildVideoGridCard(_NormalizedSearchResult item, bool isDark) {
+    return AppCard(
+      padding: EdgeInsets.zero,
+      borderRadius: 12,
+      onTap: () => _navigateToDetail(item),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 顶部 16:9 封面
+          AspectRatio(
+            aspectRatio: 16 / 9,
+            child: ClipRRect(
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  NetImage(
+                    imageUrl: item.cover,
+                    fit: BoxFit.cover,
+                    headers: item.baseUrl.isNotEmpty ? {'referer': item.baseUrl} : null,
+                  ),
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    height: 28,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            Colors.transparent,
+                            Colors.black.withValues(alpha: 0.65),
+                          ],
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                        ),
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    top: 6,
+                    right: 6,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.65),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        item.rule.name,
+                        style: const TextStyle(
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.w500,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ),
+                  Builder(
+                    builder: (context) {
+                      final displayTag = item.badge ??
+                          (item.tags != null && item.tags!.isNotEmpty ? item.tags!.first : null);
+                      if (displayTag == null || displayTag.isEmpty) {
+                        return const SizedBox.shrink();
+                      }
+                      return Positioned(
+                        right: 6,
+                        bottom: 5,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.75),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            displayTag,
+                            style: const TextStyle(
+                              fontSize: 9.5,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ),
+          // 底部标题与描述
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(8, 7, 8, 7),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    item.title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w600,
+                      color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
+                      height: 1.25,
+                    ),
+                  ),
+                  if (item.desc.isNotEmpty)
+                    Text(
+                      item.desc,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 10.5,
+                        color: isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted,
+                      ),
+                    )
+                  else
+                    const SizedBox.shrink(),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 

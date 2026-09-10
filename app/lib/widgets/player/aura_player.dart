@@ -4,6 +4,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:video_player/video_player.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../widgets/loading_indicator.dart';
@@ -16,6 +17,8 @@ class AuraPlayer extends StatefulWidget {
   const AuraPlayer({
     super.key,
     required this.playUrl,
+    this.controller,
+    this.isFullScreenMode = false,
     this.httpHeaders = const {},
     this.title = '',
     this.coverUrl,
@@ -23,11 +26,18 @@ class AuraPlayer extends StatefulWidget {
     this.onProgress,
     this.onEnded,
     this.onBack,
+    this.onFullScreenChanged,
     this.extraActions,
   });
 
   /// 视频播放直链 (mp4, m3u8 等)
   final String playUrl;
+
+  /// 外部共享的 VideoPlayerController (用于全屏路由无缝接力)
+  final VideoPlayerController? controller;
+
+  /// 是否运行在全屏独立路由模式下
+  final bool isFullScreenMode;
 
   /// 防盗链请求头 (Referer, User-Agent 等)
   final Map<String, String> httpHeaders;
@@ -50,18 +60,26 @@ class AuraPlayer extends StatefulWidget {
   /// 顶部返回按钮回调
   final VoidCallback? onBack;
 
+  /// 全屏状态切换通知回调
+  final void Function(bool isFullScreen)? onFullScreenChanged;
+
   /// 顶部/底部扩展操作插槽
   final List<Widget>? extraActions;
+
 
   @override
   State<AuraPlayer> createState() => _AuraPlayerState();
 }
 
-class _AuraPlayerState extends State<AuraPlayer> with SingleTickerProviderStateMixin {
+class _AuraPlayerState extends State<AuraPlayer>
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   VideoPlayerController? _controller;
   bool _isInitialized = false;
   bool _hasError = false;
   String _errorMessage = '';
+
+  // 屏幕常亮状态管理（仅在有效播放中保持常亮）
+  bool _isWakelockEnabled = false;
 
   // 控制条显隐与自动隐藏定时器
   bool _showControls = true;
@@ -101,22 +119,70 @@ class _AuraPlayerState extends State<AuraPlayer> with SingleTickerProviderStateM
   bool _isDraggingProgress = false;
   double _dragProgressValue = 0.0;
 
-  @override
-  void initState() {
-    super.initState();
-    _initializePlayer();
+  /// 动态更新屏幕常亮状态
+  void _updateWakelock(bool enable) {
+    if (_isWakelockEnabled == enable) return;
+    _isWakelockEnabled = enable;
+    if (enable) {
+      WakelockPlus.enable().catchError((e) {
+        debugPrint('[AuraPlayer] 开启屏幕常亮异常: $e');
+      });
+    } else {
+      WakelockPlus.disable().catchError((e) {
+        debugPrint('[AuraPlayer] 解除屏幕常亮异常: $e');
+      });
+    }
   }
 
   @override
-  void didUpdateWidget(covariant AuraPlayer oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.playUrl != widget.playUrl) {
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _isFullScreen = widget.isFullScreenMode;
+
+    if (widget.controller != null) {
+      _controller = widget.controller;
+      _isInitialized = _controller!.value.isInitialized;
+      _volume = _controller!.value.volume;
+      _controller!.addListener(_onControllerUpdate);
+      if (_controller!.value.isPlaying) {
+        _updateWakelock(true);
+      }
+      _startControlsTimer();
+    } else {
       _initializePlayer();
     }
   }
 
   @override
+  void didUpdateWidget(covariant AuraPlayer oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.controller == null && oldWidget.playUrl != widget.playUrl) {
+      _initializePlayer();
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached) {
+      // 进入后台或失焦时解除屏幕常亮
+      _updateWakelock(false);
+    } else if (state == AppLifecycleState.resumed) {
+      // 重新切回前台时，若视频仍在播放则恢复屏幕常亮
+      final value = _controller?.value;
+      if (value != null && value.isInitialized && value.isPlaying && !value.hasError) {
+        _updateWakelock(true);
+      }
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _updateWakelock(false);
     _controlsTimer?.cancel();
     _volumeCapsuleTimer?.cancel();
     _brightnessCapsuleTimer?.cancel();
@@ -129,13 +195,18 @@ class _AuraPlayerState extends State<AuraPlayer> with SingleTickerProviderStateM
     }
 
     _controller?.removeListener(_onControllerUpdate);
-    _controller?.dispose();
+    
+    // 仅当控制器是由本组件创建时才执行销毁，全屏模式下不销毁主页面控制器
+    if (widget.controller == null) {
+      _controller?.dispose();
+    }
     super.dispose();
   }
 
   /// 初始化原生播放器控制器
   Future<void> _initializePlayer() async {
     if (widget.playUrl.trim().isEmpty) {
+      _updateWakelock(false);
       setState(() {
         _hasError = true;
         _errorMessage = '播放地址为空';
@@ -146,6 +217,7 @@ class _AuraPlayerState extends State<AuraPlayer> with SingleTickerProviderStateM
     _controlsTimer?.cancel();
     _controller?.removeListener(_onControllerUpdate);
     _controller?.dispose();
+    _updateWakelock(false);
 
     setState(() {
       _isInitialized = false;
@@ -191,6 +263,7 @@ class _AuraPlayerState extends State<AuraPlayer> with SingleTickerProviderStateM
       _startControlsTimer();
     } catch (e) {
       if (!mounted) return;
+      _updateWakelock(false);
       setState(() {
         _hasError = true;
         _errorMessage = '视频解析或加载失败: $e';
@@ -203,6 +276,10 @@ class _AuraPlayerState extends State<AuraPlayer> with SingleTickerProviderStateM
     if (!mounted || _controller == null) return;
     final value = _controller!.value;
 
+    // 动态同步屏幕常亮状态：仅在视频有效播放时保持屏幕常亮
+    final isPlaying = value.isInitialized && value.isPlaying && !value.hasError;
+    _updateWakelock(isPlaying);
+
     // 播放进度通知上层
     if (value.isInitialized && !_isDraggingProgress && !_isSeeking) {
       widget.onProgress?.call(value.position, value.duration);
@@ -212,6 +289,7 @@ class _AuraPlayerState extends State<AuraPlayer> with SingleTickerProviderStateM
     if (value.isInitialized &&
         value.position >= value.duration &&
         value.duration > Duration.zero) {
+      _updateWakelock(false);
       widget.onEnded?.call();
     }
 
@@ -243,21 +321,70 @@ class _AuraPlayerState extends State<AuraPlayer> with SingleTickerProviderStateM
     }
   }
 
-  /// 切换横竖屏全屏模式
-  void _toggleFullScreen() {
-    setState(() {
-      _isFullScreen = !_isFullScreen;
-    });
+  /// 切换横竖屏全屏模式 (自闭环驱动独立全屏路由)
+  Future<void> _toggleFullScreen() async {
+    // 1. 如果当前已在全屏路由模式中，触发退出全屏路由
+    if (widget.isFullScreenMode) {
+      if (widget.onBack != null) {
+        widget.onBack!();
+      } else {
+        Navigator.of(context).pop();
+      }
+      return;
+    }
 
-    if (_isFullScreen) {
-      SystemChrome.setPreferredOrientations([
-        DeviceOrientation.landscapeLeft,
-        DeviceOrientation.landscapeRight,
-      ]);
-      SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
-    } else {
-      SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
-      SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    if (_controller == null || !_controller!.value.isInitialized) return;
+
+    widget.onFullScreenChanged?.call(true);
+
+    // 2. 设置横屏与全屏沉浸模式
+    await SystemChrome.setPreferredOrientations([
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
+    await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+
+    if (!mounted) return;
+
+    // 3. 通过 rootNavigator 独立路由推入全屏播放界面，直接全屏铺满覆盖宿主所有的 AppBar/BottomBar/Scaffold
+    await Navigator.of(context, rootNavigator: true).push(
+      PageRouteBuilder(
+        opaque: true,
+        fullscreenDialog: true,
+        pageBuilder: (fullscreenContext, animation, secondaryAnimation) {
+          return Scaffold(
+            backgroundColor: Colors.black,
+            body: AuraPlayer(
+              playUrl: widget.playUrl,
+              controller: _controller,
+              title: widget.title,
+              coverUrl: widget.coverUrl,
+              httpHeaders: widget.httpHeaders,
+              isFullScreenMode: true,
+              onBack: () => Navigator.of(fullscreenContext).pop(),
+              onEnded: widget.onEnded,
+              extraActions: widget.extraActions,
+            ),
+          );
+        },
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          return FadeTransition(opacity: animation, child: child);
+        },
+      ),
+    );
+
+    // 4. 退出全屏路由后，自动恢复竖屏与 edgeToEdge
+    await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+    await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+
+    widget.onFullScreenChanged?.call(false);
+
+    if (mounted) {
+      setState(() {
+        _isFullScreen = false;
+        _volume = _controller?.value.volume ?? _volume;
+      });
+      _startControlsTimer();
     }
   }
 
@@ -276,66 +403,69 @@ class _AuraPlayerState extends State<AuraPlayer> with SingleTickerProviderStateM
 
   @override
   Widget build(BuildContext context) {
-    return PopScope(
-      canPop: !_isFullScreen,
-      onPopInvokedWithResult: (didPop, result) {
-        if (didPop) return;
-        if (_isFullScreen) {
-          _toggleFullScreen();
-        }
-      },
-      child: Container(
-        color: Colors.black,
-        child: AspectRatio(
-          aspectRatio: _isFullScreen
-              ? MediaQuery.of(context).size.aspectRatio
-              : (_controller?.value.isInitialized == true &&
-                      _controller!.value.aspectRatio > 0
-                  ? _controller!.value.aspectRatio
-                  : 16 / 9),
-          child: Stack(
-            fit: StackFit.expand,
-            alignment: Alignment.center,
-            children: [
-              // 1. 核心视频画面渲染层
-              _buildVideoSurface(),
+    final stackContent = Stack(
+      fit: StackFit.expand,
+      alignment: Alignment.center,
+      children: [
+        // 1. 核心视频画面渲染层
+        _buildVideoSurface(),
 
-              // 2. 屏幕应用内微调暗度遮罩 (实现无权限亮度调节)
-              IgnorePointer(
-                child: Container(
-                  color: Colors.black.withValues(alpha: (1.0 - _brightness) * 0.75),
-                ),
-              ),
-
-              // 3. 全局手势交互捕获层 (左右滑动调节亮度/音量、居中拖拽快进、长按2.0x、双击暂停)
-              if (_isInitialized && !_isLocked) _buildGestureLayer(),
-
-              // 4. 手势浮层：左侧亮度微胶囊
-              if (_showBrightnessCapsule) _buildBrightnessCapsule(),
-
-              // 5. 手势浮层：右侧音量微胶囊
-              if (_showVolumeCapsule) _buildVolumeCapsule(),
-
-              // 6. 手势浮层：居中快进/快退毛玻璃胶囊
-              if (_isSeeking) _buildSeekingCapsule(),
-
-              // 7. 手势浮层：长按 2.0x 快速播放中微胶囊
-              if (_isFastForwarding) _buildFastForwardCapsule(),
-
-              // 8. 断点续播提醒气泡
-              if (_showResumeTip) _buildResumeTip(),
-
-              // 9. 现代毛玻璃 UI 控制栏 (顶栏、底栏、锁屏)
-              if (_showControls && _isInitialized) _buildControlOverlays(),
-
-              // 10. 锁屏浮动小按钮 (始终在控制层或者单锁显隐)
-              if (_isInitialized) _buildLockButton(),
-
-              // 11. 加载中或错误状态指示层
-              if (!_isInitialized || _hasError) _buildStateOverlay(),
-            ],
+        // 2. 屏幕应用内微调暗度遮罩 (实现无权限亮度调节)
+        IgnorePointer(
+          child: Container(
+            color: Colors.black.withValues(alpha: (1.0 - _brightness) * 0.75),
           ),
         ),
+
+        // 3. 全局手势交互捕获层 (左右滑动调节亮度/音量、居中拖拽快进、长按2.0x、双击暂停)
+        if (_isInitialized && !_isLocked) _buildGestureLayer(),
+
+        // 4. 手势浮层：左侧亮度微胶囊
+        if (_showBrightnessCapsule) _buildBrightnessCapsule(),
+
+        // 5. 手势浮层：右侧音量微胶囊
+        if (_showVolumeCapsule) _buildVolumeCapsule(),
+
+        // 6. 手势浮层：居中快进/快退毛玻璃胶囊
+        if (_isSeeking) _buildSeekingCapsule(),
+
+        // 7. 手势浮层：长按 2.0x 快速播放中微胶囊
+        if (_isFastForwarding) _buildFastForwardCapsule(),
+
+        // 8. 断点续播提醒气泡
+        if (_showResumeTip) _buildResumeTip(),
+
+        // 9. 现代毛玻璃 UI 控制栏 (顶栏、底栏、锁屏)
+        if (_showControls && _isInitialized) _buildControlOverlays(),
+
+        // 10. 锁屏浮动小按钮 (始终在控制层或者单锁显隐)
+        if (_isInitialized) _buildLockButton(),
+
+        // 11. 加载中或错误状态指示层
+        if (!_isInitialized || _hasError) _buildStateOverlay(),
+      ],
+    );
+
+    if (widget.isFullScreenMode) {
+      return PopScope(
+        canPop: true,
+        child: Container(
+          color: Colors.black,
+          width: double.infinity,
+          height: double.infinity,
+          child: stackContent,
+        ),
+      );
+    }
+
+    return Container(
+      color: Colors.black,
+      child: AspectRatio(
+        aspectRatio: (_controller?.value.isInitialized == true &&
+                _controller!.value.aspectRatio > 0
+            ? _controller!.value.aspectRatio
+            : 16 / 9),
+        child: stackContent,
       ),
     );
   }
@@ -483,7 +613,7 @@ class _AuraPlayerState extends State<AuraPlayer> with SingleTickerProviderStateM
   /// 左侧垂直胶囊亮度指示条
   Widget _buildBrightnessCapsule() {
     return Positioned(
-      left: 20,
+      left: _isFullScreen ? 68 : 16,
       top: 0,
       bottom: 0,
       child: Center(
@@ -580,40 +710,51 @@ class _AuraPlayerState extends State<AuraPlayer> with SingleTickerProviderStateM
     );
   }
 
-  /// 居中微拟态快进/快退胶囊
+  /// 居中微拟态快进/快退胶囊 (优化尺寸，精致紧凑横向微胶囊设计)
   Widget _buildSeekingCapsule() {
     final isForward = _seekDeltaSeconds >= 0;
     final totalDuration = _controller?.value.duration ?? Duration.zero;
 
     return Center(
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(20),
         child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+          filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-            color: Colors.black.withValues(alpha: 0.7),
-            child: Column(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.65),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: Colors.white.withValues(alpha: 0.14),
+                width: 0.6,
+              ),
+            ),
+            child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Icon(
                   isForward ? LucideIcons.fastForward : LucideIcons.rewind,
-                  color: AppColors.primary,
-                  size: 28,
+                  color: isForward ? const Color(0xFF10B981) : const Color(0xFFF59E0B),
+                  size: 15,
                 ),
-                const SizedBox(height: 6),
+                const SizedBox(width: 6),
                 Text(
-                  '${isForward ? '+' : ''}$_seekDeltaSeconds秒',
-                  style: const TextStyle(
-                    color: AppColors.primary,
-                    fontSize: 16,
+                  '${isForward ? '+' : ''}${_seekDeltaSeconds}s',
+                  style: TextStyle(
+                    color: isForward ? const Color(0xFF10B981) : const Color(0xFFF59E0B),
+                    fontSize: 13,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(width: 8),
                 Text(
                   '${_formatDuration(_seekTarget)} / ${_formatDuration(totalDuration)}',
-                  style: const TextStyle(color: Colors.white70, fontSize: 12),
+                  style: const TextStyle(
+                    color: Colors.white70,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
               ],
             ),
@@ -622,6 +763,7 @@ class _AuraPlayerState extends State<AuraPlayer> with SingleTickerProviderStateM
       ),
     );
   }
+
 
   /// 长按 2.0x 顶部微胶囊
   Widget _buildFastForwardCapsule() {
@@ -709,18 +851,24 @@ class _AuraPlayerState extends State<AuraPlayer> with SingleTickerProviderStateM
     );
   }
 
-  /// 浮动锁屏按钮
+  /// 浮动锁屏按钮 (仅全屏模式出现、上下垂直居中、无背景纯图标)
   Widget _buildLockButton() {
+    // 锁定图标应该只在全屏状态下出现
+    if (!_isFullScreen) {
+      return const SizedBox.shrink();
+    }
+
     if (!_showControls && !_isLocked) {
       return const SizedBox.shrink();
     }
 
     return Positioned(
-      left: 16,
-      top: _isFullScreen ? 0 : null,
-      bottom: _isFullScreen ? 0 : 48,
+      left: 20,
+      top: 0,
+      bottom: 0,
       child: Center(
         child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
           onTap: () {
             HapticFeedback.lightImpact();
             setState(() {
@@ -733,25 +881,19 @@ class _AuraPlayerState extends State<AuraPlayer> with SingleTickerProviderStateM
               }
             });
           },
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(20),
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-              child: Container(
-                padding: const EdgeInsets.all(10),
-                color: Colors.black.withValues(alpha: 0.6),
-                child: Icon(
-                  _isLocked ? LucideIcons.lock : LucideIcons.unlock,
-                  color: _isLocked ? AppColors.primary : Colors.white70,
-                  size: 20,
-                ),
-              ),
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Icon(
+              _isLocked ? LucideIcons.lock : LucideIcons.unlock,
+              color: _isLocked ? AppColors.primary : Colors.white.withValues(alpha: 0.88),
+              size: 24,
             ),
           ),
         ),
       ),
     );
   }
+
 
   /// 现代毛玻璃控制顶栏与底栏
   Widget _buildControlOverlays() {
@@ -760,8 +902,11 @@ class _AuraPlayerState extends State<AuraPlayer> with SingleTickerProviderStateM
     return Column(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        // 顶部控制条 (返回、标题、扩展插槽)
-        _buildTopBar(),
+        // 顶部控制条 (返回、标题、扩展插槽) - 全屏或有返回回调/扩展操作时渲染
+        if (_isFullScreen || widget.onBack != null || widget.extraActions != null)
+          _buildTopBar()
+        else
+          const SizedBox.shrink(),
 
         // 底部控制条 (播放/暂停、流光进度条、时长、倍速、全屏)
         _buildBottomBar(),
@@ -787,18 +932,19 @@ class _AuraPlayerState extends State<AuraPlayer> with SingleTickerProviderStateM
       ),
       child: Row(
         children: [
-          IconButton(
-            icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
-            onPressed: () {
-              if (_isFullScreen) {
-                _toggleFullScreen();
-              } else if (widget.onBack != null) {
-                widget.onBack!();
-              } else {
-                Navigator.maybePop(context);
-              }
-            },
-          ),
+          if (_isFullScreen || widget.onBack != null)
+            IconButton(
+              icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
+              onPressed: () {
+                if (_isFullScreen) {
+                  _toggleFullScreen();
+                } else if (widget.onBack != null) {
+                  widget.onBack!();
+                } else {
+                  Navigator.maybePop(context);
+                }
+              },
+            ),
           const SizedBox(width: 4),
           Expanded(
             child: Text(

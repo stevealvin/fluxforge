@@ -1,4 +1,4 @@
-﻿import 'package:dio/dio.dart';
+import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 
 /// FluxForge 全局统一高性能 HTTP 网络客户端
@@ -9,19 +9,21 @@ class ApiClient {
 
   late final Dio dio;
 
-  ApiClient({BaseOptions? options}) {
+  ApiClient({BaseOptions? options, int? timeoutSeconds}) {
+    final int timeout = timeoutSeconds ?? 30;
     dio = Dio(
       options ??
           BaseOptions(
-            connectTimeout: const Duration(seconds: 15),
-            receiveTimeout: const Duration(seconds: 15),
-            sendTimeout: const Duration(seconds: 15),
+            connectTimeout: Duration(seconds: timeout),
+            receiveTimeout: Duration(seconds: timeout),
+            sendTimeout: Duration(seconds: timeout),
             headers: {
               'User-Agent': defaultUserAgent,
               'Accept': 'application/json, text/plain, */*',
             },
           ),
     );
+
 
     // 仅在调试模式下打印网络请求摘要
     if (kDebugMode) {
@@ -43,6 +45,19 @@ class ApiClient {
       );
     }
   }
+
+  /// 动态更新网络请求超时配置与 User-Agent
+  void updateConfig({int? timeoutSeconds, String? userAgent}) {
+    if (timeoutSeconds != null) {
+      dio.options.connectTimeout = Duration(seconds: timeoutSeconds);
+      dio.options.receiveTimeout = Duration(seconds: timeoutSeconds);
+      dio.options.sendTimeout = Duration(seconds: timeoutSeconds);
+    }
+    if (userAgent != null && userAgent.trim().isNotEmpty) {
+      dio.options.headers['User-Agent'] = userAgent.trim();
+    }
+  }
+
 
   /// 发起 GET 请求
   Future<Response<T>> get<T>(

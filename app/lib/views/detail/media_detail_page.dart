@@ -2,7 +2,6 @@ import 'package:material_ui/material_ui.dart';
 
 import '../gallery/gallery_viewer_page.dart';
 import '../reader/novel_reader_page.dart';
-import 'photo_gallery_page.dart';
 import 'video_player_page.dart';
 
 /// 跨媒体类型聚合详情路由分发页面
@@ -55,20 +54,9 @@ class MediaDetailPage extends StatelessWidget {
       case 'comic':
       case 'gallery':
       case 'manga':
-        return GalleryViewerPage(
-          title: title,
-          images: url != null && url!.isNotEmpty ? [url!] : const [],
-        );
-
       case 'image':
       case 'photo':
-        // 如果有外链且是图集解析源，使用 PhotoDetailPage
-        if (url != null && url!.startsWith('http')) {
-          return PhotoDetailPage(
-            url: url!,
-            title: title,
-          );
-        }
+      case 'picture':
         return GalleryViewerPage(
           title: title,
           images: url != null && url!.isNotEmpty ? [url!] : const [],

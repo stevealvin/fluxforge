@@ -5,7 +5,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 version: 1.0.0+1
 
 environment:
-  sdk: ^3.11.1
+  sdk: ^3.13.2
 
 dependencies:
   flutter:
@@ -27,8 +27,6 @@ dependencies:
   webview_flutter_android: ^4.14.1
   # 图片
   cached_network_image: ^4.0.0
-  # 播放器
-  chewie: ^1.16.2
   path: ^1.9.1
   path_provider: ^2.1.6
   # 存储
@@ -63,8 +61,8 @@ dependencies:
   signals_flutter: ^7.1.0
   # 持久化存储
   shared_preferences: ^2.5.5
+  video_player: ^2.14.0
 
-  video_player: any
 dev_dependencies:
   flutter_test:
     sdk: flutter

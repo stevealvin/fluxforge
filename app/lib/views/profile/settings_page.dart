@@ -258,169 +258,6 @@ class _SettingsPageState extends State<SettingsPage> {
     }
   }
 
-  /// 弹出广告规则订阅源管理面板
-  void _showAdBlockSourcesSheet(BuildContext context, bool isDark) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: isDark ? AppColors.darkSurface : AppColors.lightSurface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setSheetState) {
-          final sources = AdBlockEngine.instance.sources;
-          return SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.only(left: 8),
-                        child: Text(
-                          '广告规则订阅源管理',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
-                          ),
-                        ),
-                      ),
-                      TextButton.icon(
-                        icon: const Icon(LucideIcons.plus, size: 16),
-                        label: const Text('添加订阅', style: TextStyle(fontSize: 12)),
-                        onPressed: () => _showAddCustomSourceDialog(context, () {
-                          setSheetState(() {});
-                        }),
-                      ),
-                    ],
-                  ),
-                  const Padding(
-                    padding: EdgeInsets.only(left: 8, bottom: 12),
-                    child: Text(
-                      '支持内置精选国内规则源与用户自定义订阅源，支持多镜像容灾',
-                      style: TextStyle(fontSize: 11, color: Colors.grey),
-                    ),
-                  ),
-                  Flexible(
-                    child: ListView.separated(
-                      shrinkWrap: true,
-                      itemCount: sources.length,
-                      separatorBuilder: (_, _) => Divider(
-                        height: 1,
-                        indent: 12,
-                        color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
-                      ),
-                      itemBuilder: (context, index) {
-                        final s = sources[index];
-                        return CheckboxListTile(
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-                          title: Text(
-                            s.name,
-                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-                          ),
-                          subtitle: Text(
-                            s.description,
-                            style: TextStyle(fontSize: 11, color: isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted),
-                          ),
-                          value: s.isEnabled,
-                          activeColor: AppColors.primary,
-                          onChanged: (val) {
-                            if (val != null) {
-                              setSheetState(() {
-                                s.isEnabled = val;
-                              });
-                              setState(() {});
-                            }
-                          },
-                        );
-                      },
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  SizedBox(
-                    width: double.infinity,
-                    child: FilledButton.icon(
-                      style: FilledButton.styleFrom(
-                        backgroundColor: AppColors.primary,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      ),
-                      icon: const Icon(LucideIcons.refreshCw, size: 16),
-                      label: const Text('保存并立即拉取更新'),
-                      onPressed: () {
-                        Navigator.pop(ctx);
-                        _triggerAdBlockUpdate(context);
-                      },
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
-
-  /// 弹出添加自定义订阅源对话框
-  void _showAddCustomSourceDialog(BuildContext context, VoidCallback onAdded) {
-    final nameCtrl = TextEditingController();
-    final urlCtrl = TextEditingController();
-
-    showDialog(
-      context: context,
-      builder: (dialogCtx) => AlertDialog(
-        title: const Text('添加自定义规则订阅源'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: nameCtrl,
-              decoration: const InputDecoration(
-                labelText: '订阅源名称',
-                hintText: '如：我的去广告规则',
-              ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: urlCtrl,
-              decoration: const InputDecoration(
-                labelText: '订阅直链 (URL)',
-                hintText: 'https://.../rules.txt',
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogCtx),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: AppColors.primary),
-            onPressed: () {
-              final name = nameCtrl.text.trim();
-              final url = urlCtrl.text.trim();
-              if (name.isNotEmpty && url.startsWith('http')) {
-                AdBlockEngine.instance.addCustomSource(name, url);
-                onAdded();
-                Navigator.pop(dialogCtx);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('已添加自定义源 [$name]')),
-                );
-              }
-            },
-            child: const Text('添加'),
-          ),
-        ],
-      ),
-    );
-  }
 
   /// 弹出数据备份导出与导入操作面板
   void _showBackupSheet(BuildContext context, bool isDark) {
@@ -886,14 +723,14 @@ class _SettingsPageState extends State<SettingsPage> {
                     const SizedBox(height: 8),
                     InkWell(
                       borderRadius: BorderRadius.circular(8),
-                      onTap: () => _showAdBlockSourcesSheet(context, isDark),
+                      onTap: () => context.push('/adblock'),
                       child: const Padding(
                         padding: EdgeInsets.symmetric(vertical: 4),
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
                             Text(
-                              '管理订阅源与自定义规则...',
+                              '管理广告过滤规则与订阅源...',
                               style: TextStyle(fontSize: 11, color: AppColors.primary, fontWeight: FontWeight.w500),
                             ),
                             Icon(Icons.arrow_forward_ios_rounded, size: 11, color: AppColors.primary),

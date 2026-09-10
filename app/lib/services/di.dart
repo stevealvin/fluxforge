@@ -19,13 +19,30 @@ BackupService get backupService => getIt<BackupService>();
 
 /// 统一注册所有核心基础设施与业务服务
 void configureDependencies() {
-  if (!getIt.isRegistered<ApiClient>()) {
-    getIt.registerSingleton<ApiClient>(ApiClient());
-  }
-
   if (!getIt.isRegistered<AppService>()) {
     getIt.registerSingleton<AppService>(AppService());
   }
+
+  if (!getIt.isRegistered<ApiClient>()) {
+    final currentSettings = getIt<AppService>().settings;
+    final client = ApiClient(
+      timeoutSeconds: currentSettings.requestTimeoutSeconds,
+    );
+    if (currentSettings.customUserAgent.trim().isNotEmpty) {
+      client.updateConfig(userAgent: currentSettings.customUserAgent);
+    }
+    getIt.registerSingleton<ApiClient>(client);
+
+    // 监听偏好设置变更，动态联动更新网络请求超时与 User-Agent
+    getIt<AppService>().settingsNotifier.addListener(() {
+      final s = getIt<AppService>().settingsNotifier.value;
+      client.updateConfig(
+        timeoutSeconds: s.requestTimeoutSeconds,
+        userAgent: s.customUserAgent.trim().isNotEmpty ? s.customUserAgent : null,
+      );
+    });
+  }
+
 
   if (!getIt.isRegistered<RuleService>()) {
     getIt.registerSingleton<RuleService>(RuleService(apiClient: apiClient));
