@@ -103,7 +103,7 @@ export const ruleDb = {
       version: data.version || '1.0.0',
       author: data.author || '管理员',
       description: data.description || '',
-      base_url: data.baseUrl || data.base_url || '',
+      base_url: data.baseUrl || '',
       code: data.code || '',
       enabled: data.enabled !== undefined ? (Number(data.enabled) === 1 ? 1 : 0) : 1,
       updated_at: now

@@ -79,7 +79,6 @@ flutter:
   assets:
     - assets/js/
     - assets/images/
-    - assets/filters/
     - assets/icon/
 
 flutter_launcher_icons:

@@ -145,29 +145,15 @@ class RuleEngine {
 
         var __result__;
         if (typeof __exported__ === 'function') {
-          // 兼容契约单函数模式: export default async function(context)
           var __ctx__ = { action: __action__, params: __params__ };
           __result__ = await __exported__(__ctx__);
         } else if (__exported__ && typeof __exported__ === 'object') {
-          // 兼容契约对象模式: export default defineRule({ discovery, search, detail, parse })
-          var __actionMap__ = {
-            'discovery': ['discovery', 'explore', 'latest', 'list'],
-            'detail': ['detail', 'getDetail', 'info'],
-            'search': ['search', 'searchList'],
-            'parse': ['parse', 'watch', 'content']
-          };
-          var __candidates__ = __actionMap__[__action__] || [__action__];
-          var __fn__ = null;
-          for (var i = 0; i < __candidates__.length; i++) {
-            var name = __candidates__[i];
-            if (typeof __exported__[name] === 'function') {
-              __fn__ = __exported__[name];
-              break;
-            }
-          }
-          if (!__fn__ && typeof __exported__.default === 'function') {
-            __fn__ = __exported__.default;
-          }
+          var __fn__ = typeof __exported__[__action__] === 'function'
+            ? __exported__[__action__]
+            : (__exported__.default && typeof __exported__.default[__action__] === 'function'
+                ? __exported__.default[__action__]
+                : null);
+
           if (typeof __fn__ === 'function') {
             __result__ = await __fn__.call(__exported__, __params__);
           } else {
@@ -216,17 +202,14 @@ class RuleEngine {
   static Future<dynamic> discovery(
     Rule rule, {
     int page = 1,
-    String? category,
     String? tab,
   }) async {
-    final effectiveTab = tab ?? category;
     return await executeRule(
       code: rule.code,
       action: 'discovery',
       params: {
         'page': page,
-        'tab': ?effectiveTab,
-        'category': ?effectiveTab,
+        'tab': ?tab,
         'baseUrl': rule.baseUrl,
       },
       baseUrl: rule.baseUrl,
@@ -261,13 +244,13 @@ class RuleEngine {
   }
 
   /// 快捷生命周期动作：播放直链嗅探与解析 (parse)
-  static Future<dynamic> parse(Rule rule, String url, {String? episodeId}) async {
+  static Future<dynamic> parse(Rule rule, String url, {String? groupName}) async {
     return await executeRule(
       code: rule.code,
       action: 'parse',
       params: {
         'url': url,
-        'episodeId': ?episodeId,
+        'groupName': ?groupName,
         'baseUrl': rule.baseUrl,
       },
       baseUrl: rule.baseUrl,

@@ -25,17 +25,10 @@ class Rule {
     this.updatedAt,
   });
 
-  // 兼容性快捷访问器
-  String get sourceUrl => baseUrl;
-  String get discoveryCode => code;
-  String get searchCode => code;
-  String get detailCode => code;
-
   static List<Rule> fromArray(List<dynamic> list) =>
       list.map((item) => Rule.fromJson(Map<String, dynamic>.from(item as Map))).toList();
 
   factory Rule.fromJson(Map<String, dynamic> json) {
-    // 兼容布尔值与数字 0/1
     bool isEnabled = true;
     if (json['enabled'] != null) {
       if (json['enabled'] is bool) {
@@ -48,15 +41,15 @@ class Rule {
     return Rule(
       id: json['id'],
       name: json['name']?.toString() ?? '未命名规则',
-      baseUrl: json['baseUrl']?.toString() ?? json['base_url']?.toString() ?? json['sourceUrl']?.toString() ?? '',
+      baseUrl: json['baseUrl']?.toString() ?? '',
       description: json['description']?.toString(),
       type: json['type']?.toString() ?? 'video',
-      code: json['code']?.toString() ?? json['discoveryCode']?.toString() ?? '',
+      code: json['code']?.toString() ?? '',
       author: json['author']?.toString() ?? 'Admin',
       version: json['version']?.toString() ?? '1.0.0',
       enabled: isEnabled,
-      createdAt: json['created_at']?.toString() ?? json['createdAt']?.toString(),
-      updatedAt: json['updated_at']?.toString() ?? json['updatedAt']?.toString(),
+      createdAt: json['created_at']?.toString(),
+      updatedAt: json['updated_at']?.toString(),
     );
   }
 

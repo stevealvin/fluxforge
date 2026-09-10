@@ -310,7 +310,13 @@ export function buildSingleRuleTranslatePrompt(item: ParsedSourceItem) {
    - async search({ keyword, page = 1 }): 返回 { items: MediaItem[], hasMore?: boolean }
    - async detail({ url, item }): 返回 { title, cover, desc, author, content, items: [{ title, url }], previews?: string[], related?: MediaItem[] }
    - async parse({ url, groupName }): 小说返回 { content: '章节正文...' }，视频返回 { playUrl: 'http...' }
-4. 属性命名契约：条目列表中的跳转链接统一命名为 url（严禁使用 href, key, path 等别名）。
+4. 契约优先与彻底去兼容化（严格禁止防御性代码与无意义字段猜测）：
+   - 跳转链接统一命名为 url（严禁使用 href, key, path, src 等别名）；
+   - 描述简介统一命名为 desc（严禁使用 description 或 intro）；
+   - 子资源/章节/选集列表统一命名为 items（严禁使用 list, episodes, chapters, images）；
+   - 剧照预览统一命名为 previews，相关推荐统一命名为 related；
+   - 补全绝对 URL 统一使用 Web 标准 API \`new URL(path, baseUrl).href\`，严禁编写多层三元字符串拼接；
+   - 严禁在转译代码中写一堆 || 或 ?? 字段猜测判断，严格输出纯净的标准契约代码。
 
 【强制输出要求】：
 请严格输出合法的 JSON 格式（可包含在 \`\`\`json 块中），格式字段如下：

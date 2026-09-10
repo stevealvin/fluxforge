@@ -22,9 +22,42 @@ FluxForge 的核心在于其**沙箱 JavaScript 动态规则引擎**。如同“
   * 🖼️ **画廊图集**：4:3 网格画廊与大图瀑布流展厅。
   * 📖 **小说阅读**：沉浸式纯净阅读器体验。
 * 🚀 **Vercel 一键云端部署**：配置标准 `vercel.json` 与 `api/index.ts`（基于 `hono/vercel` 的 Serverless Function 导出），支持前后端一体化无服务器部署上线。
-* 📦 **规范 Monorepo 架构**：使用 `npm workspaces` 管理 `web`（前端）与 `server`（后端 API）子项目。
+---
+
+## 📊 全栈功能矩阵与研发进展看板 (Feature Status)
+
+| 端 / 模块 | 核心功能特性 | 状态 | 规范与技术栈 |
+| :--- | :--- | :---: | :--- |
+| **规则引擎** | **统一单代码沙箱契约**（`defineRule`：`discovery`, `search`, `detail`, `parse`） | ✅ | [`RULE_SPECIFICATION.md`](./docs/RULE_SPECIFICATION.md) |
+| **规则引擎** | **跨端统一依赖标准**（沙箱内置注入 `axios`, `cheerio`） | ✅ | 全端标准对齐 |
+| **服务端 (Server)** | **Hono.js 微服务**（RESTful API / VM 远程沙箱调试 / 编码转译） | ✅ | Node.js + Hono + SQLite |
+| **服务端 (Server)** | **Vercel Serverless 部署**（`api/index.ts` 云函数一体化导出） | ✅ | Vercel Function |
+| **前端 (Web)** | **全栈单端口开发**（Vite + `@hono/vite-dev-server`，5300 端口秒级热更） | ✅ | Vite + Hono Dev Server |
+| **前端 (Web)** | **规则工作台**（Monaco Editor 在线沙箱、AI 规则推导、数据采样） | ✅ | Vue 3 + Naive UI + Monaco |
+| **前端 (Web)** | **跨媒体消费展厅**（ArtPlayer 视频播放、画廊瀑布流、小说体验） | ✅ | Vue 3 + Tailwind 4 |
+| **移动端 (App)** | **流光设计系统**（Material 3 Expressive + Apple 磨砂微拟态，双主题） | ✅ | Flutter + `AppCard` |
+| **移动端 (App)** | **移动端本地离线沙箱**（`flutter_js` QuickJS 引擎，无服务器独立运行规则） | ✅ | QuickJS 沙箱流水线 |
+| **移动端 (App)** | **主框架与发现/搜索**（毛玻璃防重叠导航、全局多源检索、单源测试流） | ✅ | GoRouter + Riverpod |
+| **移动端 (App)** | **内置安全浏览器**（广告拦截引擎、Android 全屏媒体自适应、原生返回拦截） | ✅ | `webview_flutter` |
+| **移动端 (App)** | **自研现代播放器 (`AuraPlayer`)**（手势调光/音量/快进、长按2x震动倍速、断点续播、彻底弃用 Chewie） | ⏳ 即将落地 | [`APP_DEV_SPEC.md`](./docs/APP_DEV_SPEC.md) |
+| **移动端 (App)** | **规则健康巡检与毫秒级测速**（并发探测源站延迟，三色指示灯，一键清理失效源） | ⏳ 规划中 | [`APP_ROADMAP.md`](./docs/APP_ROADMAP.md) |
+| **移动端 (App)** | **纯净小说阅读引擎 (`FluxReader`)**（仿真/滚动翻页、排版色盘、预加载） | ⏳ 规划中 | [`APP_DEV_SPEC.md`](./docs/APP_DEV_SPEC.md) |
+| **移动端 (App)** | **漫画与图集查看器 (`FluxGallery`)**（瀑布流/条漫长图、双指平滑缩放） | ⏳ 规划中 | [`APP_DEV_SPEC.md`](./docs/APP_DEV_SPEC.md) |
+| **移动端 (App)** | **本地数据全量备份/还原**（单文件 JSON 导出分享，无需第三方网盘） | ⏳ 规划中 | [`APP_DEV_SPEC.md`](./docs/APP_DEV_SPEC.md) |
+| **移动端 (App)** | **统一收藏系统与智能追更红点**（追剧/追更书架，源站集数探测更新提醒） | ⏳ 规划中 | [`APP_DEV_SPEC.md`](./docs/APP_DEV_SPEC.md) |
+| **移动端 (App)** | **全局偏好与系统设置**（播放手势/倍速偏好、阅读排版、沙箱超时 15s/30s/60s、细分深度清理） | ⏳ 规划中 | [`APP_DEV_SPEC.md`](./docs/APP_DEV_SPEC.md) |
 
 ---
+
+## 📚 官方文档中心导引
+
+完整的架构白皮书、生命周期标准与移动端技术开发规范已整理至 `docs/` 目录：
+
+- 📖 [**规则引擎与生命周期契约白皮书 (RULE_SPECIFICATION.md)**](./docs/RULE_SPECIFICATION.md)：编写规则必读，四大生命周期输入输出定义与 `items` 统一模型；
+- 🛠️ [**移动端核心功能技术开发规范 (APP_DEV_SPEC.md)**](./docs/APP_DEV_SPEC.md)：移动端开发者与 AI 助手必读，自研 `AuraPlayer`、阅读器、测速、备份等技术实现规格；
+- 🚀 [**移动端产品规划与演进路线图 (APP_ROADMAP.md)**](./docs/APP_ROADMAP.md)：移动端功能优先级矩阵（P0/P1/P2）；
+- 🏗️ [**跨端系统架构设计规范 (SYSTEM_ARCHITECTURE.md)**](./docs/SYSTEM_ARCHITECTURE.md)：全栈拓扑、色彩设计哲学与数据流图解；
+- 📝 [**系统演进与变更日志 (CHANGELOG.md)**](./docs/CHANGELOG.md)：记录项目版本演进与关键功能重构明细。
 
 ## 📁 目录结构
 

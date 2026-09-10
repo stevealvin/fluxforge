@@ -10,6 +10,8 @@
 | :--- | :--- | :--- |
 | 📖 [**RULE_SPECIFICATION.md**](./RULE_SPECIFICATION.md) | **规则引擎与生命周期契约白皮书**<br>详细说明单代码 `defineRule` 规范、四大生命周期（`discovery`, `search`, `detail`, `parse`）输入输出、`items` 大一统模型、`previews` 与 `related` 设计。 | 规则编写者、AI 规则提示词工程师、前端开发 |
 | 🏗️ [**SYSTEM_ARCHITECTURE.md**](./SYSTEM_ARCHITECTURE.md) | **跨端系统架构与多端设计规范**<br>系统工程拓扑架构、多端数据流、Flutter 客户端 `AppCard` 质感设计哲学、主题色彩系统、移动端本地 JS 沙箱运行机制与 API 规范。 | 客户端开发、服务端架构师、全栈工程师 |
+| 🚀 [**APP_ROADMAP.md**](./APP_ROADMAP.md) | **移动端产品规划与功能演进路线图**<br>专注移动端纯粹体验，规划视频手势/断点续播、小说阅读引擎、漫画图集查看器、规则健康测速、本地单文件备份还原等核心功能。 | 移动端开发、产品设计 |
+| 🛠️ [**APP_DEV_SPEC.md**](./APP_DEV_SPEC.md) | **移动端核心功能技术开发与落地规范 (一体化说明书)**<br>采用 1234 扁平大一统架构，定死依赖底座（弃用 Chewie，基于原生 video_player）、自研 FluxPlayer 全功能规格、阅读器、测速、备份等技术接口与交互细节。 | 移动端开发、AI 编程助手 |
 | 📝 [**CHANGELOG.md**](./CHANGELOG.md) | **系统版本更新与演进日志**<br>记录全链路契约收敛、去兼容化改造、重要特性更新与修复明细。 | 全体协作者 |
 
 ---

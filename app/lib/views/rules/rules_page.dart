@@ -317,6 +317,49 @@ class _RulesPageState extends State<RulesPage> {
     );
   }
 
+  /// 构建测速延迟三色微胶囊指示器
+  Widget _buildLatencyBadge(int? latency, bool isDark) {
+    if (latency == null) return const SizedBox.shrink();
+    final bool isTimeout = latency < 0 || latency > 2500;
+    final bool isFast = latency >= 0 && latency < 500;
+
+    final Color color = isTimeout
+        ? Colors.redAccent
+        : (isFast ? const Color(0xFF10B981) : const Color(0xFFF59E0B));
+    final String label = isTimeout ? '超时' : '${latency}ms';
+
+    return Container(
+      margin: const EdgeInsets.only(left: 5),
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 5,
+            height: 5,
+            decoration: BoxDecoration(
+              color: color,
+              shape: BoxShape.circle,
+            ),
+          ),
+          const SizedBox(width: 3),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 9,
+              fontWeight: FontWeight.w700,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   /// 构建单张现代化规则卡片
   Widget _buildRuleCard(BuildContext context, Rule rule) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -403,28 +446,40 @@ class _RulesPageState extends State<RulesPage> {
                     ),
                     const SizedBox(height: 3),
 
-                    // 类型 Badge（字号缩小一号）
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                      decoration: BoxDecoration(
-                        color: typeColor.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(_getTypeIcon(rule.type), size: 9, color: typeColor),
-                          const SizedBox(width: 3),
-                          Text(
-                            _getTypeLabel(rule.type),
-                            style: TextStyle(
-                              fontSize: 9,
-                              fontWeight: FontWeight.w700,
-                              color: typeColor,
-                            ),
+                    // 类型 Badge 与 毫秒级测速微胶囊
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                          decoration: BoxDecoration(
+                            color: typeColor.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(4),
                           ),
-                        ],
-                      ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(_getTypeIcon(rule.type), size: 9, color: typeColor),
+                              const SizedBox(width: 3),
+                              Text(
+                                _getTypeLabel(rule.type),
+                                style: TextStyle(
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.w700,
+                                  color: typeColor,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        ValueListenableBuilder<Map<String, int>>(
+                          valueListenable: _ruleService.latenciesNotifier,
+                          builder: (context, latencies, _) {
+                            final latency = latencies[_ruleService.getRuleKey(rule)];
+                            return _buildLatencyBadge(latency, isDark);
+                          },
+                        ),
+                      ],
                     ),
                   ],
                 ),
@@ -610,6 +665,31 @@ class _RulesPageState extends State<RulesPage> {
       appBar: AppBar(
         title: const Text('规则管理', style: TextStyle(fontWeight: FontWeight.bold)),
         actions: [
+          ValueListenableBuilder<bool>(
+            valueListenable: _ruleService.isPingingNotifier,
+            builder: (context, isPinging, _) {
+              if (isPinging) {
+                return const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 12),
+                  child: Center(
+                    child: SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
+                      ),
+                    ),
+                  ),
+                );
+              }
+              return IconButton(
+                tooltip: '一键测速巡检',
+                icon: const Icon(LucideIcons.gauge),
+                onPressed: () => _ruleService.pingAllRules(),
+              );
+            },
+          ),
           IconButton(
             tooltip: '规则市场',
             icon: const Icon(LucideIcons.store),
@@ -744,7 +824,79 @@ class _RulesPageState extends State<RulesPage> {
                 ),
               ),
 
-              // 2. 规则列表
+              // 2. 失效规则治理轻提示横幅
+              ValueListenableBuilder<Map<String, int>>(
+                valueListenable: _ruleService.latenciesNotifier,
+                builder: (context, latencies, _) {
+                  final failedCount = latencies.values
+                      .where((v) => v < 0 || v > 2500)
+                      .length;
+                  if (failedCount == 0) return const SliverToBoxAdapter(child: SizedBox.shrink());
+
+                  return SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: Colors.redAccent.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: Colors.redAccent.withValues(alpha: 0.2)),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(LucideIcons.alertCircle, size: 16, color: Colors.redAccent),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                '检测到 $failedCount 个失效或超时规则',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: isDark ? Colors.white70 : Colors.black87,
+                                ),
+                              ),
+                            ),
+                            TextButton(
+                              style: TextButton.styleFrom(
+                                visualDensity: VisualDensity.compact,
+                                foregroundColor: Colors.amber,
+                                padding: const EdgeInsets.symmetric(horizontal: 6),
+                              ),
+                              onPressed: () async {
+                                final count = await _ruleService.disableFailedRules();
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(content: Text('已禁用 $count 个失效规则')),
+                                  );
+                                }
+                              },
+                              child: const Text('一键禁用', style: TextStyle(fontSize: 12)),
+                            ),
+                            TextButton(
+                              style: TextButton.styleFrom(
+                                visualDensity: VisualDensity.compact,
+                                foregroundColor: Colors.redAccent,
+                                padding: const EdgeInsets.symmetric(horizontal: 6),
+                              ),
+                              onPressed: () async {
+                                final count = await _ruleService.removeFailedRules();
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(content: Text('已清理 $count 个失效规则')),
+                                  );
+                                }
+                              },
+                              child: const Text('一键清理', style: TextStyle(fontSize: 12)),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+
+              // 3. 规则列表
               if (filteredRules.isEmpty)
                 SliverFillRemaining(
                   hasScrollBody: false,

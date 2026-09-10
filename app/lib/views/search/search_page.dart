@@ -30,41 +30,39 @@ class _RuleSearchStatus {
 /// 规范化后的跨源检索结果条目
 class _NormalizedSearchResult {
   final String title;
-  final String href;
+  final String url;
   final String cover;
   final String desc;
-  final String? tag;
+  final String? badge;
+  final List<String>? tags;
   final Rule rule;
   final String baseUrl;
   final Map<String, dynamic> raw;
 
   _NormalizedSearchResult({
     required this.title,
-    required this.href,
+    required this.url,
     required this.cover,
     required this.desc,
-    this.tag,
+    this.badge,
+    this.tags,
     required this.rule,
     required this.baseUrl,
     required this.raw,
   });
 
   factory _NormalizedSearchResult.fromMap(Map<dynamic, dynamic> map, Rule rule) {
-    final title = (map['title'] ?? map['name'] ?? '未知内容').toString();
-    final href = (map['href'] ?? map['url'] ?? '').toString();
-    final cover = (map['cover'] ?? map['pic'] ?? map['thumb'] ?? '').toString();
-    final desc = (map['desc'] ?? map['description'] ?? map['intro'] ?? '').toString();
-    final tag = map['tag']?.toString() ?? map['category']?.toString();
-    final baseUrl = rule.baseUrl;
-
     return _NormalizedSearchResult(
-      title: title,
-      href: href,
-      cover: cover,
-      desc: desc,
-      tag: tag,
+      title: map['title']?.toString() ?? '未知内容',
+      url: map['url']?.toString() ?? '',
+      cover: map['cover']?.toString() ?? '',
+      desc: map['desc']?.toString() ?? '',
+      badge: map['badge']?.toString(),
+      tags: map['tags'] is List
+          ? (map['tags'] as List).map((e) => e.toString()).toList()
+          : null,
       rule: rule,
-      baseUrl: baseUrl,
+      baseUrl: rule.baseUrl,
       raw: Map<String, dynamic>.from(map),
     );
   }
@@ -265,29 +263,9 @@ class _SearchPageState extends State<SearchPage> {
 
         if (!mounted || _searchEpoch != thisEpoch) break;
 
-        List<dynamic> items = [];
-        if (raw is List) {
-          items = raw;
-        } else if (raw is Map) {
-          if (raw['items'] is List) {
-            items = raw['items'];
-          } else if (raw['list'] is List) {
-            items = raw['list'];
-          } else if (raw['results'] is List) {
-            items = raw['results'];
-          } else if (raw['data'] is List) {
-            items = raw['data'];
-          } else if (raw['data'] is Map) {
-            final dataMap = raw['data'] as Map;
-            if (dataMap['items'] is List) {
-              items = dataMap['items'];
-            } else if (dataMap['list'] is List) {
-              items = dataMap['list'];
-            } else if (dataMap['results'] is List) {
-              items = dataMap['results'];
-            }
-          }
-        }
+        final List items = raw is List
+            ? raw
+            : (raw is Map && raw['items'] is List ? raw['items'] as List : const []);
 
         final List<_NormalizedSearchResult> parsed = [];
         for (final item in items) {
@@ -351,29 +329,9 @@ class _SearchPageState extends State<SearchPage> {
             .timeout(const Duration(seconds: 20));
         if (!mounted || _searchEpoch != thisEpoch) break;
 
-        List<dynamic> items = [];
-        if (raw is List) {
-          items = raw;
-        } else if (raw is Map) {
-          if (raw['items'] is List) {
-            items = raw['items'];
-          } else if (raw['list'] is List) {
-            items = raw['list'];
-          } else if (raw['results'] is List) {
-            items = raw['results'];
-          } else if (raw['data'] is List) {
-            items = raw['data'];
-          } else if (raw['data'] is Map) {
-            final dataMap = raw['data'] as Map;
-            if (dataMap['items'] is List) {
-              items = dataMap['items'];
-            } else if (dataMap['list'] is List) {
-              items = dataMap['list'];
-            } else if (dataMap['results'] is List) {
-              items = dataMap['results'];
-            }
-          }
-        }
+        final List items = raw is List
+            ? raw
+            : (raw is Map && raw['items'] is List ? raw['items'] as List : const []);
 
         final List<_NormalizedSearchResult> parsed = [];
         for (final item in items) {
@@ -1017,14 +975,22 @@ class _SearchPageState extends State<SearchPage> {
                               ),
                             ),
                           ),
-                          if (item.tag != null && item.tag!.isNotEmpty)
-                            Text(
-                              item.tag!,
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted,
-                              ),
-                            ),
+                          Builder(
+                            builder: (context) {
+                              final displayTag = item.badge ??
+                                  (item.tags != null && item.tags!.isNotEmpty ? item.tags!.first : null);
+                              if (displayTag == null || displayTag.isEmpty) {
+                                return const SizedBox.shrink();
+                              }
+                              return Text(
+                                displayTag,
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted,
+                                ),
+                              );
+                            },
+                          ),
                         ],
                       ),
                     ],
@@ -1132,7 +1098,7 @@ class _SearchPageState extends State<SearchPage> {
       '/rule_detail',
       extra: {
         'title': item.title,
-        'href': item.href,
+        'url': item.url,
         'cover': item.cover,
         'rule': item.rule,
       },

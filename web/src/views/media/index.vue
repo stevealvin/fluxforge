@@ -104,7 +104,7 @@ const handleRuleChange = async (id: number) => {
 }
 
 const handleTabChange = async (tabItem: string | { title: string; url?: string }) => {
-  const tabVal = typeof tabItem === 'object' ? (tabItem.title || tabItem.url || '') : tabItem
+  const tabVal = typeof tabItem === 'object' ? (tabItem.url || tabItem.title || '') : tabItem
   if (activeTab.value === tabVal) return
   activeTab.value = tabVal
   currentPage.value = 1
@@ -127,7 +127,7 @@ const fetchDiscovery = async (page = 1) => {
       tabs.value = res.tabs
       if (!activeTab.value && tabs.value.length > 0) {
         const first = tabs.value[0]
-        activeTab.value = typeof first === 'object' ? (first.title || first.url || '') : first
+        activeTab.value = typeof first === 'object' ? (first.url || first.title || '') : first
       }
     }
 
@@ -296,7 +296,7 @@ onMounted(() => {
             @click="handleTabChange(t)"
             class="px-2.5 py-1 rounded-lg text-[11px] font-medium whitespace-nowrap transition-all duration-200 cursor-pointer"
             :class="
-              activeTab === (typeof t === 'object' ? (t.title || t.url) : t)
+              activeTab === (typeof t === 'object' ? (t.url || t.title) : t)
                 ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-300 font-bold border border-emerald-200/50 dark:border-emerald-800/40'
                 : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-white/5'
             "

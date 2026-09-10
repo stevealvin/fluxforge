@@ -118,7 +118,7 @@ const parsedVisualData = computed(() => {
 })
 
 const handleSelectTab = (t: any) => {
-  const val = typeof t === 'object' ? (t.title || t.url || '') : String(t)
+  const val = typeof t === 'object' ? (t.url || t.title || '') : String(t)
   paramsDiscovery.value.tab = val
   paramsDiscovery.value.page = 1
   executeAction('discovery')
@@ -496,7 +496,7 @@ defineExpose({
               @click="handleSelectTab(t)"
               class="px-2 py-0.5 text-[10px] rounded-md transition-all cursor-pointer border"
               :class="
-                (paramsDiscovery.tab === (typeof t === 'object' ? (t.title || t.url) : t))
+                (paramsDiscovery.tab === (typeof t === 'object' ? (t.url || t.title) : t))
                   ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border-emerald-300 dark:border-emerald-800/50 font-bold shadow-2xs'
                   : 'bg-zinc-100 dark:bg-white/[0.06] text-zinc-600 dark:text-zinc-300 border-transparent hover:border-zinc-300 dark:hover:border-white/20'
               "
@@ -510,7 +510,9 @@ defineExpose({
             <div
               v-for="(item, idx) in parsedVisualData.items"
               :key="idx"
-              class="group flex flex-col rounded-xl overflow-hidden border border-zinc-200/70 dark:border-white/5 bg-white dark:bg-zinc-900/60 hover:shadow-md transition-all"
+              class="group flex flex-col rounded-xl overflow-hidden border border-zinc-200/70 dark:border-white/5 bg-white dark:bg-zinc-900/60 hover:shadow-md hover:border-emerald-500/40 hover:-translate-y-0.5 transition-all cursor-pointer active:scale-98"
+              @click="testDetailWithItem(item)"
+              title="点击直接测试此条目详情"
             >
               <!-- 封面图 -->
               <div class="relative aspect-[3/4] bg-zinc-100 dark:bg-zinc-800 overflow-hidden">
@@ -525,15 +527,27 @@ defineExpose({
                   无封面
                 </div>
 
+                <!-- 悬浮微渐变蒙层与提示图标 -->
+                <div class="absolute inset-0 bg-gradient-to-t from-black/75 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-end justify-between p-2">
+                  <span class="text-white text-[10px] font-bold flex items-center gap-0.5 drop-shadow-xs">
+                    <span>测试详情</span>
+                    <ChevronRight class="w-3 h-3" />
+                  </span>
+                  <span class="w-5 h-5 rounded-full bg-emerald-500 text-white flex items-center justify-center shadow-sm">
+                    <ExternalLink class="w-2.5 h-2.5" />
+                  </span>
+                </div>
+
+                <!-- 角标 Tag -->
                 <span v-if="item.badge" class="absolute top-1 right-1 px-1.5 py-0.2 rounded text-[9px] font-bold bg-black/60 text-white backdrop-blur-xs">
                   {{ item.badge }}
                 </span>
               </div>
 
-              <!-- 标题与操作栏 -->
-              <div class="p-2 space-y-1.5 flex-1 flex flex-col justify-between">
+              <!-- 标题与信息栏 -->
+              <div class="p-2 space-y-1 flex-1 flex flex-col justify-between">
                 <div>
-                  <div class="text-xs font-bold text-zinc-800 dark:text-zinc-200 line-clamp-1" :title="item.title">
+                  <div class="text-xs font-bold text-zinc-800 dark:text-zinc-200 line-clamp-1 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors" :title="item.title">
                     {{ item.title || '无标题' }}
                   </div>
                   <div v-if="item.desc" class="text-[10px] text-zinc-400 line-clamp-1 mt-0.5">
@@ -541,18 +555,8 @@ defineExpose({
                   </div>
                 </div>
 
-                <div class="pt-1.5 space-y-1 border-t border-zinc-100 dark:border-white/5">
-                  <div class="text-[9px] font-mono text-zinc-400 truncate" :title="item.url">
-                    {{ item.url || '' }}
-                  </div>
-                  <button
-                    type="button"
-                    class="w-full py-1 px-1.5 rounded-lg text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50/80 dark:bg-emerald-950/40 hover:bg-emerald-500 hover:text-white transition-all flex items-center justify-center gap-0.5 cursor-pointer shadow-2xs"
-                    @click="testDetailWithItem(item)"
-                  >
-                    <span>测试详情</span>
-                    <ChevronRight class="w-3 h-3" />
-                  </button>
+                <div v-if="item.url" class="pt-1 text-[9px] font-mono text-zinc-400 truncate border-t border-zinc-100 dark:border-white/5" :title="item.url">
+                  {{ item.url }}
                 </div>
               </div>
             </div>
@@ -687,21 +691,22 @@ defineExpose({
               <div
                 v-for="(item, idx) in parsedVisualData.raw.related"
                 :key="idx"
-                class="group rounded-xl overflow-hidden border border-zinc-200/60 dark:border-white/5 bg-white dark:bg-zinc-900/60 p-1.5 flex flex-col justify-between"
+                class="group rounded-xl overflow-hidden border border-zinc-200/60 dark:border-white/5 bg-white dark:bg-zinc-900/60 p-1.5 flex flex-col justify-between cursor-pointer hover:border-emerald-500/40 hover:-translate-y-0.5 hover:shadow-sm transition-all active:scale-98"
+                @click="testDetailWithItem(item)"
+                title="点击直接测试此推荐详情"
               >
                 <div class="aspect-[3/4] rounded-lg overflow-hidden bg-zinc-100 dark:bg-zinc-800 relative mb-1.5">
-                  <img v-if="item.cover" :src="item.cover" referrerpolicy="no-referrer" class="w-full h-full object-cover" />
+                  <img v-if="item.cover" :src="item.cover" referrerpolicy="no-referrer" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
                   <div v-else class="w-full h-full flex items-center justify-center text-zinc-400 text-[10px]">无封面</div>
                   <span v-if="item.badge" class="absolute top-1 right-1 px-1 py-0.2 rounded text-[8px] font-bold bg-black/60 text-white">{{ item.badge }}</span>
+                  <div class="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                    <span class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-500 text-white shadow-xs flex items-center gap-0.5">
+                      <span>详情</span>
+                      <ChevronRight class="w-2.5 h-2.5" />
+                    </span>
+                  </div>
                 </div>
-                <div class="text-[11px] font-bold text-zinc-800 dark:text-zinc-200 truncate mb-1" :title="item.title">{{ item.title || '无标题' }}</div>
-                <button
-                  type="button"
-                  class="w-full py-0.5 rounded text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-500 hover:text-white transition-all cursor-pointer"
-                  @click="testDetailWithItem(item)"
-                >
-                  测试详情
-                </button>
+                <div class="text-[11px] font-bold text-zinc-800 dark:text-zinc-200 truncate group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors" :title="item.title">{{ item.title || '无标题' }}</div>
               </div>
             </div>
           </div>

@@ -90,19 +90,20 @@ export default defineRule({
 - **入参**：
   ```typescript
   {
-    tab?: string;  // 当前选中的页签标识或分类相对 URL (默认为 '')
+    tab?: string;  // 当前选中的分类相对路径或标识（严格对应 tabs[i].url；冷启动无选中时默认为 ''）
     page?: number; // 当前分页页码，从 1 开始计数 (默认为 1)
   }
   ```
 - **返回值规范**：
   ```typescript
   interface DiscoveryResult {
-    tabs?: Array<{ title: string; url?: string }> | string[]; // 分类页签列表
+    tabs?: Array<{ title: string; url: string }> | string[]; // 分类页签列表（title 为 UI 显示名，url 为纯分类路径/标识，不含分页占位符）
     items: MediaItem[]; // 当前分类/页码下的媒体卡片列表
     hasMore?: boolean;  // 是否有下一页
     page?: number;      // 当前返回的页码
   }
   ```
+> **契约对称原则**：`tabs` 中定义的 `url` 属性值，在用户点击对应 Tab 时会原原本本作为 `tab` 参数传回给 `discovery({ tab, page })`。`tab` 纯粹表示分类本身的相对路径或标识（如 `/hot` 或 `/latest`），严禁包含 `{page}` 等分页占位符；具体的翻页 URL 由 `discovery` 函数体内结合 `tab` 与 `page` 原生拼装。
 
 ---
 
@@ -253,17 +254,20 @@ export interface MediaGroup {
 ```javascript
 export default defineRule({
   // 1. 发现列表
-  async discovery({ tab = '', page = 1 }) {
-    const targetUrl = tab ? `${baseUrl}${tab}?page=${page}` : `${baseUrl}/latest?page=${page}`;
+  async discovery({ tab = '/hot', page = 1 }) {
+    // 结合分类 tab 与页码 page 原生拼装目标 URL（绝无占位符，纯粹直白）
+    const targetUrl = new URL(`${tab}?page=${page}`, baseUrl).href;
     const res = await axios.get(targetUrl, { headers: { 'User-Agent': ua } });
     const $ = cheerio.load(res.data);
 
     const items = [];
     $('.media-card').each((_, el) => {
+      const href = $(el).find('a').attr('href');
+      const src = $(el).find('img').attr('src');
       items.push({
         title: $(el).find('.title').text().trim(),
-        url: $(el).find('a').attr('href') || '',
-        cover: $(el).find('img').attr('src') || '',
+        url: href ? new URL(href, baseUrl).href : '',
+        cover: src ? new URL(src, baseUrl).href : '',
         badge: $(el).find('.badge').text().trim(),
         desc: $(el).find('.desc').text().trim()
       });
@@ -286,10 +290,12 @@ export default defineRule({
 
     const items = [];
     $('.search-item').each((_, el) => {
+      const href = $(el).find('a').attr('href');
+      const src = $(el).find('img').attr('src');
       items.push({
         title: $(el).find('.name').text().trim(),
-        url: $(el).find('a').attr('href') || '',
-        cover: $(el).find('img').attr('src') || '',
+        url: href ? new URL(href, baseUrl).href : '',
+        cover: src ? new URL(src, baseUrl).href : '',
         desc: $(el).find('.status').text().trim()
       });
     });
@@ -302,16 +308,17 @@ export default defineRule({
 
   // 3. 详情信息与子资源
   async detail({ url, item }) {
-    const detailUrl = url.startsWith('http') ? url : `${baseUrl}${url}`;
-    const res = await axios.get(detailUrl);
+    // 上游发现/搜索保证传入标准绝对 URL，直接发起请求
+    const res = await axios.get(url);
     const $ = cheerio.load(res.data);
 
     // 提取选集列表 (视频模式)
     const items = [];
     $('.episode-list a').each((i, el) => {
+      const href = $(el).attr('href');
       items.push({
         title: $(el).text().trim() || `第 ${i + 1} 集`,
-        url: $(el).attr('href') || ''
+        url: href ? new URL(href, baseUrl).href : ''
       });
     });
 
@@ -319,16 +326,18 @@ export default defineRule({
     const previews = [];
     $('.stills-gallery img').each((_, el) => {
       const src = $(el).attr('src');
-      if (src) previews.push(src);
+      if (src) previews.push(new URL(src, baseUrl).href);
     });
 
     // 提取相关推荐作品
     const related = [];
     $('.recommend-list .item').each((_, el) => {
+      const href = $(el).find('a').attr('href');
+      const src = $(el).find('img').attr('src');
       related.push({
         title: $(el).find('.title').text().trim(),
-        url: $(el).find('a').attr('href') || '',
-        cover: $(el).find('img').attr('src') || ''
+        url: href ? new URL(href, baseUrl).href : '',
+        cover: src ? new URL(src, baseUrl).href : ''
       });
     });
 
@@ -347,12 +356,12 @@ export default defineRule({
 
   // 4. 直链解析或正文提取
   async parse({ url, groupName }) {
-    const playPageUrl = url.startsWith('http') ? url : `${baseUrl}${url}`;
-    const res = await axios.get(playPageUrl);
+    // 上游选集保证传入标准绝对 URL，直接发起请求
+    const res = await axios.get(url);
     
     // 正则提取内嵌播放器直链
     const match = res.data.match(/var\s+player_data\s*=\s*\{.*?"url":"([^"]+)".*?\}/);
-    const playUrl = match ? match[1] : playPageUrl;
+    const playUrl = match ? match[1] : url;
 
     return {
       playUrl,

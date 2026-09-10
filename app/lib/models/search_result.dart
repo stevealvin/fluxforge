@@ -1,65 +1,50 @@
 class SearchResult {
+  final String url;
   final String title;
-  final String? description;
   final String? cover;
-  final String? url;
-  final String? type;
-  final List<String>? tag;
+  final String? badge;
+  final String? desc;
   final String? date;
-  final String? baseUrl;
+  final List<String>? tags;
   final Map<String, dynamic>? extra;
 
   SearchResult({
+    required this.url,
     required this.title,
-    this.description,
     this.cover,
-    this.url,
-    this.type,
-    this.tag,
+    this.badge,
+    this.desc,
     this.date,
-    this.baseUrl,
+    this.tags,
     this.extra,
   });
 
-  /// 兼容旧代码对 path 的访问
-  String get path => url ?? '';
-
   factory SearchResult.fromJson(Map<String, dynamic> json) {
     List<String>? parsedTags;
-    if (json['tag'] != null) {
-      if (json['tag'] is List) {
-        parsedTags = (json['tag'] as List).map((e) => e.toString()).toList();
-      } else if (json['tag'] is String) {
-        parsedTags = [json['tag'].toString()];
-      }
-    } else if (json['tags'] != null) {
-      if (json['tags'] is List) {
-        parsedTags = (json['tags'] as List).map((e) => e.toString()).toList();
-      }
+    if (json['tags'] is List) {
+      parsedTags = (json['tags'] as List).map((e) => e.toString()).toList();
     }
 
     return SearchResult(
+      url: json['url']?.toString() ?? '',
       title: json['title']?.toString() ?? '',
-      description: json['description']?.toString(),
       cover: json['cover']?.toString(),
-      url: json['url']?.toString() ?? json['path']?.toString(),
-      type: json['type']?.toString(),
-      tag: parsedTags,
+      badge: json['badge']?.toString(),
+      desc: json['desc']?.toString(),
       date: json['date']?.toString(),
-      baseUrl: json['baseUrl']?.toString() ?? json['base_url']?.toString(),
-      extra: json['extra'] != null ? Map<String, dynamic>.from(json['extra'] as Map) : null,
+      tags: parsedTags,
+      extra: json['extra'] is Map ? Map<String, dynamic>.from(json['extra'] as Map) : null,
     );
   }
 
   Map<String, dynamic> toJson() => <String, dynamic>{
+    'url': url,
     'title': title,
-    if (description != null) 'description': description,
     if (cover != null) 'cover': cover,
-    if (url != null) 'url': url,
-    if (type != null) 'type': type,
-    if (tag != null) 'tag': tag,
+    if (badge != null) 'badge': badge,
+    if (desc != null) 'desc': desc,
     if (date != null) 'date': date,
-    if (baseUrl != null) 'baseUrl': baseUrl,
+    if (tags != null) 'tags': tags,
     if (extra != null) 'extra': extra,
   };
 

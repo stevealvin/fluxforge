@@ -3,13 +3,11 @@ export interface Rule {
   name: string;
   description: string;
   type: string;
-  discovery_code: string;
-  search_code: string;
-  detail_code: string;
-  base_url: string;
+  code: string;
+  baseUrl: string;
   author: string;
   version: string;
-  enabled: number; // SQLite 中的 0 或 1
+  enabled: number;
   created_at?: string;
   updated_at?: string;
 }

@@ -12,13 +12,13 @@ import '../../widgets/loading_indicator.dart';
 class PhotoDetailPage extends StatefulWidget {
   const PhotoDetailPage({
     super.key,
-    required this.href,
+    required this.url,
     this.title = '图片集',
     this.referer = 'https://meirentu.cc/',
   });
 
   /// 目标图集链接
-  final String href;
+  final String url;
 
   /// 图集标题
   final String title;
@@ -86,7 +86,7 @@ class _PhotoDetailPageState extends State<PhotoDetailPage> {
     });
 
     try {
-      final script = _buildExtractScript(widget.href);
+      final script = _buildExtractScript(widget.url);
       final result = await RuleEngine.execute(script);
       if (result is List && mounted) {
         setState(() {

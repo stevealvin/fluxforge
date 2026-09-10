@@ -6,6 +6,7 @@ import 'views/browser/browser_page.dart';
 import 'views/detail/media_detail_page.dart';
 import 'views/market/market_page.dart';
 import 'views/profile/card_gallery_page.dart';
+import 'views/profile/favorites_page.dart';
 import 'views/profile/settings_page.dart';
 import 'views/rules/rule_detail_page.dart';
 import 'views/rules/rule_discovery_page.dart';
@@ -99,7 +100,7 @@ final GoRouter router = GoRouter(
 
             return RuleDetailPage(
               title: extra?['title']?.toString() ?? '',
-              href: extra?['url']?.toString() ?? extra?['href']?.toString() ?? '',
+              url: extra?['url']?.toString() ?? '',
               cover: extra?['cover']?.toString() ?? '',
               rule: rule,
             );
@@ -113,7 +114,7 @@ final GoRouter router = GoRouter(
             final extra = state.extra as Map<String, dynamic>?;
             return MediaDetailPage(
               type: extra?['type']?.toString() ?? 'movie',
-              href: extra?['href']?.toString(),
+              url: extra?['url']?.toString(),
               title: extra?['title']?.toString() ?? '媒体详情',
               cover: extra?['cover']?.toString(),
             );
@@ -141,6 +142,14 @@ final GoRouter router = GoRouter(
           path: 'card_gallery',
           builder: (BuildContext context, GoRouterState state) {
             return const CardGalleryPage();
+          },
+        ),
+
+        // 我的收藏与智能追更
+        GoRoute(
+          path: 'favorites',
+          builder: (BuildContext context, GoRouterState state) {
+            return const FavoritesPage();
           },
         ),
       ],

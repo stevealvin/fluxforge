@@ -29,7 +29,7 @@ class RuleDetailPage extends StatefulWidget {
   const RuleDetailPage({
     super.key,
     required this.title,
-    required this.href,
+    required this.url,
     required this.cover,
     this.rule,
   });
@@ -38,7 +38,7 @@ class RuleDetailPage extends StatefulWidget {
   final String title;
 
   /// 详情或内容直链链接
-  final String href;
+  final String url;
 
   /// 封面海报
   final String cover;
@@ -107,7 +107,7 @@ class _RuleDetailPageState extends State<RuleDetailPage> {
     }
 
     try {
-      final result = await RuleEngine.detail(widget.rule!, widget.href);
+      final result = await RuleEngine.detail(widget.rule!, widget.url);
       _parseResult(result);
     } catch (e) {
       debugPrint('【详情解析】沙箱执行失败: $e');
@@ -767,7 +767,7 @@ class _RuleDetailPageState extends State<RuleDetailPage> {
                       MaterialPageRoute(
                         builder: (_) => RuleDetailPage(
                           rule: widget.rule!,
-                          href: url,
+                          url: url,
                           title: title,
                           cover: cover,
                         ),

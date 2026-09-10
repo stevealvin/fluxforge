@@ -68,18 +68,9 @@ class _DiscoverPageState extends State<DiscoverPage> with AutomaticKeepAliveClie
 
     try {
       final result = await RuleEngine.discovery(rule);
-      List<dynamic> parsed = [];
-      if (result is List) {
-        parsed = result;
-      } else if (result is Map) {
-        if (result['items'] is List) {
-          parsed = result['items'] as List;
-        } else if (result['list'] is List) {
-          parsed = result['list'] as List;
-        } else if (result['data'] is List) {
-          parsed = result['data'] as List;
-        }
-      }
+      final List parsed = result is List
+          ? result
+          : (result is Map && result['items'] is List ? result['items'] as List : const []);
 
       // 写入内存缓存
       _discoveryCache[cacheKey] = parsed;
@@ -204,7 +195,7 @@ class _DiscoverPageState extends State<DiscoverPage> with AutomaticKeepAliveClie
   /// 构建单个媒体海报卡片
   Widget _buildMediaCard(Map item, Rule currentRule) {
     final title = item['title']?.toString() ?? '';
-    final href = item['url']?.toString() ?? item['href']?.toString() ?? '';
+    final url = item['url']?.toString() ?? '';
     final cover = item['cover']?.toString() ?? '';
 
     return AppCard(
@@ -212,7 +203,7 @@ class _DiscoverPageState extends State<DiscoverPage> with AutomaticKeepAliveClie
       borderRadius: 12,
       onTap: () {
         context.push('/rule_detail', extra: {
-          'href': href,
+          'url': url,
           'title': title,
           'cover': cover,
           'rule': currentRule,

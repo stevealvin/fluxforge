@@ -45,6 +45,11 @@ class _BrowserPageState extends State<BrowserPage> {
     super.initState();
     _title = widget.title ?? '';
 
+    // 若开启广告拦截，启动广告与弹窗拦截引擎
+    if (widget.enableAdBlock) {
+      AdBlockEngine.instance.initialize();
+    }
+
     _controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setBackgroundColor(Colors.transparent)
@@ -73,6 +78,11 @@ class _BrowserPageState extends State<BrowserPage> {
               });
             }
             _fetchDocumentTitle();
+
+            // 尽早注入 CSS 隐藏广告占位与防弹窗脚本
+            if (widget.enableAdBlock) {
+              _controller.runJavaScript(AdBlockEngine.instance.buildElementHidingScript()).catchError((_) {});
+            }
           },
           onPageFinished: (String url) {
             if (mounted) {
@@ -81,6 +91,12 @@ class _BrowserPageState extends State<BrowserPage> {
               });
             }
             _fetchDocumentTitle();
+
+            // 页面加载完成后再次注入巩固隐藏效果
+            if (widget.enableAdBlock) {
+              _controller.runJavaScript(AdBlockEngine.instance.buildElementHidingScript()).catchError((_) {});
+            }
+
             _controller.canGoBack().then((value) {
               if (mounted) {
                 setState(() {

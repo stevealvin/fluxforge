@@ -1,6 +1,8 @@
 import 'package:get_it/get_it.dart';
 import '../core/network/api_client.dart';
 import 'app_service.dart';
+import 'backup_service.dart';
+import 'favorite_service.dart';
 import 'history_service.dart';
 import 'rule_service.dart';
 
@@ -12,6 +14,8 @@ ApiClient get apiClient => getIt<ApiClient>();
 RuleService get ruleService => getIt<RuleService>();
 HistoryService get historyService => getIt<HistoryService>();
 AppService get appService => getIt<AppService>();
+FavoriteService get favoriteService => getIt<FavoriteService>();
+BackupService get backupService => getIt<BackupService>();
 
 /// 统一注册所有核心基础设施与业务服务
 void configureDependencies() {
@@ -29,5 +33,17 @@ void configureDependencies() {
 
   if (!getIt.isRegistered<HistoryService>()) {
     getIt.registerSingleton<HistoryService>(HistoryService());
+  }
+
+  if (!getIt.isRegistered<FavoriteService>()) {
+    getIt.registerSingleton<FavoriteService>(FavoriteService());
+  }
+
+  if (!getIt.isRegistered<BackupService>()) {
+    getIt.registerSingleton<BackupService>(BackupService(
+      ruleService: ruleService,
+      favoriteService: favoriteService,
+      historyService: historyService,
+    ));
   }
 }

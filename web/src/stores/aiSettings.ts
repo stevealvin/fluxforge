@@ -531,7 +531,7 @@ export const useAiSettingsStore = defineStore('aiSettings', () => {
     - 剧照/截图预览图流: previews?: string[]
     - 相关推荐条目: related?: MediaItem[]
 4. 四大生命周期方法契约：
-    - async discovery({ tab, page = 1 }): 返回 { tabs?: Array<{ title: string, url: string }>, items: MediaItem[], hasMore?: boolean } 或 MediaItem[]
+    - async discovery({ tab, page = 1 }): tab 为当前选中页签的分类路径/标识（严格对应 tabs[i].url，纯分类路径，不含分页占位符；请求 URL 由函数内结合 tab 与 page 原生拼装）。返回 { tabs?: Array<{ title: string, url: string }>, items: MediaItem[], hasMore?: boolean } 或 MediaItem[]
     - async search({ keyword, page = 1 }): 返回 { items: MediaItem[], hasMore?: boolean } 或 MediaItem[]
     - async detail({ url, item }): 返回 { title: string, cover?: string, desc?: string, tags?: string[], author?: string, playUrl?: string, content?: string, items?: Array<{ title?: string, url: string } | string>, groups?: [{ name: string, items: [{ title: string, url: string }] }], previews?: string[], related?: MediaItem[] }
     - async parse({ url, groupName }): 返回 { playUrl?: string, content?: string, headers?: Record<string, string> }
@@ -556,8 +556,12 @@ export const useAiSettingsStore = defineStore('aiSettings', () => {
 
 【代码生成原则】：
 1. 现有代码优先：若提供了现有正常代码，保留其正常部分，仅对需要修改或修复的点进行局部精准演进；
-2. 保持健壮性：请求前检查并补全相对路径为完整绝对 URL；对提取文本进行 .trim()；对可能为空的属性使用可选链；
-3. 输出纯净：严禁编造不存在的模块导入，严禁外部未定义依赖。
+2. 保持健壮性：补全绝对 URL 统一使用 Web 标准 API \`new URL(path, baseUrl).href\`（严禁编写多层三元字符串拼接如 \`startsWith('http') ? ... : ...\` 拼接，彻底避免双斜杠与协议相对路径 Bug）；对提取文本进行 .trim()；对可能为空的属性使用可选链；
+3. 输出纯净：严禁编造不存在的模块导入，严禁外部未定义依赖；
+4. 契约优先与彻底去兼容化（严格禁止防御性代码与无意义字段猜测）：
+   - 严禁在规则代码中编写多字段回退猜测（例如严禁编写 \`desc: el.desc || el.description || el.intro\`、\`url: el.url || el.href\`、\`items: data.items || data.list || data.data\` 等兼容判断）；
+   - 所有属性必须严格按照契约标准命名并直出：描述统一为 \`desc\`（严禁 \`description\` 或 \`intro\`），子资源条目统一为 \`items\`（严禁 \`list/episodes/chapters/images\`），链接统一为 \`url\`（严禁 \`href/src/path/key\`），剧照预览为 \`previews\`，相关推荐为 \`related\`；
+   - 提取逻辑必须简洁直白，直接定位真实有效数据，输出最纯净的标准规则代码。
 
 【强制输出要求】：
 必须严格返回合法的 JSON 格式（可包含在 \`\`\`json 块中），格式字段如下：

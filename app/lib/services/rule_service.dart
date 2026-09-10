@@ -1,19 +1,28 @@
-﻿import 'dart:convert';
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import 'package:dio/dio.dart';
 import '../core/network/api_client.dart';
 import '../core/storage/app_storage.dart';
 import '../models/rule.dart';
 
 /// 规则管理与云端同步服务
-/// 负责规则增删改查、启用切换、云端市场规则拉取及 JSON/URL 动态导入
+/// 负责规则增删改查、启用切换、云端市场规则拉取、毫秒级测速与失效管理
 class RuleService {
   static const String storageKey = 'local_rules';
 
   final ValueNotifier<List<Rule>> rulesNotifier = ValueNotifier<List<Rule>>([]);
   final ApiClient _apiClient;
 
+  /// 规则测速延迟映射表 (key: ruleId/ruleName, value: 毫秒数，-1 表示超时/错误)
+  final ValueNotifier<Map<String, int>> latenciesNotifier = ValueNotifier<Map<String, int>>({});
+  
+  /// 是否正在并发测速
+  final ValueNotifier<bool> isPingingNotifier = ValueNotifier<bool>(false);
+
   List<Rule> get rules => rulesNotifier.value;
   List<Rule> get enabledRules => rules.where((r) => r.enabled).toList();
+  Map<String, int> get latencies => latenciesNotifier.value;
+  bool get isPinging => isPingingNotifier.value;
 
   RuleService({ApiClient? apiClient}) : _apiClient = apiClient ?? ApiClient() {
     init();
@@ -159,5 +168,117 @@ class RuleService {
 
     await saveRules(current);
     return count;
+  }
+
+  /// 规则唯一标识 Key 获取
+  String getRuleKey(Rule rule) => rule.id?.toString() ?? rule.name;
+
+  /// 单条规则健康巡检与毫秒级测速
+  Future<int> pingRule(Rule rule) async {
+    final key = getRuleKey(rule);
+    final url = rule.baseUrl.trim();
+    if (url.isEmpty || !url.startsWith('http')) {
+      final updated = Map<String, int>.from(latencies);
+      updated[key] = -1;
+      latenciesNotifier.value = updated;
+      return -1;
+    }
+
+    final stopwatch = Stopwatch()..start();
+    try {
+      final response = await _apiClient.dio.head(
+        url,
+        options: Options(
+          validateStatus: (_) => true,
+          sendTimeout: const Duration(seconds: 3),
+          receiveTimeout: const Duration(seconds: 3),
+        ),
+      );
+      stopwatch.stop();
+
+      // 若源站不支持 HEAD (405)，降级为短超时轻量 GET 流
+      if (response.statusCode == 405) {
+        final getWatch = Stopwatch()..start();
+        await _apiClient.dio.get(
+          url,
+          options: Options(
+            validateStatus: (_) => true,
+            sendTimeout: const Duration(seconds: 3),
+            receiveTimeout: const Duration(seconds: 3),
+            responseType: ResponseType.stream,
+          ),
+        );
+        getWatch.stop();
+        final ms = getWatch.elapsedMilliseconds;
+        final updated = Map<String, int>.from(latencies);
+        updated[key] = ms;
+        latenciesNotifier.value = updated;
+        return ms;
+      }
+
+      final ms = stopwatch.elapsedMilliseconds;
+      final updated = Map<String, int>.from(latencies);
+      updated[key] = ms;
+      latenciesNotifier.value = updated;
+      return ms;
+    } catch (_) {
+      stopwatch.stop();
+      final updated = Map<String, int>.from(latencies);
+      updated[key] = -1;
+      latenciesNotifier.value = updated;
+      return -1;
+    }
+  }
+
+  /// 并发执行所有已启用规则测速
+  Future<void> pingAllRules() async {
+    if (isPinging) return;
+    isPingingNotifier.value = true;
+    try {
+      final targetRules = rules.where((r) => r.enabled).toList();
+      if (targetRules.isEmpty) return;
+      await Future.wait(targetRules.map((r) => pingRule(r)));
+    } finally {
+      isPingingNotifier.value = false;
+    }
+  }
+
+  /// 一键禁用所有超时或失败的规则
+  Future<int> disableFailedRules() async {
+    final failedKeys = latencies.entries
+        .where((e) => e.value < 0 || e.value > 2500)
+        .map((e) => e.key)
+        .toSet();
+
+    if (failedKeys.isEmpty) return 0;
+
+    int count = 0;
+    final updated = rules.map((r) {
+      if (failedKeys.contains(getRuleKey(r)) && r.enabled) {
+        count++;
+        return r.copyWith(enabled: false);
+      }
+      return r;
+    }).toList();
+
+    await saveRules(updated);
+    return count;
+  }
+
+  /// 一键清理/删除所有超时或失效的规则
+  Future<int> removeFailedRules() async {
+    final failedKeys = latencies.entries
+        .where((e) => e.value < 0 || e.value > 2500)
+        .map((e) => e.key)
+        .toSet();
+
+    if (failedKeys.isEmpty) return 0;
+
+    final initialCount = rules.length;
+    final updated = rules.where((r) => !failedKeys.contains(getRuleKey(r))).toList();
+    final removedCount = initialCount - updated.length;
+
+    await saveRules(updated);
+    return removedCount;
   }
 }

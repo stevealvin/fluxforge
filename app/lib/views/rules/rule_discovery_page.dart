@@ -49,16 +49,8 @@ class _DiscoveryTab {
 
   factory _DiscoveryTab.fromMap(Map map) {
     return _DiscoveryTab(
-      title: map['title']?.toString() ??
-          map['name']?.toString() ??
-          map['label']?.toString() ??
-          '',
-      url: map['url']?.toString() ??
-          map['href']?.toString() ??
-          map['key']?.toString() ??
-          map['id']?.toString() ??
-          map['path']?.toString() ??
-          '',
+      title: map['title']?.toString() ?? '',
+      url: map['url']?.toString() ?? '',
     );
   }
 }
@@ -143,7 +135,7 @@ class _RuleDiscoveryPageState extends State<RuleDiscoveryPage> {
       // 严格按照固定格式解构数据
       if (result is Map) {
         // 1. 读取 items
-        final rawItems = result['items'] ?? result['list'] ?? result['data'];
+        final rawItems = result['items'];
         if (rawItems is List) {
           for (final e in rawItems) {
             if (e is Map) {
@@ -152,8 +144,8 @@ class _RuleDiscoveryPageState extends State<RuleDiscoveryPage> {
           }
         }
 
-        // 2. 读取 tabs / categories / tags
-        final rawTabs = result['tabs'] ?? result['categories'] ?? result['tags'];
+        // 2. 读取 tabs
+        final rawTabs = result['tabs'];
         if (rawTabs is List) {
           for (final t in rawTabs) {
             if (t is Map) {
@@ -216,18 +208,13 @@ class _RuleDiscoveryPageState extends State<RuleDiscoveryPage> {
     await _loadDiscovery(page: _currentPage + 1, isLoadMore: true);
   }
 
-  /// 智能解析传递给规则的分类 Tab 参数
+  /// 智能解析传递给规则的分类 Tab 参数（契约：严格优先传递机器路由载荷 url，仅当无 url 时回退 title）
   String _resolveTabParam(_DiscoveryTab? tab) {
     if (tab == null) return '';
-    // 若 url 包含模板占位符（如 {{page}} 或 {page}），必须传递 url 模板
-    if (tab.url.contains('{{page}}') || tab.url.contains('{page}')) {
+    if (tab.url.isNotEmpty) {
       return tab.url;
     }
-    // 优先采用分类名 title 契约（符合 Web 规则工作台与通用生态分类匹配规范）
-    if (tab.title.isNotEmpty) {
-      return tab.title;
-    }
-    return tab.url;
+    return tab.title;
   }
 
   /// 切换分类标签

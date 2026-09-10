@@ -182,33 +182,14 @@ export const sandboxService = {
         exported.baseUrl = currentBaseUrl;
       }
 
-      // 动作方法查找映射（兼容常用别名）
-      const actionMap: Record<string, string[]> = {
-        discovery: ['discovery', 'explore', 'latest', 'list'],
-        detail: ['detail', 'getDetail', 'info'],
-        search: ['search', 'searchList'],
-        parse: ['parse', 'watch', 'content']
-      };
-
-      const candidates = actionMap[targetAction] || [targetAction];
       let actionFn: any = null;
-
-      for (const name of candidates) {
-        if (typeof exported[name] === 'function') {
-          actionFn = exported[name];
-          break;
-        }
-        if (exported.default && typeof exported.default[name] === 'function') {
-          actionFn = exported.default[name];
-          break;
-        }
+      if (typeof exported[targetAction] === 'function') {
+        actionFn = exported[targetAction];
+      } else if (exported.default && typeof exported.default[targetAction] === 'function') {
+        actionFn = exported.default[targetAction];
       }
 
       if (actionFn) {
-        // 兼容 key 与 url 字段别名
-        if (targetParams.key && !targetParams.url) targetParams.url = targetParams.key;
-        if (targetParams.url && !targetParams.key) targetParams.key = targetParams.url;
-
         result = await actionFn.call(exported, targetParams);
       } else if (typeof exported.default === 'function') {
         result = await exported.default(targetParams);

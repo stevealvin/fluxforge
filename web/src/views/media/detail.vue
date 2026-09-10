@@ -24,7 +24,7 @@ const loadDetail = async () => {
   errorMsg.value = ''
 
   const ruleId = Number(route.query.ruleId)
-  const url = (route.query.url || route.query.key) as string
+  const url = route.query.url as string
 
   if (!ruleId || !url) {
     errorMsg.value = '缺少必要的请求参数 (ruleId 或 url)'
@@ -88,7 +88,7 @@ const goToRelated = (item: MediaItem) => {
   }
 }
 
-watch([() => route.query.url, () => route.query.key, () => route.query.ruleId], () => {
+watch([() => route.query.url, () => route.query.ruleId], () => {
   loadDetail()
 })
 

@@ -1,77 +1,85 @@
 class Episode {
-  final String name;
+  final String title;
   final String url;
+  final String? desc;
   final String? playUrl;
 
   Episode({
-    required this.name,
+    required this.title,
     required this.url,
+    this.desc,
     this.playUrl,
   });
 
   factory Episode.fromJson(Map<String, dynamic> json) => Episode(
-    name: json['title']?.toString() ?? json['name']?.toString() ?? '默认集',
+    title: json['title']?.toString() ?? '',
     url: json['url']?.toString() ?? '',
+    desc: json['desc']?.toString(),
     playUrl: json['playUrl']?.toString(),
   );
 
   Map<String, dynamic> toJson() => {
-    'name': name,
+    'title': title,
     'url': url,
+    if (desc != null) 'desc': desc,
     if (playUrl != null) 'playUrl': playUrl,
   };
 }
 
 class PlaySource {
-  final String sourceName;
-  final List<Episode> episodes;
+  final String name;
+  final List<Episode> items;
 
   PlaySource({
-    required this.sourceName,
-    required this.episodes,
+    required this.name,
+    required this.items,
   });
 
   factory PlaySource.fromJson(Map<String, dynamic> json) => PlaySource(
-    sourceName: json['name']?.toString() ?? '默认线路',
-    episodes: (json['items'] as List<dynamic>?)
+    name: json['name']?.toString() ?? '',
+    items: (json['items'] as List<dynamic>?)
             ?.map((e) => Episode.fromJson(Map<String, dynamic>.from(e as Map)))
             .toList() ??
         [],
   );
 
   Map<String, dynamic> toJson() => {
-    'sourceName': sourceName,
-    'episodes': episodes.map((e) => e.toJson()).toList(),
+    'name': name,
+    'items': items.map((e) => e.toJson()).toList(),
   };
 }
 
 class DetailResult {
   /// 标题
   final String title;
-  /// 类型（movie / tv / photo / picture / manga / novel / other）
+  /// 类型（video / picture / novel）
   final String type;
   /// 封面图
   final String cover;
   /// 描述 / 简介
-  final String? description;
+  final String? desc;
   /// 作者 / 导演
   final String? author;
-  /// 连载状态
-  final String? status;
+  /// 评分
+  final String? rating;
   /// 分类标签
   final List<String>? tags;
   /// 详情页 URL
   final String url;
-  /// 选集列表（影视/动画）
-  final List<Episode>? episodes;
-  /// 多播放线路（可选）
-  final List<PlaySource>? sources;
-  /// 图片列表（图集/漫画）
-  final List<String>? images;
+  /// 核心选集/子资源列表
+  final List<dynamic>? items;
+  /// 多播放线路 / 分卷分组
+  final List<PlaySource>? groups;
   /// 剧照 / 截图 / 插图预览流
   final List<String>? previews;
   /// 相似作品 / 相关推荐
   final List<Map<String, dynamic>>? related;
+  /// 视频播放直链
+  final String? playUrl;
+  /// 文章/小说正文
+  final String? content;
+  /// 请求头
+  final Map<String, String>? headers;
   /// 可选额外信息
   final Map<String, dynamic>? extra;
 
@@ -79,60 +87,27 @@ class DetailResult {
     required this.title,
     required this.type,
     required this.cover,
-    this.description,
+    this.desc,
     this.author,
-    this.status,
+    this.rating,
     this.tags,
     required this.url,
-    this.episodes,
-    this.sources,
-    this.images,
+    this.items,
+    this.groups,
     this.previews,
     this.related,
+    this.playUrl,
+    this.content,
+    this.headers,
     this.extra,
   });
 
   factory DetailResult.fromJson(Map<String, dynamic> json) {
-    final typeStr = (json['type']?.toString() ?? 'video').toLowerCase();
-    final rawItems = json['items'] as List<dynamic>?;
-
-    List<Episode>? parsedEpisodes;
-    if (rawItems != null &&
-        typeStr != 'photo' &&
-        typeStr != 'picture' &&
-        typeStr != 'image' &&
-        typeStr != 'gallery') {
-      parsedEpisodes = rawItems
-          .map((e) {
-            if (e is Map) {
-              final map = Map<String, dynamic>.from(e);
-              return Episode.fromJson(map);
-            } else {
-              return Episode(name: '集数', url: e.toString());
-            }
-          })
-          .toList();
-    }
-
-    List<PlaySource>? parsedSources;
-    final rawSources = json['groups'] as List<dynamic>?;
-    if (rawSources != null) {
-      parsedSources = rawSources
+    List<PlaySource>? parsedGroups;
+    final rawGroups = json['groups'] as List<dynamic>?;
+    if (rawGroups != null) {
+      parsedGroups = rawGroups
           .map((s) => PlaySource.fromJson(Map<String, dynamic>.from(s as Map)))
-          .toList();
-    }
-
-    List<String>? parsedImages;
-    if (rawItems != null &&
-        (typeStr == 'photo' || typeStr == 'picture' || typeStr == 'image' || typeStr == 'gallery')) {
-      parsedImages = rawItems
-          .map((i) {
-            if (i is Map) {
-              return (i['url'] ?? '').toString();
-            }
-            return i.toString();
-          })
-          .where((s) => s.isNotEmpty)
           .toList();
     }
 
@@ -153,25 +128,34 @@ class DetailResult {
     }
 
     List<String>? parsedTags;
-    if (json['tags'] != null) {
+    if (json['tags'] is List) {
       parsedTags = (json['tags'] as List<dynamic>).map((t) => t.toString()).toList();
+    }
+
+    Map<String, String>? parsedHeaders;
+    if (json['headers'] is Map) {
+      parsedHeaders = Map<String, String>.from(
+        (json['headers'] as Map).map((k, v) => MapEntry(k.toString(), v.toString())),
+      );
     }
 
     return DetailResult(
       title: json['title']?.toString() ?? '',
       type: json['type']?.toString() ?? 'video',
       cover: json['cover']?.toString() ?? '',
-      description: json['description']?.toString(),
+      desc: json['desc']?.toString(),
       author: json['author']?.toString(),
-      status: json['status']?.toString(),
+      rating: json['rating']?.toString(),
       tags: parsedTags,
       url: json['url']?.toString() ?? '',
-      episodes: parsedEpisodes,
-      sources: parsedSources,
-      images: parsedImages,
+      items: json['items'] as List<dynamic>?,
+      groups: parsedGroups,
       previews: parsedPreviews,
       related: parsedRelated,
-      extra: json['extra'] != null ? Map<String, dynamic>.from(json['extra'] as Map) : null,
+      playUrl: json['playUrl']?.toString(),
+      content: json['content']?.toString(),
+      headers: parsedHeaders,
+      extra: json['extra'] is Map ? Map<String, dynamic>.from(json['extra'] as Map) : null,
     );
   }
 
@@ -179,16 +163,18 @@ class DetailResult {
     'title': title,
     'type': type,
     'cover': cover,
-    if (description != null) 'description': description,
+    if (desc != null) 'desc': desc,
     if (author != null) 'author': author,
-    if (status != null) 'status': status,
+    if (rating != null) 'rating': rating,
     if (tags != null) 'tags': tags,
     'url': url,
-    if (episodes != null) 'episodes': episodes!.map((e) => e.toJson()).toList(),
-    if (sources != null) 'sources': sources!.map((s) => s.toJson()).toList(),
-    if (images != null) 'images': images,
+    if (items != null) 'items': items,
+    if (groups != null) 'groups': groups!.map((s) => s.toJson()).toList(),
     if (previews != null) 'previews': previews,
     if (related != null) 'related': related,
+    if (playUrl != null) 'playUrl': playUrl,
+    if (content != null) 'content': content,
+    if (headers != null) 'headers': headers,
     if (extra != null) 'extra': extra,
   };
 }

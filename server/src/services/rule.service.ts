@@ -9,7 +9,6 @@ export interface RuleEntity {
   author?: string;
   description?: string;
   baseUrl?: string;
-  base_url?: string;
   code: string;
   enabled?: number | boolean;
   created_at?: string;
@@ -83,7 +82,7 @@ export const ruleService = {
       code: targetRule.code,
       action,
       params,
-      baseUrl: targetRule.baseUrl || targetRule.base_url
+      baseUrl: targetRule.baseUrl
     });
 
     return result;
