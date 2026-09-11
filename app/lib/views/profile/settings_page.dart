@@ -512,13 +512,37 @@ class _SettingsPageState extends State<SettingsPage> {
           Divider(height: 1, indent: 56, color: isDark ? AppColors.darkBorder : AppColors.lightBorder),
           SwitchListTile(
             secondary: const Icon(LucideIcons.zap, color: Colors.amber, size: 20),
-            title: const Text('长按 2.0X 倍速与触觉震动', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-            subtitle: const Text('长按屏幕瞬时倍速并触发原生轻微物理震动', style: TextStyle(fontSize: 11)),
+            title: const Text('长按瞬时加速与触觉震动', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+            subtitle: Text(
+              '长按屏幕以 ${settings.longPressSpeed.toStringAsFixed(1)}x 加速播放，并触发原生轻微物理震动',
+              style: const TextStyle(fontSize: 11),
+            ),
             value: settings.enableLongPress2x,
             activeTrackColor: AppColors.primary,
             onChanged: (val) {
               appService.updateSettings(settings.copyWith(enableLongPress2x: val));
             },
+          ),
+          Divider(height: 1, indent: 56, color: isDark ? AppColors.darkBorder : AppColors.lightBorder),
+          // 长按加速倍率 (2.0x / 3.0x / 5.0x)
+          ListTile(
+            leading: const Icon(LucideIcons.gauge, color: Colors.amber, size: 20),
+            title: const Text('长按加速倍率', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+            subtitle: const Text('长按屏幕时瞬时提升到的播放倍速', style: TextStyle(fontSize: 11)),
+            trailing: DropdownButton<double>(
+              value: settings.longPressSpeed,
+              underline: const SizedBox.shrink(),
+              items: const [
+                DropdownMenuItem(value: 2.0, child: Text('2.0x', style: TextStyle(fontSize: 12))),
+                DropdownMenuItem(value: 3.0, child: Text('3.0x', style: TextStyle(fontSize: 12))),
+                DropdownMenuItem(value: 5.0, child: Text('5.0x', style: TextStyle(fontSize: 12))),
+              ],
+              onChanged: (val) {
+                if (val != null) {
+                  appService.updateSettings(settings.copyWith(longPressSpeed: val));
+                }
+              },
+            ),
           ),
           Divider(height: 1, indent: 56, color: isDark ? AppColors.darkBorder : AppColors.lightBorder),
           ListTile(
@@ -894,57 +918,40 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
             ),
           ),
-          ListTile(
-            leading: const Icon(LucideIcons.fileText, color: Colors.blueAccent, size: 20),
-            title: const Text('沙箱运行日志', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-            subtitle: const Text('查看 QuickJS 规则解析与网络请求报错堆栈', style: TextStyle(fontSize: 11)),
-            trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 14),
-            onTap: () => _showLogsDialog(context, isDark),
-          ),
-        ],
-      ),
-    );
-  }
+          ValueListenableBuilder<List<LogEntry>>(
+            valueListenable: AppLogger.logsNotifier,
+            builder: (context, logs, _) {
+              final errorCount = logs.where((l) => l.level == 'ERROR').length;
+              final subtitleText = logs.isEmpty
+                  ? '查看 QuickJS 规则解析、console.log 与网络报错'
+                  : '已记录 ${logs.length} 条日志${errorCount > 0 ? " (含 $errorCount 项异常)" : ""}';
 
-  /// 查看沙箱日志弹窗
-  void _showLogsDialog(BuildContext context, bool isDark) {
-    final logs = AppLogger.getLogs();
-
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('沙箱运行日志'),
-        content: SizedBox(
-          width: double.maxFinite,
-          height: 320,
-          child: logs.isEmpty
-              ? const Center(child: Text('当前无错误日志记录，系统运行良好'))
-              : ListView.builder(
-                  itemCount: logs.length,
-                  itemBuilder: (context, index) {
-                    final log = logs[index];
-                    return Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 4),
-                      child: Text(
-                        '${log.time.toIso8601String().substring(11, 19)} [${log.level}] ${log.message}',
-                        style: const TextStyle(fontSize: 11, fontFamily: 'monospace'),
+              return ListTile(
+                leading: const Icon(LucideIcons.fileText, color: Colors.blueAccent, size: 20),
+                title: const Text('沙箱与系统日志中心', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                subtitle: Text(subtitleText, style: const TextStyle(fontSize: 11)),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (errorCount > 0)
+                      Container(
+                        margin: const EdgeInsets.only(right: 6),
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: Colors.redAccent.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          '$errorCount ERROR',
+                          style: const TextStyle(color: Colors.redAccent, fontSize: 9, fontWeight: FontWeight.bold),
+                        ),
                       ),
-                    );
-                  },
+                    const Icon(Icons.arrow_forward_ios_rounded, size: 14),
+                  ],
                 ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              AppLogger.clear();
-              Navigator.pop(ctx);
+                onTap: () => context.push('/logs'),
+              );
             },
-            child: const Text('清空日志'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: AppColors.primary),
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('关闭'),
           ),
         ],
       ),

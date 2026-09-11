@@ -4,7 +4,6 @@ import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../core/theme/app_colors.dart';
-import '../../core/utils/app_logger.dart';
 import '../../models/rule.dart';
 import '../../services/di.dart';
 import '../../services/favorite_service.dart';
@@ -217,50 +216,6 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 
-  /// 查看运行日志弹窗
-  void _showLogsDialog(BuildContext context) {
-    final logs = AppLogger.getLogs();
-
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('沙箱运行日志'),
-        content: SizedBox(
-          width: double.maxFinite,
-          height: 300,
-          child: logs.isEmpty
-              ? const Center(child: Text('当前无报错记录，系统运行良好'))
-              : ListView.builder(
-                  itemCount: logs.length,
-                  itemBuilder: (context, index) {
-                    final log = logs[index];
-                    return Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 4),
-                      child: Text(
-                        '${log.time.toIso8601String().substring(11, 19)} [${log.level}] ${log.message}',
-                        style: const TextStyle(fontSize: 11, fontFamily: 'monospace'),
-                      ),
-                    );
-                  },
-                ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              AppLogger.clear();
-              Navigator.pop(ctx);
-            },
-            child: const Text('清空日志'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: AppColors.primary),
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('关闭'),
-          ),
-        ],
-      ),
-    );
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -684,7 +639,7 @@ class _ProfilePageState extends State<ProfilePage> {
     return Column(
       children: [
         GestureDetector(
-          onTap: () => _showLogsDialog(context),
+          onTap: () => context.push('/logs'),
           child: Text(
             '查看沙箱运行诊断日志',
             style: TextStyle(

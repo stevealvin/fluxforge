@@ -20,6 +20,7 @@ class AppSettings {
   // 1. 播放视听偏好
   final bool enablePlayerGestures;
   final bool enableLongPress2x;
+  final double longPressSpeed; // 长按瞬时加速倍率：2.0 | 3.0 | 5.0
   final double defaultPlaybackSpeed;
   final ResumeBehavior resumeBehavior;
   final bool cellularDataWarning;
@@ -45,6 +46,7 @@ class AppSettings {
   const AppSettings({
     this.enablePlayerGestures = true,
     this.enableLongPress2x = true,
+    this.longPressSpeed = 3.0,
     this.defaultPlaybackSpeed = 1.0,
     this.resumeBehavior = ResumeBehavior.prompt,
     this.cellularDataWarning = false,
@@ -63,6 +65,7 @@ class AppSettings {
   AppSettings copyWith({
     bool? enablePlayerGestures,
     bool? enableLongPress2x,
+    double? longPressSpeed,
     double? defaultPlaybackSpeed,
     ResumeBehavior? resumeBehavior,
     bool? cellularDataWarning,
@@ -80,6 +83,7 @@ class AppSettings {
     return AppSettings(
       enablePlayerGestures: enablePlayerGestures ?? this.enablePlayerGestures,
       enableLongPress2x: enableLongPress2x ?? this.enableLongPress2x,
+      longPressSpeed: longPressSpeed ?? this.longPressSpeed,
       defaultPlaybackSpeed: defaultPlaybackSpeed ?? this.defaultPlaybackSpeed,
       resumeBehavior: resumeBehavior ?? this.resumeBehavior,
       cellularDataWarning: cellularDataWarning ?? this.cellularDataWarning,
@@ -133,6 +137,7 @@ class AppService {
     try {
       final gestures = await AppStorage.getBool('pref_player_gestures') ?? true;
       final longPress2x = await AppStorage.getBool('pref_long_press_2x') ?? true;
+      final longPressSpeed = await AppStorage.getDouble('pref_long_press_speed') ?? 3.0;
       final speed = await AppStorage.getDouble('pref_default_speed') ?? 1.0;
       final resumeStr = await AppStorage.getString('pref_resume_behavior') ?? 'prompt';
       final cellular = await AppStorage.getBool('pref_cellular_warning') ?? false;
@@ -162,6 +167,7 @@ class AppService {
       settingsNotifier.value = AppSettings(
         enablePlayerGestures: gestures,
         enableLongPress2x: longPress2x,
+        longPressSpeed: longPressSpeed,
         defaultPlaybackSpeed: speed,
         resumeBehavior: resume,
         cellularDataWarning: cellular,
@@ -188,6 +194,7 @@ class AppService {
 
     await AppStorage.setBool('pref_player_gestures', newSettings.enablePlayerGestures);
     await AppStorage.setBool('pref_long_press_2x', newSettings.enableLongPress2x);
+    await AppStorage.setDouble('pref_long_press_speed', newSettings.longPressSpeed);
     await AppStorage.setDouble('pref_default_speed', newSettings.defaultPlaybackSpeed);
     await AppStorage.setString('pref_resume_behavior', newSettings.resumeBehavior.name);
     await AppStorage.setBool('pref_cellular_warning', newSettings.cellularDataWarning);

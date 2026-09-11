@@ -26,6 +26,7 @@ dist-ssr/
 *.class
 *.pyc
 .agents/
+.workbuddy/
 .env
 .env.*
 !.env.example

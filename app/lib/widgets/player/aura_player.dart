@@ -7,6 +7,7 @@ import 'package:video_player/video_player.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../../core/theme/app_colors.dart';
+import '../../services/di.dart';
 import '../../widgets/loading_indicator.dart';
 
 /// 现代视频播放器核心引擎 (AuraPlayer)
@@ -107,9 +108,15 @@ class _AuraPlayerState extends State<AuraPlayer>
   Duration _seekStartPos = Duration.zero;
   int _seekDeltaSeconds = 0;
 
-  // 长按 2.0x 瞬时倍速
+  // 长按瞬时加速 (倍率与开关均实时读取全局播放偏好)
   bool _isFastForwarding = false;
   double _normalSpeed = 1.0;
+
+  /// 长按瞬时加速是否启用
+  bool get _longPressEnabled => appService.settings.enableLongPress2x;
+
+  /// 长按瞬时加速倍率 (可选 2.0 / 3.0 / 5.0)
+  double get _longPressSpeed => appService.settings.longPressSpeed;
 
   // 断点续播提示胶囊
   bool _showResumeTip = false;
@@ -435,8 +442,8 @@ class _AuraPlayerState extends State<AuraPlayer>
         // 8. 断点续播提醒气泡
         if (_showResumeTip) _buildResumeTip(),
 
-        // 9. 现代毛玻璃 UI 控制栏 (顶栏、底栏、锁屏)
-        if (_showControls && _isInitialized) _buildControlOverlays(),
+        // 9. 现代毛玻璃 UI 控制栏 (顶栏、底栏、锁屏) — 常驻渲染，由内部动画驱动显隐
+        if (_isInitialized) _buildControlOverlays(),
 
         // 10. 锁屏浮动小按钮 (始终在控制层或者单锁显隐)
         if (_isInitialized) _buildLockButton(),
@@ -516,16 +523,19 @@ class _AuraPlayerState extends State<AuraPlayer>
             }
             _startControlsTimer();
           },
-          // 长按：2.0X 瞬时倍速
+          // 长按：瞬时加速 (倍率可在「设置 → 播放与视听偏好」中配置)
           onLongPressStart: (_) {
+            if (!_longPressEnabled) return; // 用户已关闭长按加速
             HapticFeedback.lightImpact(); // 原生轻触觉震动反馈
             _normalSpeed = _controller?.value.playbackSpeed ?? 1.0;
-            _controller?.setPlaybackSpeed(2.0);
+            _controller?.setPlaybackSpeed(_longPressSpeed);
             setState(() {
               _isFastForwarding = true;
             });
           },
           onLongPressEnd: (_) {
+            // 未真正进入加速态时无需恢复原速
+            if (!_isFastForwarding) return;
             _controller?.setPlaybackSpeed(_normalSpeed);
             setState(() {
               _isFastForwarding = false;
@@ -710,44 +720,53 @@ class _AuraPlayerState extends State<AuraPlayer>
     );
   }
 
-  /// 居中微拟态快进/快退胶囊 (优化尺寸，精致紧凑横向微胶囊设计)
+  /// 居中微拟态快进/快退胶囊 (双行紧凑布局：上行方向+秒数，下行时间进度，主次分明)
   Widget _buildSeekingCapsule() {
     final isForward = _seekDeltaSeconds >= 0;
     final totalDuration = _controller?.value.duration ?? Duration.zero;
+    // 快进 = 翡翠绿，快退 = 琥珀金 (与 WebView 端 HUD 配色保持一致)
+    final accentColor = isForward ? const Color(0xFF10B981) : const Color(0xFFF59E0B);
 
     return Center(
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(16),
         child: BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 9),
             decoration: BoxDecoration(
               color: Colors.black.withValues(alpha: 0.65),
-              borderRadius: BorderRadius.circular(20),
+              borderRadius: BorderRadius.circular(16),
               border: Border.all(
                 color: Colors.white.withValues(alpha: 0.14),
                 width: 0.6,
               ),
             ),
-            child: Row(
+            child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(
-                  isForward ? LucideIcons.fastForward : LucideIcons.rewind,
-                  color: isForward ? const Color(0xFF10B981) : const Color(0xFFF59E0B),
-                  size: 15,
+                // 第一行：方向图标 + 快进/快退秒数
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      isForward ? LucideIcons.fastForward : LucideIcons.rewind,
+                      color: accentColor,
+                      size: 15,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      '${isForward ? '+' : ''}${_seekDeltaSeconds}s',
+                      style: TextStyle(
+                        color: accentColor,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 6),
-                Text(
-                  '${isForward ? '+' : ''}${_seekDeltaSeconds}s',
-                  style: TextStyle(
-                    color: isForward ? const Color(0xFF10B981) : const Color(0xFFF59E0B),
-                    fontSize: 13,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(width: 8),
+                const SizedBox(height: 3),
+                // 第二行：目标时间 / 视频总时长
                 Text(
                   '${_formatDuration(_seekTarget)} / ${_formatDuration(totalDuration)}',
                   style: const TextStyle(
@@ -765,7 +784,7 @@ class _AuraPlayerState extends State<AuraPlayer>
   }
 
 
-  /// 长按 2.0x 顶部微胶囊
+  /// 长按瞬时加速顶部微胶囊
   Widget _buildFastForwardCapsule() {
     return Positioned(
       top: 48,
@@ -777,14 +796,14 @@ class _AuraPlayerState extends State<AuraPlayer>
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
               color: Colors.black.withValues(alpha: 0.75),
-              child: const Row(
+              child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(LucideIcons.fastForward, color: AppColors.primary, size: 16),
-                  SizedBox(width: 6),
+                  const Icon(LucideIcons.fastForward, color: AppColors.primary, size: 16),
+                  const SizedBox(width: 6),
                   Text(
-                    '2.0X 快速播放中',
-                    style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
+                    '${_longPressSpeed.toStringAsFixed(1)}X 快速播放中',
+                    style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
                   ),
                 ],
               ),
@@ -895,22 +914,61 @@ class _AuraPlayerState extends State<AuraPlayer>
   }
 
 
-  /// 现代毛玻璃控制顶栏与底栏
+  /// 现代毛玻璃控制顶栏与底栏 (带丝滑滑入滑出动画)
+  ///
+  /// 显隐不再直接增删节点，而是常驻渲染后由 [AnimatedSlide] + [AnimatedOpacity] 驱动：
+  /// 顶部栏向上滑出、底部栏向下滑出，避免控制条"硬闪"造成的割裂感。
+  /// 锁屏同样交由 [_showControls] 驱动 (上锁必将其置为 false)，因此锁屏/解锁也有过渡动画。
   Widget _buildControlOverlays() {
-    if (_isLocked) return const SizedBox.shrink();
 
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    // 顶部控制条仅在 全屏 / 有返回回调 / 有扩展操作 时参与渲染
+    final showTopBar = _isFullScreen || widget.onBack != null || widget.extraActions != null;
+
+    return Stack(
       children: [
-        // 顶部控制条 (返回、标题、扩展插槽) - 全屏或有返回回调/扩展操作时渲染
-        if (_isFullScreen || widget.onBack != null || widget.extraActions != null)
-          _buildTopBar()
-        else
-          const SizedBox.shrink(),
+        // 顶部控制条：隐藏时向上滑出屏幕并淡出
+        if (showTopBar)
+          Align(
+            alignment: Alignment.topCenter,
+            child: _buildAnimatedBar(
+              slideOffset: const Offset(0, -1),
+              child: _buildTopBar(),
+            ),
+          ),
 
-        // 底部控制条 (播放/暂停、流光进度条、时长、倍速、全屏)
-        _buildBottomBar(),
+        // 底部控制条：隐藏时向下滑出屏幕并淡出
+        Align(
+          alignment: Alignment.bottomCenter,
+          child: _buildAnimatedBar(
+            slideOffset: const Offset(0, 1),
+            child: _buildBottomBar(),
+          ),
+        ),
       ],
+    );
+  }
+
+  /// 通用控制条显隐动画：位移与淡出同步播放，曲线统一
+  ///
+  /// [slideOffset] 为隐藏时的相对位移方向（顶部栏传 (0, -1)，底部栏传 (0, 1)）；
+  /// 隐藏状态下同时屏蔽指针事件，避免点击到已透明但仍在树中的控件。
+  Widget _buildAnimatedBar({
+    required Offset slideOffset,
+    required Widget child,
+  }) {
+    return IgnorePointer(
+      ignoring: !_showControls,
+      child: AnimatedSlide(
+        offset: _showControls ? Offset.zero : slideOffset,
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOutCubic,
+        child: AnimatedOpacity(
+          opacity: _showControls ? 1.0 : 0.0,
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
+          child: child,
+        ),
+      ),
     );
   }
 
@@ -964,19 +1022,22 @@ class _AuraPlayerState extends State<AuraPlayer>
     );
   }
 
+  /// 当前播放位置 (拖拽中优先取拖拽值，保证进度条跟手不回弹)
+  Duration get _currentPosition {
+    if (_isDraggingProgress) {
+      final totalMs = _controller?.value.duration.inMilliseconds ?? 1;
+      return Duration(milliseconds: (_dragProgressValue * totalMs).round());
+    }
+    return _controller?.value.position ?? Duration.zero;
+  }
+
   /// 底部控制条
+  ///
+  /// 采用两套布局分支：
+  /// - 全屏（大屏）：进度条独占一行、按钮独占一行，操作区舒展、点击命中率高；
+  /// - 小屏（非全屏）：进度条与播放/时间/倍速/全屏压在**同一条水平线**上，
+  ///   压缩控制条整体高度，避免在低矮的竖屏播放器里遮挡画面。
   Widget _buildBottomBar() {
-    final value = _controller?.value;
-    final isPlaying = value?.isPlaying ?? false;
-    final position = _isDraggingProgress
-        ? Duration(milliseconds: (_dragProgressValue * (value?.duration.inMilliseconds ?? 1)).round())
-        : (value?.position ?? Duration.zero);
-    final duration = value?.duration ?? Duration.zero;
-
-    final progressRatio = duration.inMilliseconds > 0
-        ? (position.inMilliseconds / duration.inMilliseconds).clamp(0.0, 1.0)
-        : 0.0;
-
     return Container(
       decoration: const BoxDecoration(
         gradient: LinearGradient(
@@ -988,130 +1049,177 @@ class _AuraPlayerState extends State<AuraPlayer>
       padding: EdgeInsets.only(
         left: 16,
         right: 16,
-        bottom: _isFullScreen ? 24 : 12,
-        top: 16,
+        bottom: _isFullScreen ? 24 : 8,
+        top: _isFullScreen ? 16 : 4,
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // 极光翡翠流光进度条 (Slider 改造)
-          Row(
-            children: [
-              Text(
-                _formatDuration(position),
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 11,
-                  fontFeatures: [FontFeature.tabularFigures()],
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: SliderTheme(
-                  data: SliderTheme.of(context).copyWith(
-                    trackHeight: 3,
-                    thumbShape: RoundSliderThumbShape(
-                      enabledThumbRadius: _isDraggingProgress ? 7 : 5,
-                    ),
-                    overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
-                    activeTrackColor: AppColors.primary,
-                    inactiveTrackColor: Colors.white24,
-                    thumbColor: AppColors.primary,
-                    overlayColor: AppColors.primary.withValues(alpha: 0.2),
-                  ),
-                  child: Slider(
-                    value: progressRatio,
-                    onChanged: (val) {
-                      setState(() {
-                        _isDraggingProgress = true;
-                        _dragProgressValue = val;
-                      });
-                      _controlsTimer?.cancel();
-                    },
-                    onChangeEnd: (val) {
-                      if (_controller != null && duration.inMilliseconds > 0) {
-                        final targetMillis = (val * duration.inMilliseconds).round();
-                        _controller!.seekTo(Duration(milliseconds: targetMillis));
-                      }
-                      setState(() {
-                        _isDraggingProgress = false;
-                      });
-                      _startControlsTimer();
-                    },
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                _formatDuration(duration),
-                style: const TextStyle(
-                  color: Colors.white70,
-                  fontSize: 11,
-                  fontFeatures: [FontFeature.tabularFigures()],
-                ),
-              ),
-            ],
-          ),
+      child: _isFullScreen ? _buildWideControlLayout() : _buildCompactControlLayout(),
+    );
+  }
 
-          const SizedBox(height: 4),
+  /// 全屏布局：上行「当前时间 + 进度条 + 总时长」，下行「播放 … 倍速 全屏」
+  Widget _buildWideControlLayout() {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
+          children: [
+            _buildTimeText(_formatDuration(_currentPosition), primary: true),
+            const SizedBox(width: 8),
+            Expanded(child: _buildProgressSlider()),
+            const SizedBox(width: 8),
+            _buildTimeText(_formatDuration(_controller?.value.duration ?? Duration.zero)),
+          ],
+        ),
+        const SizedBox(height: 4),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            _buildPlayPauseButton(),
+            Row(
+              children: [
+                _buildSpeedPill(),
+                const SizedBox(width: 8),
+                _buildFullscreenButton(),
+              ],
+            ),
+          ],
+        ),
+      ],
+    );
+  }
 
-          // 核心控制按钮行
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              // 播放/暂停
-              IconButton(
-                icon: Icon(
-                  isPlaying ? LucideIcons.pause : LucideIcons.play,
-                  color: Colors.white,
-                  size: 22,
-                ),
-                onPressed: () {
-                  if (isPlaying) {
-                    _controller?.pause();
-                  } else {
-                    _controller?.play();
-                  }
-                  _startControlsTimer();
-                },
-              ),
+  /// 小屏紧凑布局：播放、进度条、时间、倍速、全屏全部对齐在同一条水平线上
+  Widget _buildCompactControlLayout() {
+    final duration = _controller?.value.duration ?? Duration.zero;
+    return Row(
+      children: [
+        _buildPlayPauseButton(compact: true),
+        const SizedBox(width: 2),
+        Expanded(child: _buildProgressSlider()),
+        const SizedBox(width: 4),
+        // 小屏空间紧张，起止时间合并为「当前/总长」单段文本，省下一处间距
+        _buildTimeText(
+          '${_formatDuration(_currentPosition)}/${_formatDuration(duration)}',
+          primary: true,
+        ),
+        const SizedBox(width: 4),
+        _buildSpeedPill(compact: true),
+        _buildFullscreenButton(compact: true),
+      ],
+    );
+  }
 
-              Row(
-                children: [
-                  // 倍速选择药丸
-                  GestureDetector(
-                    onTap: _showPlaybackSpeedDialog,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Text(
-                        '${_controller?.value.playbackSpeed ?? 1.0}x',
-                        style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600),
-                      ),
-                    ),
-                  ),
-
-                  const SizedBox(width: 8),
-
-                  // 全屏/退出全屏
-                  IconButton(
-                    icon: Icon(
-                      _isFullScreen ? LucideIcons.minimize : LucideIcons.maximize,
-                      color: Colors.white,
-                      size: 20,
-                    ),
-                    onPressed: _toggleFullScreen,
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ],
+  /// 等宽数字时间文本 (tabularFigures 保证秒数变化时宽度不抖动)
+  Widget _buildTimeText(String text, {bool primary = false}) {
+    return Text(
+      text,
+      style: TextStyle(
+        color: primary ? Colors.white : Colors.white70,
+        fontSize: 11,
+        fontFeatures: const [FontFeature.tabularFigures()],
+        fontWeight: primary ? FontWeight.w600 : FontWeight.w400,
       ),
+    );
+  }
+
+  /// 极光翡翠流光进度条 (Slider 改造)
+  Widget _buildProgressSlider() {
+    final totalMs = _controller?.value.duration.inMilliseconds ?? 0;
+    final progressRatio = totalMs > 0
+        ? (_currentPosition.inMilliseconds / totalMs).clamp(0.0, 1.0)
+        : 0.0;
+
+    return SliderTheme(
+      data: SliderTheme.of(context).copyWith(
+        trackHeight: 3,
+        thumbShape: RoundSliderThumbShape(
+          enabledThumbRadius: _isDraggingProgress ? 7 : 5,
+        ),
+        overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
+        activeTrackColor: AppColors.primary,
+        inactiveTrackColor: Colors.white24,
+        thumbColor: AppColors.primary,
+        overlayColor: AppColors.primary.withValues(alpha: 0.2),
+      ),
+      child: Slider(
+        value: progressRatio,
+        onChanged: (val) {
+          setState(() {
+            _isDraggingProgress = true;
+            _dragProgressValue = val;
+          });
+          _controlsTimer?.cancel();
+        },
+        onChangeEnd: (val) {
+          if (_controller != null && totalMs > 0) {
+            _controller!.seekTo(Duration(milliseconds: (val * totalMs).round()));
+          }
+          setState(() {
+            _isDraggingProgress = false;
+          });
+          _startControlsTimer();
+        },
+      ),
+    );
+  }
+
+  /// 播放 / 暂停按钮
+  Widget _buildPlayPauseButton({bool compact = false}) {
+    final isPlaying = _controller?.value.isPlaying ?? false;
+    return IconButton(
+      icon: Icon(
+        isPlaying ? LucideIcons.pause : LucideIcons.play,
+        color: Colors.white,
+        size: compact ? 20 : 22,
+      ),
+      padding: EdgeInsets.zero,
+      constraints: BoxConstraints.tightFor(
+        width: compact ? 36 : 44,
+        height: compact ? 36 : 44,
+      ),
+      onPressed: () {
+        if (isPlaying) {
+          _controller?.pause();
+        } else {
+          _controller?.play();
+        }
+        _startControlsTimer();
+      },
+    );
+  }
+
+  /// 倍速选择药丸
+  Widget _buildSpeedPill({bool compact = false}) {
+    return GestureDetector(
+      onTap: _showPlaybackSpeedDialog,
+      child: Container(
+        padding: EdgeInsets.symmetric(horizontal: compact ? 8 : 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.15),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Text(
+          '${_controller?.value.playbackSpeed ?? 1.0}x',
+          style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600),
+        ),
+      ),
+    );
+  }
+
+  /// 全屏 / 退出全屏按钮
+  Widget _buildFullscreenButton({bool compact = false}) {
+    return IconButton(
+      icon: Icon(
+        _isFullScreen ? LucideIcons.minimize : LucideIcons.maximize,
+        color: Colors.white,
+        size: compact ? 18 : 20,
+      ),
+      padding: EdgeInsets.zero,
+      constraints: BoxConstraints.tightFor(
+        width: compact ? 36 : 44,
+        height: compact ? 36 : 44,
+      ),
+      onPressed: _toggleFullScreen,
     );
   }
 

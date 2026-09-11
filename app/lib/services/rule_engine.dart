@@ -3,15 +3,23 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_js/flutter_js.dart';
+import '../core/utils/app_logger.dart';
 import '../models/rule.dart';
 import 'app_service.dart';
 import 'di.dart';
 
 /// FluxForge 本地高性能 JavaScript 沙箱执行引擎
 /// 负责注入 axios、cheerio 与 Node.js 兼容环境，调度执行规则的 discovery、search、detail、parse 生命周期
+/// 内置 console.log 拦截器，打通 JS 沙箱与 Dart 端的 AppLogger 全链路日志诊断
 class RuleEngine {
   static final JavascriptRuntime _jsRuntime = getJavascriptRuntime();
   static bool _initialized = false;
+
+  /// 缓存初始化 Future，避免并发调用时重复执行初始化流程
+  static Future<void>? _initFuture;
+
+  /// 当前正在沙箱中执行的规则名称（用于关联 console.log 打印来源）
+  static String _currentRunningRuleName = 'Sandbox';
 
   /// 获取当前配置的沙箱超时秒数（优先读取 AppSettings，降级为默认 30 秒）
   static int get defaultTimeoutSeconds {
@@ -31,14 +39,20 @@ class RuleEngine {
   }
 
   /// 初始化运行环境与注入核心依赖
+  static Future<void> init() {
+    if (_initialized) return Future<void>.value();
+    // 并发调用共享同一次初始化流程，避免重复执行 evaluate 加载运行库
+    return _initFuture ??= _doInit();
+  }
 
-  static Future<void> init() async {
-    if (_initialized) return;
+  /// 实际初始化实现（内部方法，请统一通过 init() 调用以复用并发任务）
+  static Future<void> _doInit() async {
     try {
       final defaultTimeout = defaultTimeoutSeconds;
       final defaultUa = currentUserAgent;
       final encodedUa = jsonEncode(defaultUa);
 
+      // 1. 基础全局环境注入
       _jsRuntime.evaluate('''
         var window = global = globalThis;
         var ua = $encodedUa;
@@ -51,10 +65,18 @@ class RuleEngine {
         };
       ''');
 
-      // 加载内置 JS 运行库 (标准 Web API polyfill, axios 与 cheerio)
+      // 2. 注入增强型 console 代理并注册 ConsoleLog 跨桥监听
+      _setupEnhancedConsole();
+
+      // 3. 加载内置 JS 运行库 (标准 Web API polyfill, axios 与 cheerio)
+      // 注意：evaluate 是主 isolate 上的同步 FFI 调用，cheerio.js 体积约 380KB，
+      // 连续加载会长时间占用主线程导致 UI 掉帧，因此每个库之间主动让出一次事件循环。
       await _loadJSFile('assets/js/url.polyfill.js');
+      await Future<void>.delayed(Duration.zero);
       await _loadJSFile('assets/js/axios.min.js');
+      await Future<void>.delayed(Duration.zero);
       await _loadJSFile('assets/js/cheerio.js');
+      await Future<void>.delayed(Duration.zero);
 
       _jsRuntime.evaluate('''
         if (typeof axios !== 'undefined' && axios.defaults) {
@@ -65,11 +87,83 @@ class RuleEngine {
         }
       ''');
 
-
       _initialized = true;
-    } catch (e) {
+      AppLogger.addLog(
+        level: 'INFO',
+        tag: 'Rule Sandbox',
+        message: 'QuickJS 沙箱内核初始化就绪 (Node.js 兼容层/Axios/Cheerio 已加载)',
+      );
+    } catch (e, stack) {
       debugPrint('RuleEngine init error: $e');
+      AppLogger.addLog(
+        level: 'ERROR',
+        tag: 'Rule Sandbox',
+        message: 'QuickJS 沙箱初始化失败: $e',
+        error: e,
+        stackTrace: stack,
+      );
     }
+  }
+
+  /// 注入强化版 console 代理，捕获规则内的 log/info/warn/error/debug 并转发到 AppLogger
+  static void _setupEnhancedConsole() {
+    // 在 JS 全局注入 console 代理，支持多参数安全展开与序列化
+    _jsRuntime.evaluate('''
+      (function() {
+        function formatArg(arg) {
+          if (arg === null) return 'null';
+          if (arg === undefined) return 'undefined';
+          if (typeof arg === 'object') {
+            try {
+              return JSON.stringify(arg);
+            } catch (e) {
+              return String(arg);
+            }
+          }
+          return String(arg);
+        }
+
+        function sendToDart(level, args) {
+          try {
+            var parts = [];
+            for (var i = 0; i < args.length; i++) {
+              parts.push(formatArg(args[i]));
+            }
+            var text = parts.join(' ');
+            sendMessage('ConsoleLog', JSON.stringify([level, text]));
+          } catch (err) {}
+        }
+
+        globalThis.console = {
+          log: function() { sendToDart('INFO', arguments); },
+          info: function() { sendToDart('INFO', arguments); },
+          warn: function() { sendToDart('WARN', arguments); },
+          error: function() { sendToDart('ERROR', arguments); },
+          debug: function() { sendToDart('DEBUG', arguments); }
+        };
+      })();
+    ''');
+
+    // 注册桥接处理函数，接收 JS 端回传的日志并打入 AppLogger
+    _jsRuntime.onMessage('ConsoleLog', (dynamic args) {
+      try {
+        if (args is List && args.isNotEmpty) {
+          final level = args[0]?.toString().toUpperCase() ?? 'INFO';
+          final message = args.length > 1 ? args[1]?.toString() ?? '' : '';
+          final tag = _currentRunningRuleName.isNotEmpty
+              ? 'Rule: $_currentRunningRuleName'
+              : 'Rule Sandbox';
+
+          AppLogger.addLog(
+            level: level,
+            tag: tag,
+            message: message,
+          );
+        }
+      } catch (e) {
+        debugPrint('[RuleEngine] ConsoleLog dispatch error: $e');
+      }
+    });
   }
 
   /// 加载内置 JS 资源文件
@@ -127,6 +221,7 @@ class RuleEngine {
     final params = ctx['params'] as Map<String, dynamic>? ?? {};
     final baseUrl = ctx['baseUrl']?.toString() ?? params['baseUrl']?.toString();
     final timeoutSeconds = ctx['timeoutSeconds'] as int?;
+    final ruleName = ctx['ruleName']?.toString();
 
     return await executeRule(
       code: code,
@@ -134,6 +229,7 @@ class RuleEngine {
       params: params,
       baseUrl: baseUrl,
       timeoutSeconds: timeoutSeconds,
+      ruleName: ruleName,
     );
   }
 
@@ -144,10 +240,19 @@ class RuleEngine {
     Map<String, dynamic>? params,
     String? baseUrl,
     int? timeoutSeconds,
+    String? ruleName,
   }) async {
     if (!_initialized) {
       await init();
     }
+
+    final effectiveRuleName = (ruleName != null && ruleName.trim().isNotEmpty)
+        ? ruleName.trim()
+        : 'Sandbox';
+    
+    // 设置当前正在执行的规则名称，让 JS console.log 能够打上正确的规则 Tag
+    _currentRunningRuleName = effectiveRuleName;
+    final stopwatch = Stopwatch()..start();
 
     final int timeoutSec = timeoutSeconds ?? defaultTimeoutSeconds;
     final String currentUa = currentUserAgent;
@@ -158,6 +263,12 @@ class RuleEngine {
     if (currentBaseUrl.isNotEmpty) {
       effectiveParams['baseUrl'] = currentBaseUrl;
     }
+
+    AppLogger.addLog(
+      level: 'DEBUG',
+      tag: 'Rule: $effectiveRuleName',
+      message: '沙箱启动动作 [$action] -> 参数: $effectiveParams',
+    );
 
     final transformedJs = transformToRunnableJs(code);
     final encodedBaseUrl = jsonEncode(currentBaseUrl);
@@ -209,34 +320,77 @@ class RuleEngine {
       })()
     ''';
 
-    JsEvalResult jsResult = _jsRuntime.evaluate(script);
-
-    if (jsResult.isError) {
-      debugPrint('-----------------沙箱语法/运行时错误-----------------');
-      debugPrint('${jsResult.rawResult}');
-      throw Exception(jsResult.rawResult?.toString() ?? 'JavaScript execution error');
-    }
-
     try {
+      JsEvalResult jsResult = _jsRuntime.evaluate(script);
+
+      if (jsResult.isError) {
+        final errText = jsResult.rawResult?.toString() ?? 'JavaScript 语法解析/执行错误';
+        debugPrint('-----------------沙箱语法/运行时错误-----------------');
+        debugPrint(errText);
+        AppLogger.addLog(
+          level: 'ERROR',
+          tag: 'Rule: $effectiveRuleName',
+          message: '[$action] 语法/运行时错误: $errText',
+        );
+        throw Exception(errText);
+      }
+
       var data = await _jsRuntime.handlePromise(
         jsResult,
         timeout: Duration(seconds: timeoutSec),
       );
       if (!data.isError) {
+        stopwatch.stop();
         final raw = data.stringResult;
         if (raw.isEmpty || raw == 'undefined' || raw == 'null') {
+          AppLogger.addLog(
+            level: 'INFO',
+            tag: 'Rule: $effectiveRuleName',
+            message: '[$action] 执行完毕 (空响应) 耗时 ${stopwatch.elapsedMilliseconds}ms',
+          );
           return null;
         }
-        return jsonDecode(raw);
+        final decoded = jsonDecode(raw);
+        final countInfo = decoded is List ? '返回 ${decoded.length} 项数据' : '返回对象数据';
+        AppLogger.addLog(
+          level: 'INFO',
+          tag: 'Rule: $effectiveRuleName',
+          message: '[$action] 执行成功 ($countInfo) 耗时 ${stopwatch.elapsedMilliseconds}ms',
+        );
+        return decoded;
       } else {
-        throw Exception(data.rawResult?.toString() ?? 'Promise rejected in sandbox');
+        final promiseErr = data.rawResult?.toString() ?? 'Promise rejected in sandbox';
+        AppLogger.addLog(
+          level: 'ERROR',
+          tag: 'Rule: $effectiveRuleName',
+          message: '[$action] 异步 Promise 异常: $promiseErr',
+        );
+        throw Exception(promiseErr);
       }
     } on TimeoutException {
+      stopwatch.stop();
+      final timeoutMsg = '规则执行超时 (超过 $timeoutSec 秒未响应，目标站点可能不可达或网络受阻)';
       debugPrint('【RuleEngine】规则沙箱执行超时 (${timeoutSec}s)');
-      throw TimeoutException('规则执行超时 (超过 $timeoutSec 秒未响应，目标站点可能不可达或网络受阻)');
-    } catch (e) {
+      AppLogger.addLog(
+        level: 'ERROR',
+        tag: 'Rule: $effectiveRuleName',
+        message: '[$action] 超时错误: $timeoutMsg (耗时 ${stopwatch.elapsedMilliseconds}ms)',
+      );
+      throw TimeoutException(timeoutMsg);
+    } catch (e, stack) {
+      stopwatch.stop();
       debugPrint('Rule execution error: $e');
+      AppLogger.addLog(
+        level: 'ERROR',
+        tag: 'Rule: $effectiveRuleName',
+        message: '[$action] 运行异常: $e (耗时 ${stopwatch.elapsedMilliseconds}ms)',
+        error: e,
+        stackTrace: stack,
+      );
       rethrow;
+    } finally {
+      // 执行完毕后恢复默认沙箱标识
+      _currentRunningRuleName = 'Sandbox';
     }
   }
 
@@ -250,6 +404,7 @@ class RuleEngine {
     return await executeRule(
       code: rule.code,
       action: 'discovery',
+      ruleName: rule.name,
       params: {
         'page': page,
         'tab': ?tab,
@@ -270,6 +425,7 @@ class RuleEngine {
     return await executeRule(
       code: rule.code,
       action: 'search',
+      ruleName: rule.name,
       params: {
         'keyword': keyword,
         'page': page,
@@ -290,6 +446,7 @@ class RuleEngine {
     return await executeRule(
       code: rule.code,
       action: 'detail',
+      ruleName: rule.name,
       params: {
         'url': url,
         'baseUrl': rule.baseUrl,
@@ -310,6 +467,7 @@ class RuleEngine {
     return await executeRule(
       code: rule.code,
       action: 'parse',
+      ruleName: rule.name,
       params: {
         'url': url,
         'groupName': ?groupName,
@@ -320,10 +478,10 @@ class RuleEngine {
     );
   }
 
-
   static void dispose() {
     _jsRuntime.dispose();
     _initialized = false;
+    // 重置初始化任务缓存，确保 dispose 之后仍可重新初始化
+    _initFuture = null;
   }
 }
-

@@ -236,6 +236,12 @@ class _SearchPageState extends State<SearchPage> {
     });
     _saveHistory();
 
+    // 关键修复：先让出一帧，确保上方 setState 触发的 loading 动画真正渲染出来。
+    // RuleEngine 内部的 QuickJS evaluate 是 dart:ffi 同步调用，执行期间主 isolate
+    // 无法绘制新帧；若不让出，这一帧可能迟迟画不出来，用户点击后看不到任何反馈。
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted) return;
+
     if (targetRules.isEmpty) {
       setState(() {
         _loading = false;
@@ -319,6 +325,10 @@ class _SearchPageState extends State<SearchPage> {
     setState(() {
       _loadingMore = true;
     });
+
+    // 同样先让出一帧，保证"加载更多"的底部指示器先渲染，再进入 QuickJS 同步调度
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted) return;
 
     for (final rule in targetRules) {
       if (!mounted || _searchEpoch != thisEpoch) break;

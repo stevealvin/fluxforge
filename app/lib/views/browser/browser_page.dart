@@ -107,7 +107,14 @@ class _BrowserPageState extends State<BrowserPage> {
             }
 
             // 尽早注入网页视频播放滑动手势引擎 (快进/快退 HUD 与倍速)
-            _controller.runJavaScript(WebVideoGestureEngine.instance.buildVideoGestureScript()).catchError((_) {});
+            _controller
+                .runJavaScript(
+                  WebVideoGestureEngine.instance.buildVideoGestureScript(
+                    longPressSpeed: appService.settings.longPressSpeed,
+                    longPressEnabled: appService.settings.enableLongPress2x,
+                  ),
+                )
+                .catchError((_) {});
           },
           onPageFinished: (String url) {
             if (mounted) {
@@ -125,7 +132,14 @@ class _BrowserPageState extends State<BrowserPage> {
             }
 
             // 页面完全加载后再次扫描，确保动态 DOM 视频节点挂载手势
-            _controller.runJavaScript(WebVideoGestureEngine.instance.buildVideoGestureScript()).catchError((_) {});
+            _controller
+                .runJavaScript(
+                  WebVideoGestureEngine.instance.buildVideoGestureScript(
+                    longPressSpeed: appService.settings.longPressSpeed,
+                    longPressEnabled: appService.settings.enableLongPress2x,
+                  ),
+                )
+                .catchError((_) {});
 
             _controller.canGoBack().then((value) {
               if (mounted) {

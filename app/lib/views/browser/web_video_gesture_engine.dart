@@ -2,10 +2,10 @@
 /// 
 /// 为 WebView 内置的 HTML5 视频播放提供原生级全功能手势交互：
 /// 1. 严格限定范围：仅在播放视频窗口内滑动才触发，不影响网页其余区域的上下浏览与滚动；
-/// 2. 水平横向滑动：快进/快退，屏幕中央高颜值毛玻璃 HUD 实时提示【⏩ +XXs】或【⏪ -XXs】与进度条；
-/// 3. 左侧纵向滑动：调节视频画面亮度（0% ~ 100%），HUD 实时显示【☀️ 亮度 XX%】与金色刻度；
-/// 4. 右侧纵向滑动：调节视频播放音量（0% ~ 100%），HUD 实时显示【🔊 音量 XX%】与天蓝刻度；
-/// 5. 长按视频区域：瞬时触发 2.0x 倍速播放，松手恢复原速；
+/// 2. 水平横向滑动：快进/快退，屏幕中央高颜值毛玻璃 HUD 实时提示【+XXs】或【-XXs】与进度条；
+/// 3. 左侧纵向滑动：调节视频画面亮度（0% ~ 100%），HUD 实时显示【亮度 XX%】与金色刻度；
+/// 4. 右侧纵向滑动：调节视频播放音量（0% ~ 100%），HUD 实时显示【音量 XX%】与天蓝刻度；
+/// 5. 长按视频区域：瞬时触发加速倍速播放 (倍率可在设置中配置)，松手恢复原速；
 /// 6. 全局捕获级监听（Capture Phase）：穿透播放器遮罩层与弹幕层，同时绝不干扰网页原生全屏与控制按钮点击；
 /// 7. 防全屏失焦与防死循环保护：屏蔽全屏切换引发的网页误判暂停与高频 pause 震荡死循环。
 class WebVideoGestureEngine {
@@ -14,9 +14,18 @@ class WebVideoGestureEngine {
   static final WebVideoGestureEngine instance = WebVideoGestureEngine._();
 
   /// 生成用于注入到 WebView 中的视频手势检测与 HUD 提示脚本
-  String buildVideoGestureScript() {
+  ///
+  /// [longPressSpeed] 长按瞬时加速倍率，由全局播放偏好注入，与原生 AuraPlayer 保持一致
+  /// [longPressEnabled] 长按瞬时加速总开关，关闭后网页视频长按不再触发加速
+  String buildVideoGestureScript({
+    double longPressSpeed = 3.0,
+    bool longPressEnabled = true,
+  }) {
     return r'''
 (function() {
+  // 0. App 全局播放偏好注入：长按瞬时加速是否启用 (倍率见下方 __FF_LONG_PRESS_SPEED__)
+  const FF_LONG_PRESS_ENABLED = __FF_LONG_PRESS_ENABLED__;
+
   // 1. 注入全屏防失焦与播放器防死循环保护
   try {
     Object.defineProperty(document, 'hidden', {
@@ -73,7 +82,7 @@ class WebVideoGestureEngine {
   }
   window.__fluxforge_video_gestures_installed = true;
 
-  // 2. 注入专属高颜值毛玻璃 HUD 样式表
+  // 2. 注入专属高颜值毛玻璃 HUD 样式表 (紧凑版，尺寸经过压缩)
   const styleId = '__ff_video_hud_style';
   function ensureStyleMounted() {
     if (!document.getElementById(styleId)) {
@@ -85,21 +94,21 @@ class WebVideoGestureEngine {
           left: 50%;
           top: 50%;
           transform: translate(-50%, -50%) scale(0.9);
-          background: rgba(15, 23, 42, 0.90);
-          backdrop-filter: blur(24px);
-          -webkit-backdrop-filter: blur(24px);
-          border: 1px solid rgba(255, 255, 255, 0.20);
-          border-radius: 20px;
-          padding: 16px 28px;
+          background: rgba(15, 23, 42, 0.55);
+          backdrop-filter: blur(28px);
+          -webkit-backdrop-filter: blur(28px);
+          border: 1px solid rgba(255, 255, 255, 0.24);
+          border-radius: 14px;
+          padding: 10px 18px;
           color: #ffffff;
           font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-          box-shadow: 0 16px 42px rgba(0, 0, 0, 0.65);
+          box-shadow: 0 12px 32px rgba(0, 0, 0, 0.60);
           z-index: 2147483647;
           pointer-events: none;
           display: flex;
           flex-direction: column;
           align-items: center;
-          gap: 6px;
+          gap: 3px;
           transition: opacity 0.18s ease, transform 0.18s ease;
           opacity: 0;
           user-select: none;
@@ -109,12 +118,14 @@ class WebVideoGestureEngine {
           transform: translate(-50%, -50%) scale(1);
         }
         .__ff_hud_delta {
-          font-size: 20px;
+          font-size: 17px;
           font-weight: 700;
-          letter-spacing: 0.5px;
+          letter-spacing: 0.4px;
           display: flex;
           align-items: center;
-          gap: 6px;
+          gap: 4px;
+          line-height: 1.15;
+          text-shadow: 0 1px 4px rgba(0, 0, 0, 0.55); /* 半透明底上保证彩色文字可读性 */
         }
         .__ff_hud_delta.forward {
           color: #10B981; /* 翡翠绿 快进 */
@@ -129,18 +140,19 @@ class WebVideoGestureEngine {
           color: #38BDF8; /* 曜夜蓝 音量 */
         }
         .__ff_hud_time {
-          font-size: 13px;
-          color: rgba(255, 255, 255, 0.85);
+          font-size: 11px;
+          color: rgba(255, 255, 255, 0.82);
           font-weight: 500;
-          letter-spacing: 0.3px;
+          letter-spacing: 0.2px;
+          line-height: 1.2;
         }
         .__ff_hud_progress_track {
-          width: 150px;
-          height: 4px;
+          width: 126px;
+          height: 3px;
           background: rgba(255, 255, 255, 0.25);
           border-radius: 2px;
           overflow: hidden;
-          margin-top: 4px;
+          margin-top: 2px;
         }
         .__ff_hud_progress_bar {
           height: 100%;
@@ -165,9 +177,9 @@ class WebVideoGestureEngine {
       hud.id = '__ff_video_hud';
       hud.className = '__ff_video_hud';
       hud.innerHTML = `
-        <div class="__ff_hud_delta" id="__ff_hud_delta">⏩ +0s</div>
+        <div class="__ff_hud_delta" id="__ff_hud_delta">+0s</div>
         <div class="__ff_hud_time" id="__ff_hud_time">00:00 / 00:00</div>
-        <div class="__ff_hud_progress_track">
+        <div class="__ff_hud_progress_track" id="__ff_hud_progress_track">
           <div class="__ff_hud_progress_bar" id="__ff_hud_progress_bar"></div>
         </div>
       `;
@@ -205,24 +217,29 @@ class WebVideoGestureEngine {
 
   let hudHideTimer = null;
 
+  // 底部进度刻度条的显隐控制：
+  // 亮度/音量需要刻度条体现百分比；快进/快退仅保留「秒数 + 时间」两行信息，隐藏进度条
+  function setProgressTrackVisible(visible) {
+    const trackEl = document.getElementById('__ff_hud_progress_track');
+    if (trackEl) trackEl.style.display = visible ? '' : 'none';
+  }
+
   function showSeekHud(deltaSeconds, targetTime, totalDuration) {
     if (hudHideTimer) clearTimeout(hudHideTimer);
     ensureHudMounted();
     const deltaEl = document.getElementById('__ff_hud_delta');
     const timeEl = document.getElementById('__ff_hud_time');
-    const barEl = document.getElementById('__ff_hud_progress_bar');
-    if (!deltaEl || !timeEl || !barEl || !hud) return;
+    if (!deltaEl || !timeEl || !hud) return;
+
+    setProgressTrackVisible(false);
 
     const isForward = deltaSeconds >= 0;
     const sign = isForward ? '+' : '';
-    const icon = isForward ? '⏩' : '⏪';
-    deltaEl.textContent = `${icon} ${sign}${deltaSeconds}s`;
+    // 纯数值 + 配色区分方向（绿=快进 / 金=快退），不再使用 emoji 图标
+    deltaEl.textContent = `${sign}${deltaSeconds}s`;
     deltaEl.className = '__ff_hud_delta ' + (isForward ? 'forward' : 'rewind');
-    barEl.style.background = isForward ? '#10B981' : '#F59E0B';
 
     timeEl.textContent = `${formatTime(targetTime)} / ${formatTime(totalDuration)}`;
-    const pct = totalDuration > 0 ? Math.min(100, Math.max(0, (targetTime / totalDuration) * 100)) : 0;
-    barEl.style.width = pct + '%';
 
     hud.classList.add('active');
   }
@@ -235,7 +252,9 @@ class WebVideoGestureEngine {
     const barEl = document.getElementById('__ff_hud_progress_bar');
     if (!deltaEl || !timeEl || !barEl || !hud) return;
 
-    deltaEl.textContent = `☀️ 亮度 ${percent}%`;
+    setProgressTrackVisible(true);
+
+    deltaEl.textContent = `亮度 ${percent}%`;
     deltaEl.className = '__ff_hud_delta brightness';
     barEl.style.background = '#FBBF24';
 
@@ -253,8 +272,9 @@ class WebVideoGestureEngine {
     const barEl = document.getElementById('__ff_hud_progress_bar');
     if (!deltaEl || !timeEl || !barEl || !hud) return;
 
-    const icon = percent === 0 ? '🔇' : (percent < 50 ? '🔉' : '🔊');
-    deltaEl.textContent = `${icon} 音量 ${percent}%`;
+    setProgressTrackVisible(true);
+
+    deltaEl.textContent = `音量 ${percent}%`;
     deltaEl.className = '__ff_hud_delta volume';
     barEl.style.background = '#38BDF8';
 
@@ -271,6 +291,8 @@ class WebVideoGestureEngine {
     const timeEl = document.getElementById('__ff_hud_time');
     const barEl = document.getElementById('__ff_hud_progress_bar');
     if (!deltaEl || !timeEl || !barEl || !hud) return;
+
+    setProgressTrackVisible(true);
 
     deltaEl.textContent = title;
     deltaEl.className = '__ff_hud_delta forward';
@@ -393,14 +415,16 @@ class WebVideoGestureEngine {
 
     initialVolume = currentVideo.muted ? 0.0 : (currentVideo.volume !== undefined ? currentVideo.volume : 1.0);
 
-    // 长按 450ms 瞬时 2.0x 倍速
+    // 长按 450ms 触发瞬时加速 (开关与倍率均由 App 全局播放偏好注入)
+    // 注意：开关判断必须放在定时器回调内，不能在函数里提前 return，
+    // 否则会跳过上方 initialVolume / initialBrightness 等初始化，破坏左右滑动调节
     if (longPressTimer) clearTimeout(longPressTimer);
     longPressTimer = setTimeout(() => {
-      if (isTouching && !isGesturing && currentVideo && !currentVideo.paused) {
+      if (FF_LONG_PRESS_ENABLED && isTouching && !isGesturing && currentVideo && !currentVideo.paused) {
         isFastForwarding = true;
         normalPlaybackRate = currentVideo.playbackRate || 1.0;
-        currentVideo.playbackRate = 2.0;
-        showStatusHud('⚡ 2.0X 瞬时倍速中', '松开手指恢复原速');
+        currentVideo.playbackRate = __FF_LONG_PRESS_SPEED__;
+        showStatusHud('__FF_LONG_PRESS_SPEED__X 瞬时倍速中', '松开手指恢复原速');
       }
     }, 450);
   }
@@ -517,6 +541,9 @@ class WebVideoGestureEngine {
   window.addEventListener('touchcancel', onGlobalTouchEnd, { capture: true, passive: false });
 
 })();
-''';
+'''
+        // 长按加速开关与倍率由全局播放偏好注入 (与原生 AuraPlayer 共用同一设置项)
+        .replaceAll('__FF_LONG_PRESS_SPEED__', longPressSpeed.toStringAsFixed(1))
+        .replaceAll('__FF_LONG_PRESS_ENABLED__', longPressEnabled ? 'true' : 'false');
   }
 }

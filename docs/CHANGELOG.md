@@ -2,6 +2,98 @@
 
 本文档用于记录 FluxForge（包括 App 移动端、Server 服务端、Web 管理端）在开发过程中的重要功能迭代、UI 体验调优与架构重构日志。
 
+## [2026-09-11]
+
+### 🎨 App 图标透明化与白底剔除 (全套 Android 启动图标同步更新)
+- **剔除原图白色背景 (`app/assets/icon/icon.png`)**：
+  - **背景**：生图模型生成的 App Icon 概念图自带四角白色发光漫反射展示底板，直接打包会导致 Android 桌面图标与开屏页呈现白边与方形底色；
+  - **优化**：通过高保真超椭圆圆角路径精确剥离四角全部白色渐变背景（Alpha 置为 0，100% 纯透明），完整保留黑曜石磨砂质感卡片、边缘微弧高光与中央 3D 翡翠莫比乌斯环发光流光 Logo；
+  - 同步在 `app/assets/icon/logo_symbol_transparent.png` 提供无底座纯流光单体符号备选方案；
+  - 重新执行 `dart run flutter_launcher_icons`，全套更新 Android `mipmap-*`（mdpi 至 xxxhdpi）启动图标。
+
+### 📋 App 全链路日志系统与沙箱 Console 捕获实现
+- **JavaScript 规则沙箱 Console.log 拦截 (`app/lib/services/rule_engine.dart`)**：
+  - 注入全局增强版 `console` 代理对象，支持 `log/info/warn/error/debug` 多级别打印；
+  - 跨桥消息支持多参数自动拼接与嵌套复杂对象 `JSON.stringify` 安全展开，杜绝 `[object Object]`；
+  - 规则执行时自动关联当前规则名称（如 `[Rule: 樱花动漫]`），记录沙箱动作耗时（ms）与数据条数。
+- **响应式日志核心记录器 (`app/lib/core/utils/app_logger.dart`)**：
+  - 扩充 `LogEntry` 模型：支持 `tag` 来源标签、各级别专属主题色与语义化图标；
+  - 引入 `ValueNotifier<List<LogEntry>> logsNotifier` 机制，提供 500 条先进先出环形队列，实现 UI 零开销响应式刷新；
+  - 支持 `exportLogsAsText()` 纯文本全量导出以及清空内存/磁盘日志。
+- **现代化全功能日志中心页面 (`app/lib/views/profile/logs_page.dart`)**：
+  - 独立全屏日志诊断中心，适配极夜暗黑与纯净浅色双主题；
+  - 支持快捷分类过滤 Chips（全部 / 规则沙箱 / ERROR / WARN / INFO / DEBUG / Network）；
+  - 支持实时模糊搜索输入，毫秒级响应过滤；
+  - 支持 Live 实时滚屏跟踪模式（Auto-scroll），边调试规则边观测输出；
+  - 支持单条展开长文本/堆栈、长按复制单条、右上角一键全量导出（调用系统分享或剪贴板）与二次确认清空。
+- **路由与设置入口无缝贯通 (`app/lib/router.dart`, `settings_page.dart`, `profile_page.dart`)**：
+  - 注册 `/logs` 全局路由；设置页与个人中心“沙箱运行日志”入口升级为直达 `/logs` 页面，并动态显示日志总数与错误数徽标。
+- **质量验证**：`flutter analyze` → **No issues found**（0 Error / 0 Warning，18.7s）。
+
+### 🔍 修复 App 搜索点击后无反馈 & 沙箱初始化并发缺陷
+
+- **搜索点击"无反应"根因修复 (`app/lib/views/search/search_page.dart`)**：
+  - **现象**：在搜索页输入关键词点击「搜索」按钮后界面毫无反馈，直到用户做其他操作（如删除输入框文字）才突然出现检索动画；
+  - **根因**：`_performSearch()` 在 `setState(_loading = true)` 之后**未让出任何事件循环**，同一同步块内紧接着就串行进入 `RuleEngine.search()`；而 `RuleEngine` 通过 `dart:ffi` **同步**调用 QuickJS 的 `evaluate()`（每次都会把转译后的规则源码交给沙箱求值），同步调用期间主 isolate 无法绘制新的帧，导致 `setState` 调度的 loading 帧迟迟画不出来；
+    > 注：`RuleEngine.init()` 已在 `main.dart` 启动阶段执行完成，`_initialized` 为 true，后续调用**不会**重复加载 axios / cheerio 运行库。
+  - **修复**：`_performSearch()` 与 `_loadMoreResults()` 在 `setState` 之后统一插入 `await WidgetsBinding.instance.endOfFrame` 并补充 `mounted` 守卫，确保 loading 指示器先渲染出一帧，再进入可能阻塞的沙箱调度流程。
+- **沙箱初始化并发缺陷修复 (`app/lib/services/rule_engine.dart`)**：
+  - **重复初始化**：`init()` 此前仅用 `_initialized` 布尔量守卫，并发调用（如启动预热与首次搜索同时触发）会重复执行整套 `evaluate` 加载流程，造成双倍主线程阻塞；现改为 `_initFuture ??= _doInit()` 共享同一次初始化任务，失败时清空缓存允许重试；
+  - **连续阻塞**：`url.polyfill.js`(16.2KB) / `axios.min.js`(31.2KB) / `cheerio.js`(380.4KB) 三库连续同步加载会长时间占用主线程，现于每个库之间插入 `await Future<void>.delayed(Duration.zero)` 主动让出事件循环；
+  - `dispose()` 同步重置 `_initFuture`，确保销毁后仍可重新初始化。
+- **质量验证**：`flutter analyze` → **No issues found**（0 Error / 0 Warning，18.1s）。
+
+### 🎬 App 播放器快进/快退手势弹窗视觉精修 (双端体验对齐)
+- **AuraPlayer 原生播放器 (`app/lib/widgets/player/aura_player.dart`)**：
+  - `_buildSeekingCapsule()` 由原单行横向排布改为**双行紧凑布局**：上行「方向图标 + 快进/快退秒数」，下行「目标时间 / 视频总时长」，主次信息分层，解决单行内容过长导致的拥挤问题；
+  - 圆角由 20px 收敛至 16px，内边距调整为 `18 × 9`；秒数字号 13 → 16，并提取 `accentColor` 统一配色变量（快进 = 翡翠绿 `#10B981`，快退 = 琥珀金 `#F59E0B`），与 WebView 端 HUD 配色完全一致。
+- **WebView 网页视频手势 HUD (`app/lib/views/browser/web_video_gesture_engine.dart`)**：
+  - **整体尺寸压缩**：容器 padding `16px 28px` → `10px 18px`、圆角 `20px` → `14px`、元素间距 `6px` → `3px`、投影收敛；主指示字号 `20px` → `17px`、副信息字号 `13px` → `11px`、进度条 `150×4` → `126×3`，视觉更轻巧、不遮挡画面；
+  - **全面移除 emoji 图标**：快进/快退由 `⏩/⏪` 改为纯「`+15s` / `-15s`」数值（依靠绿/金配色区分方向），亮度提示由 `☀️ 亮度 XX%` 改为 `亮度 XX%`，音量提示由 `🔇/🔉/🔊 音量 XX%` 改为 `音量 XX%`，倍速提示由 `⚡ 2.0X 瞬时倍速中` 改为 `2.0X 瞬时倍速中`，规避跨平台 emoji 字体渲染差异；
+  - 同步修订文件头部注释中的图标说明与 HUD 初始占位文案。
+- **质量验证**：对上述两个修改文件运行 `flutter analyze`，结果 **No issues found**（0 Error / 0 Warning）。
+
+### 🪟 WebView 视频 HUD 半透明化与快进退进度条精简
+- **快进/快退 HUD 移除底部进度条 (`app/lib/views/browser/web_video_gesture_engine.dart`)**：
+  - 新增 `setProgressTrackVisible(visible)` 统一管理进度刻度条的显隐；`showSeekHud` 中隐藏进度条，仅保留「±Xs」与「时间 / 总时长」两行核心信息，弹窗更轻巧；
+  - 亮度、音量、长按倍速三类 HUD 保持进度刻度条可见（百分比与全速状态仍需可视化刻度），切换到对应手势时自动恢复显示，互不干扰。
+- **HUD 窗口改为半透明毛玻璃**：
+  - 容器背景由 `rgba(15, 23, 42, 0.90)` 降至 `rgba(15, 23, 42, 0.55)`，模糊半径由 `blur(24px)` 提升至 `blur(28px)`，边框提亮至 `0.24` 透明度，使底部视频画面自然透出；
+  - 为 `.__ff_hud_delta` 补充 `text-shadow`，保证半透明底色上彩色文字的对比度与可读性。
+- **质量验证**：`flutter analyze` → **No issues found**（0 Error / 0 Warning）。
+
+### 🎞️ AuraPlayer 控制栏显隐动画与小屏底部栏单行布局
+- **顶部/底部控制栏显隐接入丝滑动画 (`app/lib/widgets/player/aura_player.dart`)**：
+  - 原实现为直接条件渲染（`if (_showControls && _isInitialized)`），控制栏消失是"硬闪"、无任何过渡；
+  - 改为**常驻渲染 + 动画驱动**：新增通用方法 `_buildAnimatedBar({slideOffset, child})`，内部以 `AnimatedSlide`（250ms / `easeOutCubic`）配合 `AnimatedOpacity`（200ms / `easeOut`）驱动，并用 `IgnorePointer` 在隐藏态屏蔽指针事件，避免点击到已透明但仍在树中的控件；
+  - 顶部栏向上滑出 `Offset(0, -1)`、底部栏向下滑出 `Offset(0, 1)`，滑出方向各自契合所在屏幕边缘；
+  - 锁屏原先由 `if (_isLocked) return SizedBox.shrink()` 移除节点导致硬切，现统一交由 `_showControls` 驱动（上锁必将其置为 false），锁屏/解锁同样具备过渡动画。
+- **小屏底部控制栏合并为单行条线**：
+  - 全屏（大屏）保持双行布局——上行「时间 + 进度条 + 时长」、下行「播放 … 倍速 全屏」，操作区舒展、命中率高；
+  - 非全屏（小屏）改为**进度条与播放/时间/倍速/全屏全部对齐在同一条水平线上**，起止时间合并为「当前/总长」单段文本，底部内边距由 `bottom:24 / top:16` 压缩至 `bottom:8 / top:4`，显著降低控制条对低矮画面的遮挡；
+  - 为支撑双布局并消除重复代码，将底部栏拆分为可复用零件：`_buildProgressSlider` / `_buildPlayPauseButton` / `_buildSpeedPill` / `_buildFullscreenButton` / `_buildTimeText`，并新增 `_currentPosition` getter 统一"拖拽中优先取拖拽值"的取位逻辑；
+  - 紧凑态按钮通过 `padding: EdgeInsets.zero` + `constraints: BoxConstraints.tightFor(36×36)` 收紧点击区，避免默认 48×48 挤压进度条可用宽度。
+- **质量验证**：`flutter analyze` → **No issues found**（0 Error / 0 Warning）。
+
+### ⚡ 长按瞬时加速倍率可配置 (2x / 3x / 5x) 并打通全局设置链路
+- **排查中发现既有问题：播放偏好多项在 UI 上完全失效**
+  - 经全局检索确认，`enablePlayerGestures` / `enableLongPress2x` / `resumeBehavior` / `defaultPlaybackSpeed` 四个字段此前仅在 `app_service.dart` 与 `settings_page.dart` 之间流转，`AuraPlayer` 从未读取过它们——设置页里的开关与下拉改了不产生任何实际效果；
+  - 本次将长按相关的 `enableLongPress2x` 与新增的倍率一并打通到播放器，其余三项仍待接线。
+- **新增可配置项 (`app/lib/services/app_service.dart`)**：
+  - `AppSettings` 新增 `longPressSpeed` 字段，默认 `3.0`，可选 `2.0 / 3.0 / 5.0`；
+  - 同步接入持久化：`pref_long_press_speed` 的读写（`_loadSettings` / `updateSettings`），并补齐 `copyWith` 参数与构造默认值。
+- **AuraPlayer 生效 (`app/lib/widgets/player/aura_player.dart`)**：
+  - 新增 `_longPressEnabled` / `_longPressSpeed` 两个 getter，每次长按实时读取全局偏好，设置改动无需重启播放器即生效；
+  - `onLongPressStart` 在开关关闭时直接返回；`onLongPressEnd` 增加 `_isFastForwarding` 守卫，避免未真正进入加速态却去恢复原速；
+  - 顶部加速胶囊文案由硬编码 `2.0X 快速播放中` 改为按实际倍率渲染。
+- **WebView 端同步 (`app/lib/views/browser/web_video_gesture_engine.dart` + `browser_page.dart`)**：
+  - `buildVideoGestureScript()` 增加 `longPressSpeed` 与 `longPressEnabled` 两个具名参数；脚本内以 `__FF_LONG_PRESS_SPEED__` / `__FF_LONG_PRESS_ENABLED__` 占位，返回前用 `replaceAll` 注入真实值（脚本为 Dart raw string，无法直接使用插值）；
+  - 开关判断放在定时器回调**内部**而非函数提前 `return`——否则会跳过上方的 `initialVolume` / `initialBrightness` 初始化，破坏左右滑动调节亮度与音量的手势。
+- **设置页 UI (`app/lib/views/profile/settings_page.dart`)**：
+  - 原「长按 2.0X 倍速与触觉震动」更名为「长按瞬时加速与触觉震动」，副标题动态显示当前倍率；
+  - 新增「长按加速倍率」下拉项（`LucideIcons.gauge`），可选 2.0x / 3.0x / 5.0x。
+- **质量验证**：全项目 `flutter analyze` → **No issues found**（0 Error / 0 Warning）。
+
 ## [2026-09-10]
 
 ### 🛡️ App 移动端 AdBlock 广告拦截体系轻量化与云端热更改造

@@ -9,6 +9,7 @@ import 'views/detail/media_detail_page.dart';
 import 'views/market/market_page.dart';
 import 'views/profile/card_gallery_page.dart';
 import 'views/profile/favorites_page.dart';
+import 'views/profile/logs_page.dart';
 import 'views/profile/settings_page.dart';
 import 'views/rules/rule_detail_page.dart';
 import 'views/rules/rule_discovery_page.dart';
@@ -129,6 +130,14 @@ final GoRouter router = GoRouter(
           path: 'settings',
           builder: (BuildContext context, GoRouterState state) {
             return const SettingsPage();
+          },
+        ),
+
+        // 沙箱运行与系统诊断日志中心
+        GoRoute(
+          path: 'logs',
+          builder: (BuildContext context, GoRouterState state) {
+            return const LogsPage();
           },
         ),
 
