@@ -31,7 +31,11 @@ void main() {
       expect(script, contains('showBrightnessHud'));
       expect(script, contains('showVolumeHud'));
       expect(script, contains('showStatusHud'));
-      expect(script, contains('2.0X 瞬时倍速中'));
+      expect(script, contains('3.0X 瞬时倍速中'));
+
+      // 验证自定义倍率注入
+      final customScript = engine.buildVideoGestureScript(longPressSpeed: 2.0);
+      expect(customScript, contains('2.0X 瞬时倍速中'));
 
       // 5. 验证全屏动态挂载适配
       expect(script, contains('document.fullscreenElement || document.webkitFullscreenElement'));
