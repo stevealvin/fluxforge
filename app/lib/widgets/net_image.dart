@@ -27,8 +27,17 @@ class NetImage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final trimmedUrl = imageUrl.trim();
+    // 防御性校验：若为空字符串或非合规网络协议，优雅回退内置占位图，杜绝底层抛错
+    if (trimmedUrl.isEmpty || (!trimmedUrl.startsWith('http://') && !trimmedUrl.startsWith('https://'))) {
+      return ImagePlaceholder(
+        borderRadius: borderRadius ?? BorderRadius.zero,
+        shape: shape ?? BoxShape.rectangle,
+      );
+    }
+
     return ExtendedImage.network(
-      imageUrl,
+      trimmedUrl,
       cache: cache,
       headers: headers,
       fit: fit,

@@ -13,13 +13,18 @@ import 'views/profile/logs_page.dart';
 import 'views/profile/settings_page.dart';
 import 'views/rules/rule_detail_page.dart';
 import 'views/rules/rule_discovery_page.dart';
+import 'views/rules/rule_tester_page.dart';
 import 'views/search/search_page.dart';
 import 'views/shell/shell_page.dart';
 import 'views/splash/splash_page.dart';
 
+/// 全局路由监听器 (供 AuraPlayer 等多媒体组件实现 RouteAware 生命周期自治)
+final RouteObserver<ModalRoute<void>> appRouteObserver = RouteObserver<ModalRoute<void>>();
+
 /// 全局 GoRouter 统一路由配置
 final GoRouter router = GoRouter(
   initialLocation: '/splash',
+  observers: [appRouteObserver],
   routes: <RouteBase>[
     // 启动闪屏页
     GoRoute(
@@ -52,10 +57,23 @@ final GoRouter router = GoRouter(
         GoRoute(
           path: 'search',
           builder: (BuildContext context, GoRouterState state) {
-            final extra = state.extra as Map<String, dynamic>?;
+            Rule? targetRule;
+            String? keyword;
+            final extra = state.extra;
+            if (extra is Rule) {
+              targetRule = extra;
+            } else if (extra is Map) {
+              final r = extra['rule'];
+              if (r is Rule) {
+                targetRule = r;
+              } else if (r is Map) {
+                targetRule = Rule.fromJson(Map<String, dynamic>.from(r));
+              }
+              keyword = extra['keyword']?.toString();
+            }
             return SearchPage(
-              initialKeyword: extra?['keyword']?.toString() ?? state.uri.queryParameters['keyword'],
-              targetRule: extra?['rule'] as Rule?,
+              initialKeyword: keyword ?? state.uri.queryParameters['keyword'],
+              targetRule: targetRule,
             );
           },
         ),
@@ -84,6 +102,35 @@ final GoRouter router = GoRouter(
             }
 
             return RuleDiscoveryPage(
+              rule: rule,
+            );
+          },
+        ),
+
+        // 规则多阶段调试与测试 (类开源阅读调试器)
+        GoRoute(
+          path: 'rule_test',
+          builder: (BuildContext context, GoRouterState state) {
+            final extra = state.extra;
+            Rule? rule;
+            if (extra is Rule) {
+              rule = extra;
+            } else if (extra is Map) {
+              final r = extra['rule'];
+              if (r is Rule) {
+                rule = r;
+              } else if (r is Map) {
+                rule = Rule.fromJson(Map<String, dynamic>.from(r));
+              }
+            }
+
+            if (rule == null) {
+              return const Scaffold(
+                body: Center(child: Text('未指定有效规则进行测试')),
+              );
+            }
+
+            return RuleTesterPage(
               rule: rule,
             );
           },

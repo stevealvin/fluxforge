@@ -2,6 +2,7 @@ import 'dart:collection';
 import 'dart:convert';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:extended_image/extended_image.dart';
+import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
@@ -57,16 +58,22 @@ class _RuleDetailPageState extends State<RuleDetailPage> {
   String? _error;
   MediaType _mediaType = MediaType.unknown;
 
-  // 扩展元数据 (标题/封面/简介/作者)
+  // 扩展元数据 (标题/封面/简介/作者/评分/题材标签)
   String? _detailTitle;
   String? _detailCover;
   String? _detailDesc;
   String? _detailAuthor;
+  String? _detailRating;
+  List<String> _detailTags = [];
 
   // 视频相关数据
   String? _videoUrl;
   List<Map<String, dynamic>> _episodes = [];
+  List<Map<String, dynamic>> _videoGroups = [];
+  int _selectedVideoGroupIndex = 0;
   int _currentEpisodeIndex = 0;
+  bool _isEpisodeReversed = false;
+  bool _isDescExpanded = false;
 
   // 图片与漫画相关数据
   List<String> _imageList = [];
@@ -102,7 +109,13 @@ class _RuleDetailPageState extends State<RuleDetailPage> {
       _imageList = [];
       _videoUrl = null;
       _episodes = [];
+      _videoGroups = [];
+      _selectedVideoGroupIndex = 0;
       _currentEpisodeIndex = 0;
+      _isEpisodeReversed = false;
+      _isDescExpanded = false;
+      _detailRating = null;
+      _detailTags = [];
       _customHeaders = {};
     });
 
@@ -344,6 +357,13 @@ class _RuleDetailPageState extends State<RuleDetailPage> {
       _detailCover = result['cover']?.toString();
       _detailDesc = result['desc']?.toString() ?? result['description']?.toString();
       _detailAuthor = result['author']?.toString();
+      _detailRating = result['rating']?.toString();
+      if (result['tags'] is List) {
+        _detailTags = (result['tags'] as List)
+            .map((e) => e.toString().trim())
+            .where((s) => s.isNotEmpty)
+            .toList();
+      }
 
       // 防盗链 Header 提取 (RULE_SPECIFICATION.md 4.3 headers)
       if (result['headers'] is Map) {
@@ -500,6 +520,8 @@ class _RuleDetailPageState extends State<RuleDetailPage> {
       final String? videoUrl = result['playUrl']?.toString();
 
       if (extractedGroups.isNotEmpty) {
+        _videoGroups = extractedGroups;
+        _selectedVideoGroupIndex = 0;
         _episodes = extractedGroups.first['items'] as List<Map<String, dynamic>>? ?? [];
       } else if (rawItems is List) {
         _extractEpisodesFromList(rawItems);
@@ -520,6 +542,21 @@ class _RuleDetailPageState extends State<RuleDetailPage> {
 
     // 默认作为视频模式处理
     _mediaType = MediaType.video;
+  }
+
+  /// 切换视频播放线路/分组 (如 "超清线路" / "备用线路")
+  void _selectVideoGroup(int groupIndex) {
+    if (groupIndex < 0 || groupIndex >= _videoGroups.length) return;
+    setState(() {
+      _selectedVideoGroupIndex = groupIndex;
+      final group = _videoGroups[groupIndex];
+      final items = group['items'] as List?;
+      _episodes = items?.whereType<Map<String, dynamic>>().toList() ?? [];
+      _currentEpisodeIndex = 0;
+    });
+    if (_episodes.isNotEmpty) {
+      _playEpisode(0);
+    }
   }
 
   /// 从返回数据中提取剧集列表 (统一读取 items 数组及 item.title / item.url)
@@ -657,40 +694,46 @@ class _RuleDetailPageState extends State<RuleDetailPage> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final displayTitle = _detailTitle?.isNotEmpty == true ? _detailTitle! : widget.title;
 
+    // 当处于视频媒体类型且已成功解析时，隐藏外层系统 AppBar，
+    // 将顶栏导航与返回操作沉浸式交给置顶吸顶的 AuraPlayer 原生渲染，彻底消除双重标题和双返回键冲突。
+    final bool hideScaffoldAppBar = !_loading && _error == null && _mediaType == MediaType.video;
+
     return Scaffold(
-      appBar: AppBar(
-        title: Text(displayTitle),
-        actions: [
-          if (_mediaType == MediaType.image) ...[
-            if (_imageList.isNotEmpty)
-              IconButton(
-                tooltip: _isContinuousReadingMode ? '切换为网格画廊' : '切换为连续长卷',
-                icon: Icon(
-                  _isContinuousReadingMode ? LucideIcons.layoutGrid : LucideIcons.rows3,
-                  size: 20,
-                ),
-                onPressed: () {
-                  setState(() {
-                    _isContinuousReadingMode = !_isContinuousReadingMode;
-                  });
-                },
-              ),
-            if (_imageList.isNotEmpty)
-              Center(
-                child: Padding(
-                  padding: const EdgeInsets.only(right: 16),
-                  child: Text(
-                    '共 ${_imageList.length} 张',
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
+      appBar: hideScaffoldAppBar
+          ? null
+          : AppBar(
+              title: Text(displayTitle),
+              actions: [
+                if (_mediaType == MediaType.image) ...[
+                  if (_imageList.isNotEmpty)
+                    IconButton(
+                      tooltip: _isContinuousReadingMode ? '切换为网格画廊' : '切换为连续长卷',
+                      icon: Icon(
+                        _isContinuousReadingMode ? LucideIcons.layoutGrid : LucideIcons.rows3,
+                        size: 20,
+                      ),
+                      onPressed: () {
+                        setState(() {
+                          _isContinuousReadingMode = !_isContinuousReadingMode;
+                        });
+                      },
                     ),
-                  ),
-                ),
-              ),
-          ],
-        ],
-      ),
+                  if (_imageList.isNotEmpty)
+                    Center(
+                      child: Padding(
+                        padding: const EdgeInsets.only(right: 16),
+                        child: Text(
+                          '共 ${_imageList.length} 张',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ],
+            ),
       body: _buildBody(isDark),
     );
   }
@@ -812,7 +855,7 @@ class _RuleDetailPageState extends State<RuleDetailPage> {
                       _isContinuousReadingMode ? '连续长卷浏览' : '画廊展厅模式',
                       style: TextStyle(
                         fontSize: 13,
-                        fontWeight: FontWeight.bold,
+                        fontWeight: FontWeight.w600,
                         color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
                       ),
                     ),
@@ -969,7 +1012,7 @@ class _RuleDetailPageState extends State<RuleDetailPage> {
                 '选集目录',
                 style: TextStyle(
                   fontSize: 14,
-                  fontWeight: FontWeight.bold,
+                  fontWeight: FontWeight.w600,
                   color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
                 ),
               ),
@@ -1076,13 +1119,16 @@ class _RuleDetailPageState extends State<RuleDetailPage> {
   /// 打开全屏画廊浏览器
   void _openPhotoViewer(
     int initialIndex, {
+    List<String>? images,
     String referer = '',
     Map<String, String>? headers,
   }) {
+    final list = images ?? _imageList;
+    if (list.isEmpty) return;
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => PhotoViewPage(
-          imageList: _imageList,
+          imageList: list,
           initialIndex: initialIndex,
           referer: referer,
           headers: headers,
@@ -1113,7 +1159,7 @@ class _RuleDetailPageState extends State<RuleDetailPage> {
     }
   }
 
-  // ==================== 2. 视频与剧集播放视图 ====================
+  // ==================== 2. 商业长视频与剧集播放视图 ====================
   Widget _buildVideoView(bool isDark) {
     final displayTitle = _detailTitle?.isNotEmpty == true ? _detailTitle! : widget.title;
     final String currentEpTitle = _episodes.isNotEmpty
@@ -1127,12 +1173,13 @@ class _RuleDetailPageState extends State<RuleDetailPage> {
       ..._customHeaders,
     };
 
-    return SingleChildScrollView(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          // 顶部 16:9 现代化 AuraPlayer 视频播放视口
-          AspectRatio(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // 1. 顶部 16:9 吸顶常驻播放器 (安全区顶置，页面滚动时永不离开视线)
+        SafeArea(
+          bottom: false,
+          child: AspectRatio(
             aspectRatio: 16 / 9,
             child: _videoUrl != null && _videoUrl!.isNotEmpty
                 ? AuraPlayer(
@@ -1141,6 +1188,7 @@ class _RuleDetailPageState extends State<RuleDetailPage> {
                     title: fullPlayerTitle,
                     coverUrl: _detailCover ?? widget.cover,
                     httpHeaders: videoHeaders,
+                    onBack: () => Navigator.maybePop(context),
                     onEnded: () {
                       if (_currentEpisodeIndex < _episodes.length - 1) {
                         _playEpisode(_currentEpisodeIndex + 1);
@@ -1161,10 +1209,51 @@ class _RuleDetailPageState extends State<RuleDetailPage> {
                           ),
                         ),
                       ),
+                      // 顶部沉浸式渐变与返回按钮 (未开始播放时也可从播放器顶栏顺畅退出)
+                      Positioned(
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        child: Container(
+                          decoration: const BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: [Colors.black87, Colors.transparent],
+                            ),
+                          ),
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          child: Row(
+                            children: [
+                              IconButton(
+                                icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
+                                onPressed: () => Navigator.maybePop(context),
+                              ),
+                              const SizedBox(width: 4),
+                              Expanded(
+                                child: Text(
+                                  displayTitle,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
                       if (_videoUrl == null && _error == null)
-                        Container(
-                          color: Colors.black54,
-                          child: Center(
+                        Center(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.65),
+                              borderRadius: BorderRadius.circular(20),
+                            ),
                             child: Text(
                               _episodes.isNotEmpty
                                   ? '请从下方选择需要播放的剧集'
@@ -1176,86 +1265,579 @@ class _RuleDetailPageState extends State<RuleDetailPage> {
                     ],
                   ),
           ),
+        ),
 
-          // 下方选集列表
-          if (_episodes.isNotEmpty) ...[
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        '选集列表',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
-                        ),
+        // 2. 下方独立滚动内容区 (包含元数据卡片、商业选集面板、剧照流与相关推荐)
+        Expanded(
+          child: SingleChildScrollView(
+            physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // A. 视频元数据与剧情简介卡片
+                _buildVideoMetaCard(isDark, displayTitle),
+                const SizedBox(height: 16),
+
+                // B. 商业级长视频选集模块 (多线路切换、横向选集条、正倒序切换、全部选集底部抽屉)
+                if (_episodes.isNotEmpty) ...[
+                  _buildVideoEpisodesSection(isDark),
+                  const SizedBox(height: 20),
+                ],
+
+                // C. 剧照与截图横向滑动流
+                if (_previews.isNotEmpty) ...[
+                  _buildPreviewsSection(isDark),
+                  const SizedBox(height: 20),
+                ],
+
+                // D. 相关推荐列表
+                if (_related.isNotEmpty) ...[
+                  _buildRelatedSection(isDark),
+                  const SizedBox(height: 12),
+                ] else ...[
+                  const SizedBox(height: 12),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// 构建视频元数据与剧情简介卡片 (主标题、评分、规则源、题材标签、演职员与折叠简介)
+  Widget _buildVideoMetaCard(bool isDark, String title) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // 1. 视频主大标题 (采用现代 SemiBold w600 字重，笔画干练利落，彻底告别粗黑沉重感)
+        Text(
+          title,
+          style: TextStyle(
+            fontSize: 17.5,
+            fontWeight: FontWeight.w600,
+            letterSpacing: -0.2,
+            color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
+          ),
+        ),
+        const SizedBox(height: 8),
+
+        // 2. 状态/评分/标签流
+        Wrap(
+          spacing: 8,
+          runSpacing: 6,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            // 评分徽标 (若沙箱返回 rating)
+            if (_detailRating != null && _detailRating!.isNotEmpty)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF59E0B).withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(
+                    color: const Color(0xFFF59E0B).withValues(alpha: 0.4),
+                    width: 0.8,
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(LucideIcons.star, size: 12, color: Color(0xFFF59E0B)),
+                    const SizedBox(width: 4),
+                    Text(
+                      _detailRating!,
+                      style: const TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFFF59E0B),
                       ),
+                    ),
+                  ],
+                ),
+              ),
+
+            // 规则源名称标签
+            if (widget.rule?.name != null)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  widget.rule!.name,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.primary,
+                  ),
+                ),
+              ),
+
+            // 自定义分类标签 (tags)
+            ..._detailTags.map(
+              (tag) => Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                decoration: BoxDecoration(
+                  color: isDark ? AppColors.darkCard : AppColors.lightSurface,
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(
+                    color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
+                    width: 0.6,
+                  ),
+                ),
+                child: Text(
+                  tag,
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
+                  ),
+                ),
+              ),
+            ),
+
+            // 演职员 / 作者 / 导演
+            if (_detailAuthor != null && _detailAuthor!.isNotEmpty)
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    LucideIcons.user,
+                    size: 13,
+                    color: isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    _detailAuthor!,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
+                    ),
+                  ),
+                ],
+              ),
+          ],
+        ),
+
+        // 3. 剧情简介 (支持展开与折叠)
+        if (_detailDesc != null && _detailDesc!.trim().isNotEmpty) ...[
+          const SizedBox(height: 10),
+          GestureDetector(
+            onTap: () {
+              setState(() {
+                _isDescExpanded = !_isDescExpanded;
+              });
+            },
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                AnimatedCrossFade(
+                  duration: const Duration(milliseconds: 200),
+                  crossFadeState: _isDescExpanded ? CrossFadeState.showSecond : CrossFadeState.showFirst,
+                  firstChild: Text(
+                    _detailDesc!.trim(),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      height: 1.5,
+                      color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
+                    ),
+                  ),
+                  secondChild: Text(
+                    _detailDesc!.trim(),
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      height: 1.5,
+                      color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      _isDescExpanded ? '收起简介' : '展开简介',
+                      style: const TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.primary,
+                      ),
+                    ),
+                    const SizedBox(width: 2),
+                    Icon(
+                      _isDescExpanded ? LucideIcons.chevronUp : LucideIcons.chevronDown,
+                      size: 13,
+                      color: AppColors.primary,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  /// 构建商业级长视频选集模块 (多线路切换、横向选集滑动条、正倒序、全部选集底部抽屉)
+  Widget _buildVideoEpisodesSection(bool isDark) {
+    final int count = _episodes.length;
+    // 根据 _isEpisodeReversed 正序/倒序决定展示条目的真实索引序列
+    final List<int> displayIndices = List.generate(
+      count,
+      (i) => _isEpisodeReversed ? (count - 1 - i) : i,
+    );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // 1. 多播放线路切换栏 (若沙箱返回多个 group)
+        if (_videoGroups.length > 1) ...[
+          SizedBox(
+            height: 32,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: _videoGroups.length,
+              separatorBuilder: (_, _) => const SizedBox(width: 8),
+              itemBuilder: (context, index) {
+                final g = _videoGroups[index];
+                final isSelected = index == _selectedVideoGroupIndex;
+                final gName = g['name']?.toString() ?? '线路 ${index + 1}';
+
+                return ChoiceChip(
+                  label: Text(gName),
+                  selected: isSelected,
+                  selectedColor: AppColors.primary,
+                  labelStyle: TextStyle(
+                    fontSize: 11.5,
+                    fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                    color: isSelected
+                        ? Colors.white
+                        : (isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary),
+                  ),
+                  onSelected: (val) {
+                    if (val && _selectedVideoGroupIndex != index) {
+                      _selectVideoGroup(index);
+                    }
+                  },
+                );
+              },
+            ),
+          ),
+          const SizedBox(height: 10),
+        ],
+
+        // 2. 选集头部栏 (标题 + 集数提示 + 倒序按钮 + 全部选集弹窗)
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 3.5,
+                  height: 14,
+                  decoration: BoxDecoration(
+                    color: AppColors.primary,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  '选集',
+                  style: TextStyle(
+                    fontSize: 15.5,
+                    fontWeight: FontWeight.w600,
+                    color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  '更新至第 $count 集',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted,
+                  ),
+                ),
+              ],
+            ),
+            Row(
+              children: [
+                // 正序 / 倒序切换
+                IconButton(
+                  tooltip: _isEpisodeReversed ? '切换为正序' : '切换为倒序',
+                  icon: Icon(
+                    LucideIcons.arrowUpDown,
+                    size: 16,
+                    color: _isEpisodeReversed
+                        ? AppColors.primary
+                        : (isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary),
+                  ),
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () {
+                    HapticFeedback.lightImpact();
+                    setState(() {
+                      _isEpisodeReversed = !_isEpisodeReversed;
+                    });
+                  },
+                ),
+
+                // 全部选集网格弹窗
+                if (count > 5)
+                  TextButton.icon(
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    icon: const Icon(LucideIcons.layoutGrid, size: 14, color: AppColors.primary),
+                    label: const Text(
+                      '全部',
+                      style: TextStyle(fontSize: 12, color: AppColors.primary, fontWeight: FontWeight.w600),
+                    ),
+                    onPressed: () => _showAllEpisodesSheet(context, isDark),
+                  ),
+              ],
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+
+        // 3. 商业级横向滑动选集条 (快速点击切换集数)
+        SizedBox(
+          height: 46,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: count,
+            separatorBuilder: (_, _) => const SizedBox(width: 8),
+            itemBuilder: (context, i) {
+              final realIndex = displayIndices[i];
+              final item = _episodes[realIndex];
+              final isCurrent = realIndex == _currentEpisodeIndex;
+              final rawTitle = item['title']?.toString().trim() ?? '${realIndex + 1}';
+
+              return InkWell(
+                borderRadius: BorderRadius.circular(8),
+                onTap: () {
+                  HapticFeedback.lightImpact();
+                  _playEpisode(realIndex);
+                },
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  constraints: const BoxConstraints(minWidth: 54),
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                  decoration: BoxDecoration(
+                    color: isCurrent
+                        ? AppColors.primary
+                        : (isDark ? AppColors.darkCard : AppColors.lightSurface),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: isCurrent
+                          ? AppColors.primary
+                          : (isDark ? AppColors.darkBorder : AppColors.lightBorder),
+                      width: 0.8,
+                    ),
+                    boxShadow: isCurrent
+                        ? [
+                            BoxShadow(
+                              color: AppColors.primary.withValues(alpha: 0.35),
+                              blurRadius: 8,
+                              offset: const Offset(0, 2),
+                            ),
+                          ]
+                        : null,
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      if (isCurrent) ...[
+                        const Icon(LucideIcons.play, size: 12, color: Colors.white),
+                        const SizedBox(width: 4),
+                      ],
                       Text(
-                        '共 ${_episodes.length} 集',
+                        rawTitle,
                         style: TextStyle(
-                          fontSize: 12,
-                          color: isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted,
+                          fontSize: 13,
+                          fontWeight: isCurrent ? FontWeight.bold : FontWeight.w500,
+                          color: isCurrent
+                              ? Colors.white
+                              : (isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary),
                         ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 12),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: List.generate(_episodes.length, (index) {
-                      final item = _episodes[index];
-                      final isSelected = index == _currentEpisodeIndex;
-                      final epTitle = item['title']?.toString() ?? '第 ${index + 1} 集';
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
 
-                      return ActionChip(
-                        label: Text(epTitle),
-                        backgroundColor: isSelected
-                            ? AppColors.primary
-                            : (isDark ? AppColors.darkCard : AppColors.lightSurface),
-                        labelStyle: TextStyle(
-                          fontSize: 12,
-                          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                          color: isSelected
-                              ? Colors.white
-                              : (isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary),
+  /// 呼出全量剧集底部选集面板 (类似腾讯视频/B站的底部抽屉)
+  void _showAllEpisodesSheet(BuildContext context, bool isDark) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            final count = _episodes.length;
+            final isReversed = _isEpisodeReversed;
+            final List<int> indices = List.generate(
+              count,
+              (i) => isReversed ? (count - 1 - i) : i,
+            );
+
+            return Container(
+              height: MediaQuery.of(context).size.height * 0.65,
+              decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF1E293B) : Colors.white,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+              ),
+              child: Column(
+                children: [
+                  // 顶部把手
+                  Center(
+                    child: Container(
+                      width: 36,
+                      height: 4,
+                      margin: const EdgeInsets.only(top: 10, bottom: 8),
+                      decoration: BoxDecoration(
+                        color: isDark ? Colors.white24 : Colors.black12,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+
+                  // 标题栏
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Row(
+                          children: [
+                            Text(
+                              '全部剧集',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              '共 $count 集',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted,
+                              ),
+                            ),
+                          ],
                         ),
-                        side: BorderSide(
-                          color: isSelected
-                              ? AppColors.primary
-                              : (isDark ? AppColors.darkBorder : AppColors.lightBorder),
+                        Row(
+                          children: [
+                            // 正倒序切换
+                            IconButton(
+                              tooltip: isReversed ? '切换为正序' : '切换为倒序',
+                              icon: Icon(
+                                LucideIcons.arrowUpDown,
+                                size: 16,
+                                color: isReversed ? AppColors.primary : (isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary),
+                              ),
+                              onPressed: () {
+                                HapticFeedback.lightImpact();
+                                setSheetState(() {
+                                  _isEpisodeReversed = !_isEpisodeReversed;
+                                });
+                                setState(() {});
+                              },
+                            ),
+                            // 关闭按钮
+                            IconButton(
+                              icon: Icon(
+                                LucideIcons.x,
+                                size: 18,
+                                color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
+                              ),
+                              onPressed: () => Navigator.pop(sheetContext),
+                            ),
+                          ],
                         ),
-                        onPressed: () => _playEpisode(index),
-                      );
-                    }),
+                      ],
+                    ),
+                  ),
+                  const Divider(height: 1),
+
+                  // 选集方块网格
+                  Expanded(
+                    child: GridView.builder(
+                      padding: const EdgeInsets.all(16),
+                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 5,
+                        mainAxisSpacing: 10,
+                        crossAxisSpacing: 10,
+                        childAspectRatio: 1.3,
+                      ),
+                      itemCount: count,
+                      itemBuilder: (context, i) {
+                        final realIndex = indices[i];
+                        final item = _episodes[realIndex];
+                        final isCurrent = realIndex == _currentEpisodeIndex;
+                        final rawTitle = item['title']?.toString().trim() ?? '${realIndex + 1}';
+
+                        return InkWell(
+                          borderRadius: BorderRadius.circular(8),
+                          onTap: () {
+                            HapticFeedback.lightImpact();
+                            Navigator.pop(sheetContext);
+                            _playEpisode(realIndex);
+                          },
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 160),
+                            decoration: BoxDecoration(
+                              color: isCurrent
+                                  ? AppColors.primary
+                                  : (isDark ? const Color(0xFF0F172A) : const Color(0xFFF1F5F9)),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: isCurrent
+                                    ? AppColors.primary
+                                    : (isDark ? AppColors.darkBorder : AppColors.lightBorder),
+                                width: 0.8,
+                              ),
+                            ),
+                            child: Center(
+                              child: Text(
+                                rawTitle,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 12.5,
+                                  fontWeight: isCurrent ? FontWeight.bold : FontWeight.w500,
+                                  color: isCurrent
+                                      ? Colors.white
+                                      : (isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary),
+                                ),
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
                   ),
                 ],
               ),
-            ),
-          ],
-
-          // 剧照 / 预览图流
-          if (_previews.isNotEmpty) ...[
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-              child: _buildPreviewsSection(isDark),
-            ),
-          ],
-
-          // 相关推荐
-          if (_related.isNotEmpty) ...[
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-              child: _buildRelatedSection(isDark),
-            ),
-          ],
-        ],
-      ),
+            );
+          },
+        );
+      },
     );
   }
 
@@ -1282,8 +1864,8 @@ class _RuleDetailPageState extends State<RuleDetailPage> {
           Text(
             '章节目录 (共 ${_chapters.length} 章)',
             style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
+              fontSize: 15.5,
+              fontWeight: FontWeight.w600,
               color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
             ),
           ),
@@ -1335,38 +1917,57 @@ class _RuleDetailPageState extends State<RuleDetailPage> {
             Text(
               '剧照与预览 (${_previews.length})',
               style: TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.bold,
+                fontSize: 14.5,
+                fontWeight: FontWeight.w600,
                 color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
               ),
             ),
           ],
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 10),
         SizedBox(
-          height: 110,
+          height: 72,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             itemCount: _previews.length,
-            separatorBuilder: (_, _) => const SizedBox(width: 10),
+            separatorBuilder: (_, _) => const SizedBox(width: 8),
             itemBuilder: (context, index) {
               final imgUrl = _previews[index];
-              return ClipRRect(
-                borderRadius: BorderRadius.circular(10),
-                child: AspectRatio(
-                  aspectRatio: 16 / 10,
-                  child: CachedNetworkImage(
-                    imageUrl: imgUrl,
-                    fit: BoxFit.cover,
-                    httpHeaders: {
-                      if (widget.rule?.baseUrl != null) 'Referer': widget.rule!.baseUrl,
-                    },
-                    placeholder: (_, _) => Container(
-                      color: isDark ? AppColors.darkSurface : AppColors.lightSurface,
+              return InkWell(
+                borderRadius: BorderRadius.circular(8),
+                onTap: () => _openPhotoViewer(
+                  index,
+                  images: _previews,
+                  referer: widget.rule?.baseUrl ?? '',
+                  headers: _customHeaders.isNotEmpty ? _customHeaders : null,
+                ),
+                child: Container(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
+                      width: 0.6,
                     ),
-                    errorWidget: (_, _, _) => Container(
-                      color: isDark ? AppColors.darkSurface : AppColors.lightSurface,
-                      child: const Icon(Icons.broken_image_rounded, size: 20, color: Colors.grey),
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(7.4),
+                    child: AspectRatio(
+                      aspectRatio: 16 / 9,
+                      child: CachedNetworkImage(
+                        imageUrl: imgUrl,
+                        fit: BoxFit.cover,
+                        httpHeaders: {
+                          if (widget.rule?.baseUrl != null) 'Referer': widget.rule!.baseUrl,
+                          ..._customHeaders,
+                        },
+                        placeholder: (_, _) => Container(
+                          color: isDark ? AppColors.darkSurface : AppColors.lightSurface,
+                        ),
+                        errorWidget: (_, _, _) => Container(
+                          color: isDark ? AppColors.darkSurface : AppColors.lightSurface,
+                          child: const Icon(Icons.broken_image_rounded, size: 18, color: Colors.grey),
+                        ),
+                      ),
                     ),
                   ),
                 ),
@@ -1378,11 +1979,12 @@ class _RuleDetailPageState extends State<RuleDetailPage> {
     );
   }
 
-  /// 相关推荐卡片横向滑动流
+  /// 相关推荐模块 (宽屏 16:9 双列网格，随着主视口向下纵向滑动)
   Widget _buildRelatedSection(bool isDark) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        // 头部标题栏
         Row(
           children: [
             Container(
@@ -1395,88 +1997,173 @@ class _RuleDetailPageState extends State<RuleDetailPage> {
             ),
             const SizedBox(width: 8),
             Text(
-              '相关推荐 (${_related.length})',
+              '相关推荐',
               style: TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.bold,
+                fontSize: 14.5,
+                fontWeight: FontWeight.w600,
                 color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
+              ),
+            ),
+            const SizedBox(width: 6),
+            Text(
+              '(${_related.length})',
+              style: TextStyle(
+                fontSize: 12,
+                color: isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted,
               ),
             ),
           ],
         ),
-        const SizedBox(height: 12),
-        SizedBox(
-          height: 155,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            itemCount: _related.length,
-            separatorBuilder: (_, _) => const SizedBox(width: 10),
-            itemBuilder: (context, index) {
-              final item = _related[index];
-              final title = item['title']?.toString() ?? '无标题';
-              final cover = item['cover']?.toString() ?? '';
-              final url = item['url']?.toString() ?? '';
+        const SizedBox(height: 8),
 
-              return GestureDetector(
-                onTap: () {
-                  if (url.isNotEmpty && widget.rule != null) {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => RuleDetailPage(
-                          rule: widget.rule!,
-                          url: url,
-                          title: title,
-                          cover: cover,
-                        ),
-                      ),
-                    );
-                  }
-                },
-                child: SizedBox(
-                  width: 95,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: AspectRatio(
-                          aspectRatio: 3 / 4,
-                          child: cover.isNotEmpty
-                              ? CachedNetworkImage(
-                                  imageUrl: cover,
-                                  fit: BoxFit.cover,
-                                  httpHeaders: {
-                                    if (widget.rule?.baseUrl != null) 'Referer': widget.rule!.baseUrl,
-                                  },
-                                  errorWidget: (_, _, _) => Container(
-                                    color: isDark ? AppColors.darkSurface : AppColors.lightSurface,
-                                    child: const Icon(Icons.broken_image_rounded, size: 20, color: Colors.grey),
-                                  ),
-                                )
-                              : Container(
-                                  color: isDark ? AppColors.darkSurface : AppColors.lightSurface,
-                                  child: const Icon(Icons.movie_outlined, size: 20, color: Colors.grey),
-                                ),
-                        ),
-                      ),
-                      const SizedBox(height: 5),
-                      Text(
-                        title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            },
+        // 宽屏两列纵向网格 (采用 AppCard.flat 纯净平铺卡片，紧凑高宽比彻底消除卡片底部冗余空白)
+        GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          padding: EdgeInsets.zero,
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 2,
+            mainAxisSpacing: 10,
+            crossAxisSpacing: 10,
+            childAspectRatio: 1.34,
           ),
+          itemCount: _related.length,
+          itemBuilder: (context, index) {
+            final item = _related[index];
+            final title = item['title']?.toString() ?? '无标题';
+            final cover = item['cover']?.toString() ?? '';
+            final url = item['url']?.toString() ?? '';
+            final badge = item['badge']?.toString().trim() ?? '';
+            final desc = item['desc']?.toString().trim() ?? '';
+
+            return AppCard.flat(
+              padding: EdgeInsets.zero,
+              borderRadius: 10,
+              onTap: () {
+                if (url.isNotEmpty && widget.rule != null) {
+                  HapticFeedback.lightImpact();
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => RuleDetailPage(
+                        rule: widget.rule!,
+                        url: url,
+                        title: title,
+                        cover: cover,
+                      ),
+                    ),
+                  );
+                }
+              },
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // 1. 宽屏 16:9 封面 (顶部自动受 AppCard.flat 严格防溢出圆角约束)
+                  AspectRatio(
+                    aspectRatio: 16 / 9,
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        cover.isNotEmpty
+                            ? CachedNetworkImage(
+                                imageUrl: cover,
+                                fit: BoxFit.cover,
+                                httpHeaders: {
+                                  if (widget.rule?.baseUrl != null) 'Referer': widget.rule!.baseUrl,
+                                  ..._customHeaders,
+                                },
+                                placeholder: (_, _) => Container(
+                                  color: isDark ? AppColors.darkSurface : AppColors.lightSurface,
+                                ),
+                                errorWidget: (_, _, _) => Container(
+                                  color: isDark ? AppColors.darkSurface : AppColors.lightSurface,
+                                  child: const Icon(Icons.broken_image_rounded, size: 20, color: Colors.grey),
+                                ),
+                              )
+                            : Container(
+                                color: isDark ? AppColors.darkSurface : AppColors.lightSurface,
+                                child: const Icon(Icons.movie_outlined, size: 22, color: Colors.grey),
+                              ),
+                        // 底部渐变暗部 (保证角标与底部边界清晰)
+                        Positioned(
+                          left: 0,
+                          right: 0,
+                          bottom: 0,
+                          height: 24,
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                colors: [
+                                  Colors.transparent,
+                                  Colors.black.withValues(alpha: 0.6),
+                                ],
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                              ),
+                            ),
+                          ),
+                        ),
+                        // 角标 (若有)
+                        if (badge.isNotEmpty)
+                          Positioned(
+                            right: 6,
+                            bottom: 4,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                              decoration: BoxDecoration(
+                                color: Colors.black.withValues(alpha: 0.75),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                badge,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 9.5,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+
+                  // 2. 底部文字信息区 (平铺底色上规整内边距，提升阅读对比度)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          title,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            height: 1.25,
+                            color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
+                          ),
+                        ),
+                        if (desc.isNotEmpty) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            desc,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 10.5,
+                              color: isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
         ),
       ],
     );

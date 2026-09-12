@@ -29,9 +29,16 @@ class AppStorage {
 
   static Future<dynamic> getJson(String key) async {
     try {
-      final str = await _prefs.getString(key);
-      if (str == null || str.isEmpty) return null;
-      return jsonDecode(str);
+      try {
+        final str = await _prefs.getString(key);
+        if (str == null || str.isEmpty) return null;
+        return jsonDecode(str);
+      } catch (_) {
+        // 兼容处理历史上以 setStringList 保存的数组数据
+        final list = await _prefs.getStringList(key);
+        if (list != null) return list;
+        return null;
+      }
     } catch (e) {
       debugPrint('[AppStorage] getJson error: $e (key: $key)');
       return null;

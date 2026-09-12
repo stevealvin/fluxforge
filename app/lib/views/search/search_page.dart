@@ -63,7 +63,7 @@ class _NormalizedSearchResult {
           : null,
       rule: rule,
       baseUrl: rule.baseUrl,
-      raw: Map<String, dynamic>.from(map),
+      raw: map.map((k, v) => MapEntry(k.toString(), v)),
     );
   }
 }
@@ -133,6 +133,8 @@ class _SearchPageState extends State<SearchPage> {
 
     _scrollController.addListener(_onScroll);
     ruleService.rulesNotifier.addListener(_onRulesChanged);
+    _focusNode.addListener(_onFocusChanged);
+    historyService.searchHistoryNotifier.addListener(_onHistoryChanged);
 
     // 处理初始关键词入参自动触发搜索
     if (widget.initialKeyword != null && widget.initialKeyword!.trim().isNotEmpty) {
@@ -151,9 +153,25 @@ class _SearchPageState extends State<SearchPage> {
     if (mounted) setState(() {});
   }
 
+  /// 搜索历史响应式同步更新
+  void _onHistoryChanged() {
+    if (mounted) {
+      setState(() {
+        _historyList = historyService.searchHistory.toList();
+      });
+    }
+  }
+
+  /// 焦点状态改变时刷新界面，实现外层容器单圆角高亮过渡
+  void _onFocusChanged() {
+    if (mounted) setState(() {});
+  }
+
   @override
   void dispose() {
+    historyService.searchHistoryNotifier.removeListener(_onHistoryChanged);
     ruleService.rulesNotifier.removeListener(_onRulesChanged);
+    _focusNode.removeListener(_onFocusChanged);
     _controller.dispose();
     _focusNode.dispose();
     _scrollController.dispose();
@@ -168,25 +186,31 @@ class _SearchPageState extends State<SearchPage> {
     }
   }
 
-  /// 保存搜索历史
-  void _saveHistory() {
-    historyService.updateHistory(_historyList);
-  }
-
   /// 单项删除历史记录
   void _removeHistoryItem(String item) {
-    setState(() {
-      _historyList.remove(item);
-    });
-    _saveHistory();
+    historyService.removeHistory(item);
   }
 
   /// 清空全部历史记录
   void _clearAllHistory() {
-    setState(() {
-      _historyList.clear();
-    });
-    _saveHistory();
+    historyService.clearHistory();
+  }
+
+  /// 安全获取规则唯一标识 Key（防御 int/String/null 等各种数据源类型，杜绝 NoSuchMethodError）
+  static String _getRuleKey(Rule? rule) {
+    if (rule == null) return '';
+    final idVal = rule.id;
+    if (idVal != null) {
+      final idStr = idVal.toString().trim();
+      if (idStr.isNotEmpty) return idStr;
+    }
+    return rule.name.trim();
+  }
+
+  /// 判断两个规则是否为同一个源
+  static bool _isSameRule(Rule? a, Rule? b) {
+    if (a == null || b == null) return a == b;
+    return _getRuleKey(a) == _getRuleKey(b);
   }
 
   /// 获取当前有效的检索规则列表
@@ -197,7 +221,22 @@ class _SearchPageState extends State<SearchPage> {
     return ruleService.rules.where((r) => r.enabled).toList();
   }
 
-  /// 发起全局多源并发流式检索
+  /// 手动中止正在进行的跨源并发检索 (开源阅读同款 Stop 机制)
+  void _cancelSearch() {
+    if (!_loading) return;
+    setState(() {
+      _searchEpoch++;
+      _loading = false;
+      // 将剩余尚未完成的规则源标记为已停止
+      for (final status in _ruleStatusMap.values) {
+        if (status.isSearching) {
+          status.isSearching = false;
+        }
+      }
+    });
+  }
+
+  /// 发起全局多源并发流式检索 (类开源阅读并发聚合模型)
   Future<void> _performSearch(String text) async {
     final query = text.trim();
     if (query.isEmpty) {
@@ -211,41 +250,10 @@ class _SearchPageState extends State<SearchPage> {
     }
 
     _focusNode.unfocus();
-    final thisEpoch = ++_searchEpoch;
 
+    // 前置校验：若当前无可用规则，立即提示并引导去市场导入，避免清空界面导致用户困惑
     final targetRules = _getEligibleRules();
-
-    setState(() {
-      _currentQuery = query;
-      _showHistory = false;
-      _loading = true;
-      _allResults.clear();
-      _ruleStatusMap.clear();
-      _rulePageMap.clear();
-
-      // 维护历史词队列（最新搜索置顶）
-      _historyList.remove(query);
-      _historyList.insert(0, query);
-
-      // 初始化各源检索状态
-      for (final rule in targetRules) {
-        final key = rule.id.isNotEmpty ? rule.id : rule.name;
-        _ruleStatusMap[key] = _RuleSearchStatus(rule: rule, isSearching: true);
-        _rulePageMap[key] = 1;
-      }
-    });
-    _saveHistory();
-
-    // 关键修复：先让出一帧，确保上方 setState 触发的 loading 动画真正渲染出来。
-    // RuleEngine 内部的 QuickJS evaluate 是 dart:ffi 同步调用，执行期间主 isolate
-    // 无法绘制新帧；若不让出，这一帧可能迟迟画不出来，用户点击后看不到任何反馈。
-    await WidgetsBinding.instance.endOfFrame;
-    if (!mounted) return;
-
     if (targetRules.isEmpty) {
-      setState(() {
-        _loading = false;
-      });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: const Text('暂无可用的规则源，请先在规则市场中导入并启用规则'),
@@ -258,17 +266,50 @@ class _SearchPageState extends State<SearchPage> {
       return;
     }
 
-    // 逐源流式执行检索任务（单源完成即刻更新 UI，避免 QuickJS 并发冲突与死锁）
-    for (final rule in targetRules) {
-      if (!mounted || _searchEpoch != thisEpoch) break;
-      final key = rule.id.isNotEmpty ? rule.id : rule.name;
+    final thisEpoch = ++_searchEpoch;
+
+    // 关键修复 1：全网搜索模式下必须无条件重置选中的源胶囊为 null (全部)，
+    // 彻底杜绝因残留源筛选将新检索出来的其他源条目全部过滤为空、从而引发“一直显示加载动画”的严重假死缺陷！
+    setState(() {
+      _currentQuery = query;
+      _showHistory = false;
+      _loading = true;
+      _allResults.clear();
+      _ruleStatusMap.clear();
+      _rulePageMap.clear();
+      if (widget.targetRule == null) {
+        _selectedRuleFilter = null;
+      }
+
+      // 初始化各源检索状态（统一使用安全 Key 提取，防御 int 类型主键崩溃）
+      for (final rule in targetRules) {
+        final key = _getRuleKey(rule);
+        _ruleStatusMap[key] = _RuleSearchStatus(rule: rule, isSearching: true);
+        _rulePageMap[key] = 1;
+      }
+    });
+
+    // 关键修复 2：异步持久化搜索历史记录
+    unawaited(historyService.addHistory(query));
+
+    // 让出主事件队列确保 UI 能够先平滑渲染顶部进度条与流式准备态
+    await Future<void>.delayed(const Duration(milliseconds: 30));
+    if (!mounted || _searchEpoch != thisEpoch) return;
+
+    // 关键架构升级：受控并发池并发调度 (开源阅读同款流式调度架构)
+    // 默认并发 3~4 个沙箱任务，单源超时收窄至合理范围，杜绝单个死链源阻塞全局
+    const int maxConcurrent = 3;
+    final int timeoutSec = appService.settingsNotifier.value.requestTimeoutSeconds.clamp(5, 12);
+
+    Future<void> runRuleSearch(Rule rule) async {
+      if (!mounted || _searchEpoch != thisEpoch) return;
+      final key = _getRuleKey(rule);
 
       try {
-        final timeoutSec = appService.settingsNotifier.value.requestTimeoutSeconds;
         final raw = await RuleEngine.search(rule, query, page: 1, timeoutSeconds: timeoutSec)
-            .timeout(Duration(seconds: timeoutSec + 2));
+            .timeout(Duration(seconds: timeoutSec + 1));
 
-        if (!mounted || _searchEpoch != thisEpoch) break;
+        if (!mounted || _searchEpoch != thisEpoch) return;
 
         final List items = raw is List
             ? raw
@@ -281,6 +322,7 @@ class _SearchPageState extends State<SearchPage> {
           }
         }
 
+        // 单源只要搜到数据，即刻流式更新到界面，用户无需等待全部源跑完即可立刻浏览！
         if (mounted && _searchEpoch == thisEpoch) {
           setState(() {
             _allResults.addAll(parsed);
@@ -292,7 +334,7 @@ class _SearchPageState extends State<SearchPage> {
           });
         }
       } catch (e) {
-        debugPrint('【搜索引擎】源 [${rule.name}] 检索异常: $e');
+        debugPrint('【流式搜索】源 [${rule.name}] 检索异常: $e');
         if (mounted && _searchEpoch == thisEpoch) {
           setState(() {
             final status = _ruleStatusMap[key];
@@ -305,6 +347,21 @@ class _SearchPageState extends State<SearchPage> {
         }
       }
     }
+
+    // 启动多 Worker 并发队列流式拉取
+    final iterator = targetRules.iterator;
+    Future<void> worker() async {
+      while (iterator.moveNext()) {
+        if (!mounted || _searchEpoch != thisEpoch) break;
+        final rule = iterator.current;
+        await runRuleSearch(rule);
+      }
+    }
+
+    final workerCount = targetRules.length < maxConcurrent ? targetRules.length : maxConcurrent;
+    final workers = List.generate(workerCount, (_) => worker());
+
+    await Future.wait(workers);
 
     if (mounted && _searchEpoch == thisEpoch) {
       setState(() {
@@ -326,13 +383,13 @@ class _SearchPageState extends State<SearchPage> {
       _loadingMore = true;
     });
 
-    // 同样先让出一帧，保证"加载更多"的底部指示器先渲染，再进入 QuickJS 同步调度
-    await WidgetsBinding.instance.endOfFrame;
+    // 关键优化：让出主事件队列保证"加载更多"底部指示器先渲染完成，使用微延时替代易死锁挂起的 endOfFrame
+    await Future<void>.delayed(const Duration(milliseconds: 30));
     if (!mounted) return;
 
     for (final rule in targetRules) {
       if (!mounted || _searchEpoch != thisEpoch) break;
-      final key = rule.id.isNotEmpty ? rule.id : rule.name;
+      final key = _getRuleKey(rule);
       final nextPage = (_rulePageMap[key] ?? 1) + 1;
 
       try {
@@ -384,7 +441,7 @@ class _SearchPageState extends State<SearchPage> {
         _loading = false;
         _loadingMore = false;
         _showHistory = true;
-        _selectedRuleFilter = null;
+        _selectedRuleFilter = widget.targetRule;
       });
     }
   }
@@ -394,12 +451,9 @@ class _SearchPageState extends State<SearchPage> {
     if (_selectedRuleFilter == null) {
       return _allResults;
     }
-    final targetKey = _selectedRuleFilter!.id.isNotEmpty
-        ? _selectedRuleFilter!.id
-        : _selectedRuleFilter!.name;
+    final targetKey = _getRuleKey(_selectedRuleFilter);
     return _allResults.where((r) {
-      final key = r.rule.id.isNotEmpty ? r.rule.id : r.rule.name;
-      return key == targetKey;
+      return _getRuleKey(r.rule) == targetKey;
     }).toList();
   }
 
@@ -418,16 +472,19 @@ class _SearchPageState extends State<SearchPage> {
         appBar: _buildSearchBar(isDark),
         body: Column(
           children: [
-            // 搜索进度指示条 (并发检索中展示)
+            // 搜索进度指示条 (并发检索中展示，显示已完成规则比例)
             if (_loading)
-              const LinearProgressIndicator(
+              LinearProgressIndicator(
+                value: _ruleStatusMap.isNotEmpty
+                    ? (_ruleStatusMap.values.where((s) => !s.isSearching).length / _ruleStatusMap.length).clamp(0.0, 1.0)
+                    : null,
                 minHeight: 2.5,
                 color: AppColors.primary,
-                backgroundColor: Colors.transparent,
+                backgroundColor: AppColors.primary.withValues(alpha: 0.12),
               ),
 
-            // 源筛选胶囊栏 (仅在有检索行为或结果时呈现)
-            if (!_showHistory && _ruleStatusMap.isNotEmpty)
+            // 源筛选胶囊栏 (仅在聚合多源检索且源数大于1时呈现，单源模式隐藏以保持界面清爽)
+            if (!_showHistory && _ruleStatusMap.length > 1)
               _buildSourceFilterBar(isDark),
 
             // 主内容区域：历史/推荐面板或聚合结果
@@ -467,8 +524,10 @@ class _SearchPageState extends State<SearchPage> {
                   color: isDark ? AppColors.darkCard : AppColors.lightSurface,
                   borderRadius: BorderRadius.circular(10),
                   border: Border.all(
-                    color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
-                    width: 0.8,
+                    color: _focusNode.hasFocus
+                        ? AppColors.primary
+                        : (isDark ? AppColors.darkBorder : AppColors.lightBorder),
+                    width: _focusNode.hasFocus ? 1.2 : 0.8,
                   ),
                 ),
                 child: TextField(
@@ -513,7 +572,15 @@ class _SearchPageState extends State<SearchPage> {
                         : null,
                     isDense: true,
                     contentPadding: const EdgeInsets.symmetric(vertical: 8),
+                    // 彻底清除内层所有边框与背景继承，杜绝内外双重圆角嵌套叠加的 UI 缺陷
                     border: InputBorder.none,
+                    enabledBorder: InputBorder.none,
+                    focusedBorder: InputBorder.none,
+                    disabledBorder: InputBorder.none,
+                    errorBorder: InputBorder.none,
+                    focusedErrorBorder: InputBorder.none,
+                    filled: false,
+                    fillColor: Colors.transparent,
                   ),
                   onChanged: (val) {
                     setState(() {});
@@ -524,8 +591,9 @@ class _SearchPageState extends State<SearchPage> {
             ),
             const SizedBox(width: 10),
             AppButton.compact(
-              label: '搜索',
-              onPressed: () => _performSearch(_controller.text),
+              label: _loading ? '停止' : '搜索',
+              color: _loading ? Colors.redAccent.withValues(alpha: 0.85) : null,
+              onPressed: _loading ? _cancelSearch : () => _performSearch(_controller.text),
             ),
           ],
         ),
@@ -590,7 +658,7 @@ class _SearchPageState extends State<SearchPage> {
 
                 // 各规则单独胶囊
                 ..._ruleStatusMap.values.map((status) {
-                  final isSelected = _selectedRuleFilter == status.rule;
+                  final isSelected = _isSameRule(_selectedRuleFilter, status.rule);
                   final ruleName = status.rule.name;
 
                   return Padding(
@@ -824,28 +892,96 @@ class _SearchPageState extends State<SearchPage> {
     );
   }
 
-  /// 搜索结果列表/网格视图
+  /// 搜索结果列表/网格视图 (开源阅读同款流式响应)
   Widget _buildResultsView(bool isDark) {
     final results = _displayResults;
 
-    // 正在检索且当前无任何结果
+    // 正在检索且当前暂无任何源返回数据 (前数百毫秒等待态，带友好进度指示与一键停止)
     if (results.isEmpty && _loading) {
-      return const Center(
-        child: LoadingIndicator(
-          message: '正在并发调度已启用的解析沙箱...',
+      final totalCount = _ruleStatusMap.length;
+      final finishedCount = _ruleStatusMap.values.where((s) => !s.isSearching).length;
+
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 32),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const LoadingIndicator.compact(size: 28, strokeWidth: 2.5),
+              const SizedBox(height: 16),
+              Text(
+                '全网流式聚合检索中...',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                  color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                totalCount > 0
+                    ? '已调度 $totalCount 个规则沙箱 (已完成 $finishedCount 源)'
+                    : '正在调度规则沙箱...',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted,
+                ),
+              ),
+              const SizedBox(height: 16),
+              OutlinedButton.icon(
+                icon: const Icon(Icons.stop_circle_outlined, size: 16),
+                label: const Text('停止检索', style: TextStyle(fontSize: 12)),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
+                  side: BorderSide(
+                    color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
+                  ),
+                  visualDensity: VisualDensity.compact,
+                ),
+                onPressed: _cancelSearch,
+              ),
+            ],
+          ),
         ),
       );
     }
 
-    // 检索完成但无匹配结果
+    // 检索完成但无匹配结果 (带单源异常诊断感知)
     if (results.isEmpty && !_loading) {
+      final singleTargetRule = widget.targetRule;
+      final targetStatus = singleTargetRule != null
+          ? _ruleStatusMap[_getRuleKey(singleTargetRule)]
+          : null;
+
+      if (targetStatus != null && targetStatus.hasError) {
+        return Center(
+          child: EmptyState(
+            icon: Icons.error_outline_rounded,
+            title: '规则「${singleTargetRule!.name}」检索异常',
+            description: targetStatus.errorMessage != null && targetStatus.errorMessage!.isNotEmpty
+                ? '错误原因: ${targetStatus.errorMessage}'
+                : '目标源站点可能网络受阻或沙箱脚本解析错误，建议前往调试器查看',
+            actionText: '调试此规则',
+            onAction: () => context.push('/rule_test', extra: singleTargetRule),
+          ),
+        );
+      }
+
       return Center(
         child: EmptyState(
           icon: LucideIcons.searchX,
           title: '未检索到相关内容',
-          description: '建议更换简短词汇，或前往规则中心开启更多源进行聚合检索',
-          actionText: '去规则市场发现',
-          onAction: () => context.push('/market'),
+          description: widget.targetRule != null
+              ? '在「${widget.targetRule!.name}」中未搜到结果，建议更换简短词汇'
+              : '建议更换简短词汇，或前往规则中心开启更多源进行聚合检索',
+          actionText: widget.targetRule != null ? '重试搜索' : '去规则市场发现',
+          onAction: () {
+            if (widget.targetRule != null) {
+              _performSearch(_controller.text);
+            } else {
+              context.push('/market');
+            }
+          },
         ),
       );
     }
@@ -861,17 +997,32 @@ class _SearchPageState extends State<SearchPage> {
 
   /// 紧凑卡片式列表视图
   Widget _buildListView(List<_NormalizedSearchResult> results, bool isDark) {
+    final showBottomLoader = _loading || _loadingMore;
+
     return ListView.separated(
       controller: _scrollController,
       padding: const EdgeInsets.fromLTRB(12, 10, 12, 24),
-      itemCount: results.length + (_loadingMore ? 1 : 0),
+      itemCount: results.length + (showBottomLoader ? 1 : 0),
       separatorBuilder: (_, _) => const SizedBox(height: 10),
       itemBuilder: (context, index) {
         if (index == results.length) {
-          return const Padding(
-            padding: EdgeInsets.symmetric(vertical: 16),
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 16),
             child: Center(
-              child: LoadingIndicator.compact(size: 20),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const LoadingIndicator.compact(size: 14, strokeWidth: 1.8),
+                  const SizedBox(width: 8),
+                  Text(
+                    _loading ? '正在流式检索其余规则源...' : '加载更多中...',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted,
+                    ),
+                  ),
+                ],
+              ),
             ),
           );
         }
@@ -892,6 +1043,7 @@ class _SearchPageState extends State<SearchPage> {
     final isMostlyVideo = widget.targetRule != null
         ? _isVideoRule(widget.targetRule!)
         : (results.isEmpty || results.where((r) => _isVideoRule(r.rule)).length >= results.length / 2);
+    final showBottomLoader = _loading || _loadingMore;
 
     return GridView.builder(
       controller: _scrollController,
@@ -902,13 +1054,26 @@ class _SearchPageState extends State<SearchPage> {
         crossAxisSpacing: 10,
         mainAxisSpacing: 10,
       ),
-      itemCount: results.length + (_loadingMore ? 1 : 0),
+      itemCount: results.length + (showBottomLoader ? 1 : 0),
       itemBuilder: (context, index) {
         if (index == results.length) {
-          return const Center(
+          return Center(
             child: Padding(
-              padding: EdgeInsets.symmetric(vertical: 16),
-              child: LoadingIndicator.compact(size: 20),
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const LoadingIndicator.compact(size: 14, strokeWidth: 1.8),
+                  const SizedBox(width: 6),
+                  Text(
+                    _loading ? '检索中...' : '加载中...',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted,
+                    ),
+                  ),
+                ],
+              ),
             ),
           );
         }
@@ -930,6 +1095,10 @@ class _SearchPageState extends State<SearchPage> {
 
   /// 单条横屏视频列表卡片（缩略图 140x80，宽大于高）
   Widget _buildVideoResultCard(_NormalizedSearchResult item, bool isDark) {
+    // 优先提取清晰度/集数等角标，无角标时回退第一标签
+    final displayTag = item.badge ??
+        (item.tags != null && item.tags!.isNotEmpty ? item.tags!.first : null);
+
     return AppCard(
       borderRadius: 12,
       padding: const EdgeInsets.all(8),
@@ -951,34 +1120,27 @@ class _SearchPageState extends State<SearchPage> {
                     fit: BoxFit.cover,
                     headers: item.baseUrl.isNotEmpty ? {'referer': item.baseUrl} : null,
                   ),
-                  Builder(
-                    builder: (context) {
-                      final displayTag = item.badge ??
-                          (item.tags != null && item.tags!.isNotEmpty ? item.tags!.first : null);
-                      if (displayTag == null || displayTag.isEmpty) {
-                        return const SizedBox.shrink();
-                      }
-                      return Positioned(
-                        right: 4,
-                        bottom: 4,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1.5),
-                          decoration: BoxDecoration(
-                            color: Colors.black.withValues(alpha: 0.75),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Text(
-                            displayTag,
-                            style: const TextStyle(
-                              fontSize: 9.5,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white,
-                            ),
+                  // 修复关键缺陷：Positioned 必须是 Stack 的直接子组件，严禁被 Builder 等包裹，否则导致 ParentDataWidget 断言崩溃灰屏
+                  if (displayTag != null && displayTag.isNotEmpty)
+                    Positioned(
+                      right: 4,
+                      bottom: 4,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1.5),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.75),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          displayTag,
+                          style: const TextStyle(
+                            fontSize: 9.5,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
                           ),
                         ),
-                      );
-                    },
-                  ),
+                      ),
+                    ),
                 ],
               ),
             ),
@@ -1022,21 +1184,26 @@ class _SearchPageState extends State<SearchPage> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
-                        decoration: BoxDecoration(
-                          color: AppColors.primary.withValues(alpha: 0.12),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Text(
-                          item.rule.name,
-                          style: const TextStyle(
-                            fontSize: 10.5,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.primary,
+                      Flexible(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                          decoration: BoxDecoration(
+                            color: AppColors.primary.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            item.rule.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.primary,
+                            ),
                           ),
                         ),
                       ),
+                      const SizedBox(width: 8),
                       const Icon(LucideIcons.playCircle, size: 16, color: AppColors.primary),
                     ],
                   ),
@@ -1051,6 +1218,9 @@ class _SearchPageState extends State<SearchPage> {
 
   /// 单条竖屏列表卡片（适用于图集、小说等）
   Widget _buildPortraitResultCard(_NormalizedSearchResult item, bool isDark) {
+    final displayTag = item.badge ??
+        (item.tags != null && item.tags!.isNotEmpty ? item.tags!.first : null);
+
     return AppCard(
       borderRadius: 12,
       padding: const EdgeInsets.all(10),
@@ -1111,37 +1281,39 @@ class _SearchPageState extends State<SearchPage> {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: AppColors.primary.withValues(alpha: 0.12),
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: Text(
-                              item.rule.name,
-                              style: const TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600,
-                                color: AppColors.primary,
+                          Flexible(
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: AppColors.primary.withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                item.rule.name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppColors.primary,
+                                ),
                               ),
                             ),
                           ),
-                          Builder(
-                            builder: (context) {
-                              final displayTag = item.badge ??
-                                  (item.tags != null && item.tags!.isNotEmpty ? item.tags!.first : null);
-                              if (displayTag == null || displayTag.isEmpty) {
-                                return const SizedBox.shrink();
-                              }
-                              return Text(
+                          if (displayTag != null && displayTag.isNotEmpty) ...[
+                            const SizedBox(width: 8),
+                            Flexible(
+                              child: Text(
                                 displayTag,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
                                   fontSize: 11,
                                   color: isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted,
                                 ),
-                              );
-                            },
-                          ),
+                              ),
+                            ),
+                          ],
                         ],
                       ),
                     ],
@@ -1155,6 +1327,9 @@ class _SearchPageState extends State<SearchPage> {
 
   /// 单条横屏视频网格卡片（16:9 封面，宽大于高）
   Widget _buildVideoGridCard(_NormalizedSearchResult item, bool isDark) {
+    final displayTag = item.badge ??
+        (item.tags != null && item.tags!.isNotEmpty ? item.tags!.first : null);
+
     return AppCard(
       padding: EdgeInsets.zero,
       borderRadius: 12,
@@ -1212,34 +1387,27 @@ class _SearchPageState extends State<SearchPage> {
                       ),
                     ),
                   ),
-                  Builder(
-                    builder: (context) {
-                      final displayTag = item.badge ??
-                          (item.tags != null && item.tags!.isNotEmpty ? item.tags!.first : null);
-                      if (displayTag == null || displayTag.isEmpty) {
-                        return const SizedBox.shrink();
-                      }
-                      return Positioned(
-                        right: 6,
-                        bottom: 5,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
-                          decoration: BoxDecoration(
-                            color: Colors.black.withValues(alpha: 0.75),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Text(
-                            displayTag,
-                            style: const TextStyle(
-                              fontSize: 9.5,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.white,
-                            ),
+                  // 修复关键缺陷：Positioned 必须是 Stack 的直接子组件，严禁被 Builder 等包裹，否则导致 ParentDataWidget 断言崩溃灰屏
+                  if (displayTag != null && displayTag.isNotEmpty)
+                    Positioned(
+                      right: 6,
+                      bottom: 5,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.75),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          displayTag,
+                          style: const TextStyle(
+                            fontSize: 9.5,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.white,
                           ),
                         ),
-                      );
-                    },
-                  ),
+                      ),
+                    ),
                 ],
               ),
             ),

@@ -22,16 +22,22 @@ void main() {
       expect(script, contains('HTMLMediaElement.prototype.pause'));
       expect(script, contains('HTMLMediaElement.prototype.play'));
 
-      // 3. 验证智能触控命中探测
+      // 3. 验证智能触控命中探测与全屏状态严格判定
       expect(script, contains('findActiveVideoAndRectAtPoint'));
+      expect(script, contains('isVideoFullscreen'));
+      expect(script, contains('if (!isVideoFullscreen(match.video, match.rect))'));
 
-      // 4. 验证 HUD 与三轴手势（横向快退进、纵向亮度和音量、长按倍速）
+      // 4. 验证极简 HUD 与三轴手势（横向快退进、纵向亮度和音量、长按倍速）
       expect(script, contains('__ff_video_hud'));
       expect(script, contains('showSeekHud'));
       expect(script, contains('showBrightnessHud'));
       expect(script, contains('showVolumeHud'));
       expect(script, contains('showStatusHud'));
       expect(script, contains('3.0X 瞬时倍速中'));
+
+      // 验证音量和亮度去除了下方描述文字
+      expect(script, isNot(contains('左侧上下滑动调节画面亮度')));
+      expect(script, isNot(contains('右侧上下滑动调节播放音量')));
 
       // 验证自定义倍率注入
       final customScript = engine.buildVideoGestureScript(longPressSpeed: 2.0);
@@ -40,5 +46,6 @@ void main() {
       // 5. 验证全屏动态挂载适配
       expect(script, contains('document.fullscreenElement || document.webkitFullscreenElement'));
     });
+
   });
 }

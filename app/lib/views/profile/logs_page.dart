@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:share_plus/share_plus.dart';
@@ -223,9 +223,23 @@ class _LogsPageState extends State<LogsPage> {
     return Scaffold(
       backgroundColor: isDark ? AppColors.darkBg : AppColors.lightBg,
       appBar: AppBar(
+        backgroundColor: isDark ? AppColors.darkBg : AppColors.lightBg,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
+          onPressed: () => Navigator.of(context).maybePop(),
+        ),
         title: Row(
           children: [
-            const Text('沙箱运行日志', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17)),
+            Text(
+              '沙箱运行日志',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 17,
+                color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
+              ),
+            ),
             const SizedBox(width: 8),
             ValueListenableBuilder<List<LogEntry>>(
               valueListenable: AppLogger.logsNotifier,
@@ -250,6 +264,7 @@ class _LogsPageState extends State<LogsPage> {
           ],
         ),
         actions: [
+
           // Live 实时滚动追踪开关
           IconButton(
             tooltip: _autoScroll ? '实时跟踪模式 (已开启)' : '开启实时跟踪',
@@ -552,10 +567,11 @@ class _LogsPageState extends State<LogsPage> {
                     ),
                     const SizedBox(height: 6),
 
-                    // 日志内容文本
-                    SelectableText(
+                    // 日志内容文本 (外层卡片支持长按复制与点击展开，此处采用标准 Text 避免手势抢占)
+                    Text(
                       entry.message,
                       maxLines: isExpanded ? null : 3,
+                      overflow: isExpanded ? TextOverflow.visible : TextOverflow.ellipsis,
                       style: TextStyle(
                         fontSize: 12,
                         height: 1.35,
@@ -563,6 +579,7 @@ class _LogsPageState extends State<LogsPage> {
                         color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
                       ),
                     ),
+
 
                     // 展开的异常或堆栈详细视图
                     if (isExpanded && (entry.error != null || entry.stackTrace != null)) ...[

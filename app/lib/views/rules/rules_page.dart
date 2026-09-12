@@ -1,4 +1,5 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
@@ -317,6 +318,117 @@ class _RulesPageState extends State<RulesPage> {
     );
   }
 
+  /// 长按规则卡片弹出快捷操作面板 (支持规则调试/发现/复制/删除)
+  void _showRuleActionSheet(BuildContext context, Rule rule) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final typeColor = _getTypeColor(rule.type);
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: isDark ? AppColors.darkCard : AppColors.lightSurface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetCtx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // 顶部小横条
+                Container(
+                  width: 36,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 12),
+                  decoration: BoxDecoration(
+                    color: isDark ? Colors.white24 : Colors.black12,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                // 规则基本信息行
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: typeColor.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          _getTypeLabel(rule.type),
+                          style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: typeColor),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          rule.name,
+                          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const Divider(height: 16),
+
+                // 选项 1: 规则流式测试与调试 (对齐开源阅读)
+                ListTile(
+                  leading: const Icon(LucideIcons.flaskConical, color: AppColors.primary, size: 20),
+                  title: const Text('规则调试与测试 (Debug & Test)', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                  subtitle: const Text('多阶段流水线自动化测试 (发现/搜索/详情/直链解析)', style: TextStyle(fontSize: 11)),
+                  onTap: () {
+                    Navigator.pop(sheetCtx);
+                    context.push('/rule_test', extra: {'rule': rule});
+                  },
+                ),
+
+                // 选项 2: 进入分类发现浏览
+                ListTile(
+                  leading: const Icon(LucideIcons.compass, size: 20),
+                  title: const Text('分类发现浏览', style: TextStyle(fontSize: 14)),
+                  onTap: () {
+                    Navigator.pop(sheetCtx);
+                    context.push('/rule_discovery', extra: {'rule': rule});
+                  },
+                ),
+
+                // 选项 3: 复制源站基址
+                if (rule.baseUrl.isNotEmpty)
+                  ListTile(
+                    leading: const Icon(LucideIcons.copy, size: 20),
+                    title: const Text('复制源站地址', style: TextStyle(fontSize: 14)),
+                    subtitle: Text(rule.baseUrl, style: const TextStyle(fontSize: 11), maxLines: 1, overflow: TextOverflow.ellipsis),
+                    onTap: () {
+                      Navigator.pop(sheetCtx);
+                      Clipboard.setData(ClipboardData(text: rule.baseUrl));
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('已复制源站地址至剪贴板'), duration: Duration(seconds: 1)),
+                      );
+                    },
+                  ),
+
+                // 选项 4: 删除规则
+                ListTile(
+                  leading: const Icon(LucideIcons.trash2, color: Colors.redAccent, size: 20),
+                  title: const Text('删除此规则', style: TextStyle(fontSize: 14, color: Colors.redAccent)),
+                  onTap: () {
+                    Navigator.pop(sheetCtx);
+                    _confirmDeleteRule(context, rule);
+                  },
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   /// 构建测速延迟三色微胶囊指示器
   Widget _buildLatencyBadge(int? latency, bool isDark) {
     if (latency == null) return const SizedBox.shrink();
@@ -373,6 +485,9 @@ class _RulesPageState extends State<RulesPage> {
       borderRadius: 16,
       onTap: () {
         context.push('/rule_discovery', extra: {'rule': rule});
+      },
+      onLongPress: () {
+        _showRuleActionSheet(context, rule);
       },
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -569,6 +684,27 @@ class _RulesPageState extends State<RulesPage> {
                           ),
                         ],
                       ],
+                    ),
+                  ),
+                ),
+              ),
+
+              const SizedBox(width: 8),
+
+              // 规则测试与调试纯图标按钮 (类开源阅读书源调试器)
+              Tooltip(
+                message: '规则测试',
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(6),
+                  onTap: () {
+                    context.push('/rule_test', extra: {'rule': rule});
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.all(4),
+                    child: Icon(
+                      LucideIcons.flaskConical,
+                      size: 14,
+                      color: isDark ? AppColors.primaryLight : AppColors.primary,
                     ),
                   ),
                 ),

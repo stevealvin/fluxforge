@@ -1,10 +1,10 @@
 /// 网页视频手势增强引擎 (WebVideoGestureEngine)
 /// 
 /// 为 WebView 内置的 HTML5 视频播放提供原生级全功能手势交互：
-/// 1. 严格限定范围：仅在播放视频窗口内滑动才触发，不影响网页其余区域的上下浏览与滚动；
-/// 2. 水平横向滑动：快进/快退，屏幕中央高颜值毛玻璃 HUD 实时提示【+XXs】或【-XXs】与进度条；
-/// 3. 左侧纵向滑动：调节视频画面亮度（0% ~ 100%），HUD 实时显示【亮度 XX%】与金色刻度；
-/// 4. 右侧纵向滑动：调节视频播放音量（0% ~ 100%），HUD 实时显示【音量 XX%】与天蓝刻度；
+/// 1. 严格全屏限定：固定仅在全屏状态下（含 HTML5 原生全屏与移动端 CSS 视口全屏）才激活手势，非全屏完全放行网页原生浏览与滚动；
+/// 2. 水平横向滑动：快进/快退，屏幕中央高颜值毛玻璃 HUD 实时提示【+XXs】或【-XXs】与进度时间；
+/// 3. 左侧纵向滑动：调节视频画面亮度（0% ~ 100%），HUD 极简紧凑显示【亮度 XX%】与金色刻度条（已剔除冗余说明文本）；
+/// 4. 右侧纵向滑动：调节视频播放音量（0% ~ 100%），HUD 极简紧凑显示【音量 XX%】与天蓝刻度条（已剔除冗余说明文本）；
 /// 5. 长按视频区域：瞬时触发加速倍速播放 (倍率可在设置中配置)，松手恢复原速；
 /// 6. 全局捕获级监听（Capture Phase）：穿透播放器遮罩层与弹幕层，同时绝不干扰网页原生全屏与控制按钮点击；
 /// 7. 防全屏失焦与防死循环保护：屏蔽全屏切换引发的网页误判暂停与高频 pause 震荡死循环。
@@ -232,6 +232,7 @@ class WebVideoGestureEngine {
     if (!deltaEl || !timeEl || !hud) return;
 
     setProgressTrackVisible(false);
+    timeEl.style.display = '';
 
     const isForward = deltaSeconds >= 0;
     const sign = isForward ? '+' : '';
@@ -253,12 +254,12 @@ class WebVideoGestureEngine {
     if (!deltaEl || !timeEl || !barEl || !hud) return;
 
     setProgressTrackVisible(true);
+    // 极简风格：隐藏下方的描述文字，仅展示大号百分比与进度指示条
+    timeEl.style.display = 'none';
 
     deltaEl.textContent = `亮度 ${percent}%`;
     deltaEl.className = '__ff_hud_delta brightness';
     barEl.style.background = '#FBBF24';
-
-    timeEl.textContent = '左侧上下滑动调节画面亮度';
     barEl.style.width = percent + '%';
 
     hud.classList.add('active');
@@ -273,16 +274,17 @@ class WebVideoGestureEngine {
     if (!deltaEl || !timeEl || !barEl || !hud) return;
 
     setProgressTrackVisible(true);
+    // 极简风格：隐藏下方的描述文字，仅展示大号百分比与进度指示条
+    timeEl.style.display = 'none';
 
     deltaEl.textContent = `音量 ${percent}%`;
     deltaEl.className = '__ff_hud_delta volume';
     barEl.style.background = '#38BDF8';
-
-    timeEl.textContent = '右侧上下滑动调节播放音量';
     barEl.style.width = percent + '%';
 
     hud.classList.add('active');
   }
+
 
   function showStatusHud(title, subtitle) {
     if (hudHideTimer) clearTimeout(hudHideTimer);
@@ -386,6 +388,36 @@ class WebVideoGestureEngine {
   let longPressTimer = null;
   let isFastForwarding = false;
   let normalPlaybackRate = 1.0;
+  // 4. 智能判断目标视频或页面是否处于全屏状态 (支持 HTML5 标准全屏与移动端 CSS 视口全屏)
+  function isVideoFullscreen(video, rect) {
+    // 1. 标准 HTML5 全屏 API
+    const isNativeFs = !!(document.fullscreenElement || document.webkitFullscreenElement);
+    if (isNativeFs) return true;
+
+    // 2. 移动端 CSS 视口伪全屏判定：
+    // 检查触点命中的包围盒或视频父容器是否占满屏幕宽高的 90% 以上
+    const vw = window.innerWidth || (document.documentElement && document.documentElement.clientWidth) || 360;
+    const vh = window.innerHeight || (document.documentElement && document.documentElement.clientHeight) || 640;
+
+    if (rect && rect.width >= vw * 0.90 && rect.height >= vh * 0.90) {
+      return true;
+    }
+
+    if (video) {
+      let p = video.parentElement;
+      let depth = 0;
+      while (p && p !== document.body && p !== document.documentElement && depth < 4) {
+        const pRect = p.getBoundingClientRect();
+        if (pRect.width >= vw * 0.90 && pRect.height >= vh * 0.90) {
+          return true;
+        }
+        p = p.parentElement;
+        depth++;
+      }
+    }
+
+    return false;
+  }
 
   function onGlobalTouchStart(e) {
     if (e.touches.length !== 1) return;
@@ -394,8 +426,14 @@ class WebVideoGestureEngine {
     const match = findActiveVideoAndRectAtPoint(touch.clientX, touch.clientY);
     if (!match) return;
 
+    // 核心保护：固定仅在全屏状态下才激活手势，非全屏时直接放行网页原生浏览与滚动
+    if (!isVideoFullscreen(match.video, match.rect)) {
+      return;
+    }
+
     currentVideo = match.video;
     activeTargetRect = match.rect;
+
 
     isTouching = true;
     startX = touch.clientX;

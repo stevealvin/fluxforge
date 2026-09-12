@@ -73,6 +73,7 @@ class RuleDiscoveryPage extends StatefulWidget {
 
 class _RuleDiscoveryPageState extends State<RuleDiscoveryPage> {
   final ScrollController _scrollController = ScrollController();
+  final ScrollController _tabsScrollController = ScrollController();
 
   // 状态机
   List<_MediaItem> _items = [];
@@ -84,6 +85,9 @@ class _RuleDiscoveryPageState extends State<RuleDiscoveryPage> {
   bool _loadingMore = false;
   String? _error;
   bool _isGridView = true;
+  /// 是否在顶部展开全部分类面板
+  bool _isTabsExpanded = false;
+
 
   @override
   void initState() {
@@ -96,8 +100,10 @@ class _RuleDiscoveryPageState extends State<RuleDiscoveryPage> {
   void dispose() {
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
+    _tabsScrollController.dispose();
     super.dispose();
   }
+
 
   void _onScroll() {
     if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 200) {
@@ -227,8 +233,23 @@ class _RuleDiscoveryPageState extends State<RuleDiscoveryPage> {
       _selectedTab = tab;
       _items = [];
     });
+    _scrollToSelectedTab(tab);
     _loadDiscovery(page: 1);
   }
+
+  /// 将选中的 Tab 智能平滑居中至横向视口
+  void _scrollToSelectedTab(_DiscoveryTab tab) {
+    final index = _tabs.indexOf(tab);
+    if (index >= 0 && _tabsScrollController.hasClients) {
+      final targetOffset = (index * 72.0) - 80.0;
+      _tabsScrollController.animateTo(
+        targetOffset.clamp(0.0, _tabsScrollController.position.maxScrollExtent),
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOut,
+      );
+    }
+  }
+
 
   /// 点击媒体卡片跳转至详情
   void _onItemTap(_MediaItem item) {
@@ -291,60 +312,249 @@ class _RuleDiscoveryPageState extends State<RuleDiscoveryPage> {
           // 顶部横向分类栏 (若规则提供了 tabs)
           if (_tabs.isNotEmpty) _buildTabsBar(isDark),
 
-          // 主数据内容展示区
+          // 主数据内容与顶部向下展开分类面板的层叠容器
           Expanded(
-            child: _buildBody(isDark),
+            child: Stack(
+              children: [
+                // 1. 主数据列表主体
+                Positioned.fill(
+                  child: _buildBody(isDark),
+                ),
+
+                // 2. 顶部紧贴 tabs 向下展开的全部分类面板与半透明遮罩 (方案 B)
+                if (_tabs.isNotEmpty && _isTabsExpanded) ...[
+                  // 半透明背景遮罩 (点击快速收起面板)
+                  Positioned.fill(
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () {
+                        setState(() {
+                          _isTabsExpanded = false;
+                        });
+                      },
+                      child: Container(
+                        color: Colors.black.withValues(alpha: 0.42),
+                      ),
+                    ),
+                  ),
+
+                  // 紧贴顶部向下滑出的全部分类药丸面板
+                  Positioned(
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    child: _buildTopExpandedPanel(isDark),
+                  ),
+                ],
+              ],
+            ),
           ),
         ],
       ),
     );
   }
 
-  /// 构建横向分类滚动栏
+  /// 构建顶部横向分类栏 (纯净透明无分割线，与页面底色 100% 融为一体，右侧常驻折叠/展开按钮)
   Widget _buildTabsBar(bool isDark) {
-    return Container(
-      height: 48,
-      decoration: BoxDecoration(
-        color: isDark ? AppColors.darkSurface : AppColors.lightSurface,
-        border: Border(
-          bottom: BorderSide(
-            color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
-            width: 0.5,
-          ),
-        ),
-      ),
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        itemCount: _tabs.length,
-        separatorBuilder: (_, _) => const SizedBox(width: 8),
-        itemBuilder: (context, index) {
-          final tab = _tabs[index];
-          final isSelected = _selectedTab?.url == tab.url && _selectedTab?.title == tab.title;
+    final bgColor = isDark ? AppColors.darkBg : AppColors.lightBg;
 
-          return ChoiceChip(
-            label: Text(tab.title),
-            selected: isSelected,
-            selectedColor: AppColors.primary.withValues(alpha: 0.16),
-            labelStyle: TextStyle(
-              fontSize: 12,
-              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-              color: isSelected
-                  ? AppColors.primary
-                  : (isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary),
+    return Container(
+      height: 44,
+      color: Colors.transparent, // 保持完全透明，与外部页面底色 100% 一体化
+      child: Row(
+        children: [
+          // 1. 左侧横向可滚动分类标签
+          Expanded(
+            child: ListView.separated(
+              controller: _tabsScrollController,
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+              itemCount: _tabs.length,
+              separatorBuilder: (_, _) => const SizedBox(width: 8),
+              itemBuilder: (context, index) {
+                final tab = _tabs[index];
+                final isSelected = _selectedTab?.url == tab.url && _selectedTab?.title == tab.title;
+
+                return ChoiceChip(
+                  label: Text(tab.title),
+                  selected: isSelected,
+                  selectedColor: AppColors.primary.withValues(alpha: 0.16),
+                  backgroundColor: isDark ? Colors.white.withValues(alpha: 0.05) : Colors.black.withValues(alpha: 0.04),
+                  labelStyle: TextStyle(
+                    fontSize: 12,
+                    fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                    color: isSelected
+                        ? AppColors.primary
+                        : (isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary),
+                  ),
+                  side: BorderSide(
+                    color: isSelected
+                        ? AppColors.primary
+                        : (isDark ? AppColors.darkBorder : AppColors.lightBorder),
+                    width: isSelected ? 1.0 : 0.6,
+                  ),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  onSelected: (_) => _onSelectTab(tab),
+                );
+              },
             ),
-            side: BorderSide(
-              color: isSelected
-                  ? AppColors.primary
-                  : (isDark ? AppColors.darkBorder : AppColors.lightBorder),
+          ),
+
+          // 2. 右侧展开/收起顶部面板切换按钮 (渐变遮罩使用页面原生底色无痕融入)
+          Container(
+            height: double.infinity,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.centerLeft,
+                end: Alignment.centerRight,
+                colors: [
+                  bgColor.withValues(alpha: 0.0),
+                  bgColor,
+                ],
+              ),
             ),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            onSelected: (_) => _onSelectTab(tab),
-          );
-        },
+            padding: const EdgeInsets.only(left: 4, right: 6),
+            child: IconButton(
+              tooltip: _isTabsExpanded ? '收起全部分类' : '展开全部分类',
+              icon: AnimatedRotation(
+                turns: _isTabsExpanded ? 0.5 : 0.0,
+                duration: const Duration(milliseconds: 200),
+                curve: Curves.easeInOut,
+                child: Icon(
+                  LucideIcons.chevronDown,
+                  size: 18,
+                  color: _isTabsExpanded
+                      ? AppColors.primary
+                      : (isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary),
+                ),
+              ),
+              onPressed: () {
+                setState(() {
+                  _isTabsExpanded = !_isTabsExpanded;
+                });
+              },
+            ),
+          ),
+        ],
       ),
     );
   }
+
+  /// 构建顶部紧贴 tabs 向下展开的分类折叠面板 (背景色与外部页面原生底色 100% 一致，从上往下自然流淌)
+  Widget _buildTopExpandedPanel(bool isDark) {
+    final bgColor = isDark ? AppColors.darkBg : AppColors.lightBg;
+
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        // 与外部页面底色完全一模一样，从上往下无缝连接
+        color: bgColor,
+        borderRadius: const BorderRadius.vertical(bottom: Radius.circular(20)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: isDark ? 0.65 : 0.08),
+            blurRadius: 20,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.fromLTRB(16, 6, 16, 18),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 顶部信息提示与收起快捷键
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                '全部分类 (${_tabs.length})',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
+                ),
+              ),
+              GestureDetector(
+                onTap: () => setState(() => _isTabsExpanded = false),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 6),
+                  child: Text(
+                    '收起',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: AppColors.primary,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+
+          // 流式展示所有分类标签药丸 (限高内部滚动)
+          ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(context).size.height * 0.45,
+            ),
+            child: SingleChildScrollView(
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 10,
+                children: _tabs.map((tab) {
+                  final isSelected = _selectedTab?.url == tab.url && _selectedTab?.title == tab.title;
+                  return InkWell(
+                    borderRadius: BorderRadius.circular(16),
+                    onTap: () {
+                      setState(() => _isTabsExpanded = false);
+                      _onSelectTab(tab);
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6.5),
+                      decoration: BoxDecoration(
+                        color: isSelected
+                            ? AppColors.primary.withValues(alpha: 0.16)
+                            : (isDark ? Colors.white.withValues(alpha: 0.05) : Colors.black.withValues(alpha: 0.04)),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: isSelected
+                              ? AppColors.primary
+                              : (isDark ? AppColors.darkBorder : AppColors.lightBorder),
+                          width: isSelected ? 1.2 : 0.8,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            tab.title,
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                              color: isSelected
+                                  ? AppColors.primary
+                                  : (isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary),
+                            ),
+                          ),
+                          if (isSelected) ...[
+                            const SizedBox(width: 4),
+                            const Icon(LucideIcons.check, size: 13, color: AppColors.primary),
+                          ],
+                        ],
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+
 
   /// 构建主视图主体内容
   Widget _buildBody(bool isDark) {

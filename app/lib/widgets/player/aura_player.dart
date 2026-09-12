@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:ui';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
@@ -7,6 +8,7 @@ import 'package:video_player/video_player.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../../core/theme/app_colors.dart';
+import '../../router.dart';
 import '../../services/di.dart';
 import '../../widgets/loading_indicator.dart';
 
@@ -29,6 +31,7 @@ class AuraPlayer extends StatefulWidget {
     this.onBack,
     this.onFullScreenChanged,
     this.extraActions,
+    this.autoPauseOnCovered = true,
   });
 
   /// 视频播放直链 (mp4, m3u8 等)
@@ -67,13 +70,15 @@ class AuraPlayer extends StatefulWidget {
   /// 顶部/底部扩展操作插槽
   final List<Widget>? extraActions;
 
+  /// 当有新路由压栈覆盖当前播放器时 (如进入相关推荐新页面) 是否自动暂停
+  final bool autoPauseOnCovered;
 
   @override
   State<AuraPlayer> createState() => _AuraPlayerState();
 }
 
 class _AuraPlayerState extends State<AuraPlayer>
-    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver, RouteAware {
   VideoPlayerController? _controller;
   bool _isInitialized = false;
   bool _hasError = false;
@@ -86,8 +91,10 @@ class _AuraPlayerState extends State<AuraPlayer>
   bool _showControls = true;
   Timer? _controlsTimer;
 
-  // 锁屏状态
+  // 锁屏状态管理 (支持单独唤醒与3.5秒自动淡出)
   bool _isLocked = false;
+  bool _showLockIcon = true;
+  Timer? _lockIconTimer;
 
   // 全屏状态
   bool _isFullScreen = false;
@@ -122,9 +129,34 @@ class _AuraPlayerState extends State<AuraPlayer>
   bool _showResumeTip = false;
   Timer? _resumeTipTimer;
 
-  // 拖动进度条临时状态
+  // 拖动进度条临时状态与防跳变播放意向记忆
   bool _isDraggingProgress = false;
   double _dragProgressValue = 0.0;
+  bool _wasPlayingBeforeDrag = true;
+  bool _isSeekingTo = false;
+  Timer? _seekToDebounceTimer;
+
+  // 画面比例自适应、镜像翻转与循环播放偏好
+  BoxFit _videoFit = BoxFit.contain; // 默认原比例包含
+  bool _isMirrored = false; // 是否水平镜像翻转
+  bool _isLooping = false; // 是否单视频无缝循环播放
+
+  // 加载与缓冲状态极光流光扫光动画控制器
+  late AnimationController _shimmerController;
+
+  /// 综合判定播放意图与真实状态：
+  /// 在用户拖拽进度条、手势滑屏寻道、或寻道后的网络缓冲等待阶段，
+  /// 始终优先保持拖拽前的播放意图，坚决防止播放/暂停按钮发生误显或跳变。
+  bool get _effectiveIsPlaying {
+    if (_controller == null || !_controller!.value.isInitialized) return false;
+    if (_isDraggingProgress || _isSeeking || _isSeekingTo) {
+      return _wasPlayingBeforeDrag;
+    }
+    if (_controller!.value.isBuffering && _wasPlayingBeforeDrag) {
+      return true;
+    }
+    return _controller!.value.isPlaying;
+  }
 
   /// 动态更新屏幕常亮状态
   void _updateWakelock(bool enable) {
@@ -146,6 +178,12 @@ class _AuraPlayerState extends State<AuraPlayer>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _isFullScreen = widget.isFullScreenMode;
+
+    // 初始化流光进度条循环扫光动画控制器 (周期 1400ms，平滑线性流动)
+    _shimmerController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1400),
+    )..repeat();
 
     if (widget.controller != null) {
       _controller = widget.controller;
@@ -170,12 +208,43 @@ class _AuraPlayerState extends State<AuraPlayer>
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // 订阅当前页面的路由生命周期事件
+    final route = ModalRoute.of(context);
+    if (route != null) {
+      appRouteObserver.subscribe(this, route);
+    }
+  }
+
+  /// 当当前播放器所在路由被新页面 Push 压栈覆盖 (例如进入相关推荐新页面、选集详情等)
+  @override
+  void didPushNext() {
+    if (widget.autoPauseOnCovered) {
+      if (_controller != null && _controller!.value.isPlaying) {
+        _controller!.pause();
+      }
+      _updateWakelock(false);
+    }
+  }
+
+  /// 当覆盖在当前播放器之上的顶层页面被 Pop 移除、当前播放器重回顶层可见状态
+  @override
+  void didPopNext() {
+    // 页面重新露出时：
+    // 成熟流媒体体验原则：保持暂停状态，不擅自自动恢复外放声音，避免惊扰用户，静待用户自主点击播放
+  }
+
+  @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
     if (state == AppLifecycleState.inactive ||
         state == AppLifecycleState.paused ||
         state == AppLifecycleState.detached) {
-      // 进入后台或失焦时解除屏幕常亮
+      // 进入后台、锁屏或失焦时自动暂停播放并解除屏幕常亮，防止后台偷跑电量与网络流量
+      if (widget.autoPauseOnCovered && (_controller?.value.isPlaying ?? false)) {
+        _controller?.pause();
+      }
       _updateWakelock(false);
     } else if (state == AppLifecycleState.resumed) {
       // 重新切回前台时，若视频仍在播放则恢复屏幕常亮
@@ -188,9 +257,13 @@ class _AuraPlayerState extends State<AuraPlayer>
 
   @override
   void dispose() {
+    appRouteObserver.unsubscribe(this);
     WidgetsBinding.instance.removeObserver(this);
+    _shimmerController.dispose();
+    _seekToDebounceTimer?.cancel();
     _updateWakelock(false);
     _controlsTimer?.cancel();
+    _lockIconTimer?.cancel();
     _volumeCapsuleTimer?.cancel();
     _brightnessCapsuleTimer?.cancel();
     _resumeTipTimer?.cancel();
@@ -292,25 +365,42 @@ class _AuraPlayerState extends State<AuraPlayer>
       widget.onProgress?.call(value.position, value.duration);
     }
 
-    // 播放结束判定
+    // 播放结束判定 (支持单视频循环播放)
     if (value.isInitialized &&
         value.position >= value.duration &&
         value.duration > Duration.zero) {
-      _updateWakelock(false);
-      widget.onEnded?.call();
+      if (_isLooping) {
+        _controller?.seekTo(Duration.zero);
+        _controller?.play();
+      } else {
+        _updateWakelock(false);
+        widget.onEnded?.call();
+      }
     }
 
     // 触发刷新时间显示
     setState(() {});
   }
 
-  /// 启动无操作 3.5 秒后自动隐藏控制栏的计时器
+  /// 启动无操作 5.0 秒后自动隐藏控制栏的计时器 (时长延长，操作从容舒展)
   void _startControlsTimer() {
     _controlsTimer?.cancel();
-    _controlsTimer = Timer(const Duration(milliseconds: 3500), () {
+    _controlsTimer = Timer(const Duration(milliseconds: 5000), () {
       if (mounted && _showControls && !_isDraggingProgress && !_isSeeking) {
         setState(() {
           _showControls = false;
+        });
+      }
+    });
+  }
+
+  /// 启动锁定状态下锁图标无操作 5.0 秒后自动隐藏的计时器
+  void _startLockIconTimer() {
+    _lockIconTimer?.cancel();
+    _lockIconTimer = Timer(const Duration(milliseconds: 5000), () {
+      if (mounted && _showLockIcon) {
+        setState(() {
+          _showLockIcon = false;
         });
       }
     });
@@ -412,6 +502,7 @@ class _AuraPlayerState extends State<AuraPlayer>
   Widget build(BuildContext context) {
     final stackContent = Stack(
       fit: StackFit.expand,
+      clipBehavior: Clip.hardEdge,
       alignment: Alignment.center,
       children: [
         // 1. 核心视频画面渲染层
@@ -424,8 +515,9 @@ class _AuraPlayerState extends State<AuraPlayer>
           ),
         ),
 
-        // 3. 全局手势交互捕获层 (左右滑动调节亮度/音量、居中拖拽快进、长按2.0x、双击暂停)
-        if (_isInitialized && !_isLocked) _buildGestureLayer(),
+        // 3. 全局手势交互捕获层 (未锁定时支持滑动手势，锁定时仅响应单击呼出锁图标)
+        if (_isInitialized)
+          _isLocked ? _buildLockedGestureLayer() : _buildGestureLayer(),
 
         // 4. 手势浮层：左侧亮度微胶囊
         if (_showBrightnessCapsule) _buildBrightnessCapsule(),
@@ -442,13 +534,19 @@ class _AuraPlayerState extends State<AuraPlayer>
         // 8. 断点续播提醒气泡
         if (_showResumeTip) _buildResumeTip(),
 
-        // 9. 现代毛玻璃 UI 控制栏 (顶栏、底栏、锁屏) — 常驻渲染，由内部动画驱动显隐
+        // 9. 小屏专属居中大播放/暂停按键 (带平滑缩放与淡入淡出动效)
+        _buildCenterPlayButton(),
+
+        // 10. 现代毛玻璃 UI 控制栏 (顶栏、底栏) — 常驻渲染，由内部动画驱动显隐
         if (_isInitialized) _buildControlOverlays(),
 
-        // 10. 锁屏浮动小按钮 (始终在控制层或者单锁显隐)
+        // 11. 浮动锁屏按钮 (仅全屏模式出现、加宽左边距、支持单锁显隐)
         if (_isInitialized) _buildLockButton(),
 
-        // 11. 加载中或错误状态指示层
+        // 12. 小屏底边常驻微型流光进度条 (控制条隐藏时无缝接替)
+        _buildBottomMiniProgress(),
+
+        // 13. 加载中或错误状态指示层
         if (!_isInitialized || _hasError) _buildStateOverlay(),
       ],
     );
@@ -465,29 +563,72 @@ class _AuraPlayerState extends State<AuraPlayer>
       );
     }
 
-    return Container(
-      color: Colors.black,
-      child: AspectRatio(
-        aspectRatio: (_controller?.value.isInitialized == true &&
-                _controller!.value.aspectRatio > 0
-            ? _controller!.value.aspectRatio
-            : 16 / 9),
-        child: stackContent,
+    return ClipRect(
+      child: Container(
+        color: Colors.black,
+        child: AspectRatio(
+          aspectRatio: (_controller?.value.isInitialized == true &&
+                  _controller!.value.aspectRatio > 0
+              ? _controller!.value.aspectRatio
+              : 16 / 9),
+          child: stackContent,
+        ),
       ),
     );
   }
 
-  /// 视频渲染核心区域
+  /// 视频渲染核心区域 (支持 Contain/Cover/Fill 比例调节与水平镜像翻转)
   Widget _buildVideoSurface() {
     if (_isInitialized && _controller != null) {
-      return Center(
-        child: AspectRatio(
-          aspectRatio: _controller!.value.aspectRatio > 0
-              ? _controller!.value.aspectRatio
-              : 16 / 9,
-          child: VideoPlayer(_controller!),
-        ),
-      );
+      final videoWidth = _controller!.value.size.width;
+      final videoHeight = _controller!.value.size.height;
+      final aspectRatio = _controller!.value.aspectRatio > 0
+          ? _controller!.value.aspectRatio
+          : 16 / 9;
+
+      Widget videoWidget;
+      if (_videoFit == BoxFit.cover) {
+        videoWidget = SizedBox.expand(
+          child: FittedBox(
+            fit: BoxFit.cover,
+            clipBehavior: Clip.hardEdge,
+            child: SizedBox(
+              width: videoWidth > 0 ? videoWidth : 16,
+              height: videoHeight > 0 ? videoHeight : 9,
+              child: VideoPlayer(_controller!),
+            ),
+          ),
+        );
+      } else if (_videoFit == BoxFit.fill) {
+        videoWidget = SizedBox.expand(
+          child: FittedBox(
+            fit: BoxFit.fill,
+            child: SizedBox(
+              width: videoWidth > 0 ? videoWidth : 16,
+              height: videoHeight > 0 ? videoHeight : 9,
+              child: VideoPlayer(_controller!),
+            ),
+          ),
+        );
+      } else {
+        videoWidget = Center(
+          child: AspectRatio(
+            aspectRatio: aspectRatio,
+            child: VideoPlayer(_controller!),
+          ),
+        );
+      }
+
+      // 水平镜像翻转处理 (便于舞蹈、健身、跟练视频学习)
+      if (_isMirrored) {
+        videoWidget = Transform(
+          alignment: Alignment.center,
+          transform: Matrix4.rotationY(math.pi),
+          child: videoWidget,
+        );
+      }
+
+      return videoWidget;
     }
 
     // 未就绪时若有封面则显示海报封面
@@ -502,7 +643,25 @@ class _AuraPlayerState extends State<AuraPlayer>
     return const SizedBox.shrink();
   }
 
-  /// 手势交互捕获层
+  /// 锁定状态下的极简防误触手势层：仅捕获屏幕单击以唤醒/切换锁图标显隐，完全拦截滑动/双击/长按等误触
+  Widget _buildLockedGestureLayer() {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () {
+        setState(() {
+          _showLockIcon = !_showLockIcon;
+        });
+        if (_showLockIcon) {
+          _startLockIconTimer();
+        } else {
+          _lockIconTimer?.cancel();
+        }
+      },
+      child: const SizedBox.expand(),
+    );
+  }
+
+  /// 手势交互捕获层 (未锁定时)
   Widget _buildGestureLayer() {
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -584,6 +743,7 @@ class _AuraPlayerState extends State<AuraPlayer>
           onHorizontalDragStart: (details) {
             if (_controller == null || !_controller!.value.isInitialized) return;
             _controlsTimer?.cancel();
+            _wasPlayingBeforeDrag = _controller!.value.isPlaying;
             setState(() {
               _isSeeking = true;
               _seekStartPos = _controller!.value.position;
@@ -607,9 +767,24 @@ class _AuraPlayerState extends State<AuraPlayer>
           },
           onHorizontalDragEnd: (_) {
             if (_isSeeking && _controller != null) {
-              _controller!.seekTo(_seekTarget);
               setState(() {
                 _isSeeking = false;
+                _isSeekingTo = true;
+              });
+              _controller!.seekTo(_seekTarget).then((_) {
+                if (mounted) {
+                  if (_wasPlayingBeforeDrag) {
+                    _controller?.play();
+                  }
+                  _seekToDebounceTimer?.cancel();
+                  _seekToDebounceTimer = Timer(const Duration(milliseconds: 350), () {
+                    if (mounted) {
+                      setState(() {
+                        _isSeekingTo = false;
+                      });
+                    }
+                  });
+                }
               });
               _startControlsTimer();
             }
@@ -639,7 +814,7 @@ class _AuraPlayerState extends State<AuraPlayer>
               child: Column(
                 children: [
                   Icon(
-                    _brightness > 0.5 ? LucideIcons.sun : LucideIcons.sunDim,
+                    _brightness > 0.5 ? LucideIcons.sun : LucideIcons.sunMedium,
                     color: Colors.white,
                     size: 18,
                   ),
@@ -689,7 +864,9 @@ class _AuraPlayerState extends State<AuraPlayer>
               child: Column(
                 children: [
                   Icon(
-                    _volume == 0 ? LucideIcons.volumeX : (_volume > 0.5 ? LucideIcons.volume2 : LucideIcons.volume1),
+                    _volume == 0
+                        ? LucideIcons.volumeX
+                        : (_volume > 0.5 ? LucideIcons.volume2 : LucideIcons.volume1),
                     color: Colors.white,
                     size: 18,
                   ),
@@ -735,24 +912,21 @@ class _AuraPlayerState extends State<AuraPlayer>
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 9),
             decoration: BoxDecoration(
-              color: Colors.black.withValues(alpha: 0.65),
+              // 取消外围边框线，进一步提升半透明通透感 (alpha: 0.45)
+              color: Colors.black.withValues(alpha: 0.45),
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: Colors.white.withValues(alpha: 0.14),
-                width: 0.6,
-              ),
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // 第一行：方向图标 + 快进/快退秒数
+                // 第一行：方向圆角图标 + 快进/快退秒数
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(
                       isForward ? LucideIcons.fastForward : LucideIcons.rewind,
                       color: accentColor,
-                      size: 15,
+                      size: 18,
                     ),
                     const SizedBox(width: 6),
                     Text(
@@ -784,7 +958,7 @@ class _AuraPlayerState extends State<AuraPlayer>
   }
 
 
-  /// 长按瞬时加速顶部微胶囊
+  /// 长按瞬时加速顶部微胶囊 (纯净无文字版，仅展示高斯毛玻璃翡翠快进图标，视线无遮挡)
   Widget _buildFastForwardCapsule() {
     return Positioned(
       top: 48,
@@ -794,18 +968,12 @@ class _AuraPlayerState extends State<AuraPlayer>
           child: BackdropFilter(
             filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-              color: Colors.black.withValues(alpha: 0.75),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(LucideIcons.fastForward, color: AppColors.primary, size: 16),
-                  const SizedBox(width: 6),
-                  Text(
-                    '${_longPressSpeed.toStringAsFixed(1)}X 快速播放中',
-                    style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
-                  ),
-                ],
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              color: Colors.black.withValues(alpha: 0.55),
+              child: const Icon(
+                LucideIcons.fastForward,
+                color: AppColors.primary,
+                size: 20,
               ),
             ),
           ),
@@ -870,42 +1038,88 @@ class _AuraPlayerState extends State<AuraPlayer>
     );
   }
 
-  /// 浮动锁屏按钮 (仅全屏模式出现、上下垂直居中、无背景纯图标)
+  /// 切换全屏锁定/解锁状态
+  void _onToggleLock() {
+    HapticFeedback.lightImpact();
+    setState(() {
+      _isLocked = !_isLocked;
+      if (_isLocked) {
+        // 上锁：立即向外滑出隐藏顶部栏与底部栏，仅保留锁图标，并开启锁图标 3.5 秒独立倒计时
+        _showControls = false;
+        _showLockIcon = true;
+        _controlsTimer?.cancel();
+        _startLockIconTimer();
+      } else {
+        // 解锁：恢复全部控制栏显示，取消锁图标独立计时，统一交给控制栏 3.5 秒计时器管理
+        _showControls = true;
+        _showLockIcon = true;
+        _lockIconTimer?.cancel();
+        _startControlsTimer();
+      }
+    });
+  }
+
+  /// 全屏模式下的左侧呼吸内边距 (安全避开刘海/挖孔与屏幕圆角，至少 40px)
+  double get _fullscreenLeftPadding {
+    final safeLeft = MediaQuery.of(context).padding.left;
+    return safeLeft > 0 ? safeLeft + 24.0 : 40.0;
+  }
+
+  /// 全屏模式下的右侧呼吸内边距 (安全避开刘海/挖孔与屏幕圆角，至少 40px)
+  double get _fullscreenRightPadding {
+    final safeRight = MediaQuery.of(context).padding.right;
+    return safeRight > 0 ? safeRight + 24.0 : 40.0;
+  }
+
+  /// 浮动锁屏按钮 (仅全屏模式出现、垂直居中、左边缘与底栏进度条及播放键严丝合缝对齐)
   Widget _buildLockButton() {
-    // 锁定图标应该只在全屏状态下出现
+    // 锁定图标仅在全屏状态下出现
     if (!_isFullScreen) {
       return const SizedBox.shrink();
     }
 
-    if (!_showControls && !_isLocked) {
-      return const SizedBox.shrink();
-    }
+    // 判断锁图标当前是否应该显示：
+    // - 锁定态下由 _showLockIcon 决定 (点击屏幕唤醒，5.0 秒后自动隐去)
+    // - 未锁定态下跟随控制栏 _showControls 决定
+    final bool shouldShow = _isLocked ? _showLockIcon : _showControls;
+    final double leftPosition = _fullscreenLeftPadding;
 
     return Positioned(
-      left: 20,
+      left: leftPosition,
       top: 0,
       bottom: 0,
       child: Center(
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: () {
-            HapticFeedback.lightImpact();
-            setState(() {
-              _isLocked = !_isLocked;
-              if (_isLocked) {
-                _showControls = false;
-              } else {
-                _showControls = true;
-                _startControlsTimer();
-              }
-            });
-          },
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Icon(
-              _isLocked ? LucideIcons.lock : LucideIcons.unlock,
-              color: _isLocked ? AppColors.primary : Colors.white.withValues(alpha: 0.88),
-              size: 24,
+        child: IgnorePointer(
+          ignoring: !shouldShow,
+          child: AnimatedOpacity(
+            opacity: shouldShow ? 1.0 : 0.0,
+            duration: const Duration(milliseconds: 240),
+            curve: Curves.easeOutCubic,
+            child: AnimatedScale(
+              scale: shouldShow ? 1.0 : 0.82,
+              duration: const Duration(milliseconds: 240),
+              curve: Curves.easeOutCubic,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: _onToggleLock,
+                child: Container(
+                  width: 38,
+                  height: 38,
+                  alignment: Alignment.centerLeft, // 图标左边缘与基准线严格同轴对齐
+                  child: Icon(
+                    _isLocked ? LucideIcons.lock : LucideIcons.unlock,
+                    color: Colors.white, // 关闭锁定状态去掉颜色，保持纯白通透质感
+                    size: 24,
+                    shadows: const [
+                      Shadow(
+                        color: Colors.black87,
+                        blurRadius: 8,
+                        offset: Offset(0, 1),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             ),
           ),
         ),
@@ -913,34 +1127,124 @@ class _AuraPlayerState extends State<AuraPlayer>
     );
   }
 
+  /// 居中大播放/暂停按键 (无底色、无边线纯净悬浮形态，圆润极简 LucideIcons，带微立体投影与弹性缩放动效)
+  Widget _buildCenterPlayButton() {
+    if (!_isInitialized || _hasError) {
+      return const SizedBox.shrink();
+    }
+
+    // 采用防跳变综合播放判定：拖拽/寻道缓冲期间保持意向，绝不误显暂停按键
+    final isPlaying = _effectiveIsPlaying;
+
+    // 全屏模式下播放中保持画面干净；仅在暂停状态 (且呼出控制栏时) 呈现纯净大播放按键
+    if (_isFullScreen && isPlaying) {
+      return const SizedBox.shrink();
+    }
+
+    return Center(
+      child: IgnorePointer(
+        ignoring: !_showControls,
+        child: AnimatedOpacity(
+          opacity: _showControls ? 1.0 : 0.0,
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOut,
+          child: AnimatedScale(
+            scale: _showControls ? 1.0 : 0.72,
+            duration: const Duration(milliseconds: 240),
+            curve: Curves.easeOutBack,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () {
+                HapticFeedback.lightImpact();
+                if (isPlaying) {
+                  _controller?.pause();
+                } else {
+                  _controller?.play();
+                }
+                _startControlsTimer();
+              },
+              child: SizedBox(
+                width: 56,
+                height: 56,
+                child: Center(
+                  child: Icon(
+                    // 彻底去掉外圈：采用纯净无圈的 Lucide 600 加粗圆润图标 (暂停为两个圆润长方形竖条，播放为圆角三角形)
+                    isPlaying ? LucideIcons.pause600 : LucideIcons.play600,
+                    color: Colors.white,
+                    size: 48,
+                    shadows: const [
+                      Shadow(
+                        color: Colors.black87,
+                        blurRadius: 12,
+                        offset: Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 小屏控制条隐藏时的常驻微型极光进度条 (高度 2px，纯净观影且随时掌握播放进度)
+  Widget _buildBottomMiniProgress() {
+    if (_isFullScreen || !_isInitialized || _hasError) {
+      return const SizedBox.shrink();
+    }
+
+    final totalMs = _controller?.value.duration.inMilliseconds ?? 0;
+    final progressRatio = totalMs > 0
+        ? (_currentPosition.inMilliseconds / totalMs).clamp(0.0, 1.0)
+        : 0.0;
+
+    // 当控制条呼出时隐藏，收起时无缝淡入
+    final shouldShow = !_showControls;
+
+    return Positioned(
+      left: 0,
+      right: 0,
+      bottom: 0,
+      child: IgnorePointer(
+        child: AnimatedOpacity(
+          opacity: shouldShow ? 1.0 : 0.0,
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
+          child: LinearProgressIndicator(
+            value: progressRatio,
+            minHeight: 2.0,
+            backgroundColor: Colors.white12,
+            valueColor: const AlwaysStoppedAnimation<Color>(AppColors.primary),
+          ),
+        ),
+      ),
+    );
+  }
 
   /// 现代毛玻璃控制顶栏与底栏 (带丝滑滑入滑出动画)
-  ///
-  /// 显隐不再直接增删节点，而是常驻渲染后由 [AnimatedSlide] + [AnimatedOpacity] 驱动：
-  /// 顶部栏向上滑出、底部栏向下滑出，避免控制条"硬闪"造成的割裂感。
-  /// 锁屏同样交由 [_showControls] 驱动 (上锁必将其置为 false)，因此锁屏/解锁也有过渡动画。
   Widget _buildControlOverlays() {
-
     // 顶部控制条仅在 全屏 / 有返回回调 / 有扩展操作 时参与渲染
     final showTopBar = _isFullScreen || widget.onBack != null || widget.extraActions != null;
 
     return Stack(
       children: [
-        // 顶部控制条：隐藏时向上滑出屏幕并淡出
+        // 顶部控制条：隐藏时向上轻滑并淡出
         if (showTopBar)
           Align(
             alignment: Alignment.topCenter,
             child: _buildAnimatedBar(
-              slideOffset: const Offset(0, -1),
+              slideOffset: const Offset(0, -0.5),
               child: _buildTopBar(),
             ),
           ),
 
-        // 底部控制条：隐藏时向下滑出屏幕并淡出
+        // 底部控制条：隐藏时向下轻滑并淡出
         Align(
           alignment: Alignment.bottomCenter,
           child: _buildAnimatedBar(
-            slideOffset: const Offset(0, 1),
+            slideOffset: const Offset(0, 0.5),
             child: _buildBottomBar(),
           ),
         ),
@@ -948,10 +1252,7 @@ class _AuraPlayerState extends State<AuraPlayer>
     );
   }
 
-  /// 通用控制条显隐动画：位移与淡出同步播放，曲线统一
-  ///
-  /// [slideOffset] 为隐藏时的相对位移方向（顶部栏传 (0, -1)，底部栏传 (0, 1)）；
-  /// 隐藏状态下同时屏蔽指针事件，避免点击到已透明但仍在树中的控件。
+  /// 通用控制条显隐动画：微位移与淡出同步播放，曲线统一自然
   Widget _buildAnimatedBar({
     required Offset slideOffset,
     required Widget child,
@@ -960,7 +1261,7 @@ class _AuraPlayerState extends State<AuraPlayer>
       ignoring: !_showControls,
       child: AnimatedSlide(
         offset: _showControls ? Offset.zero : slideOffset,
-        duration: const Duration(milliseconds: 250),
+        duration: const Duration(milliseconds: 240),
         curve: Curves.easeOutCubic,
         child: AnimatedOpacity(
           opacity: _showControls ? 1.0 : 0.0,
@@ -972,8 +1273,12 @@ class _AuraPlayerState extends State<AuraPlayer>
     );
   }
 
-  /// 顶部控制条
+  /// 顶部控制条 (全屏状态加大左右呼吸安全边距，避开刘海与圆角，右上角增加更多设置)
   Widget _buildTopBar() {
+    final safePadding = MediaQuery.of(context).padding;
+    final double leftPadding = _isFullScreen ? _fullscreenLeftPadding : 12.0;
+    final double rightPadding = _isFullScreen ? _fullscreenRightPadding : 12.0;
+
     return Container(
       decoration: const BoxDecoration(
         gradient: LinearGradient(
@@ -983,16 +1288,16 @@ class _AuraPlayerState extends State<AuraPlayer>
         ),
       ),
       padding: EdgeInsets.only(
-        top: _isFullScreen ? 12 : 8,
-        left: 12,
-        right: 12,
+        top: _isFullScreen ? (safePadding.top > 0 ? safePadding.top + 8 : 14) : 8,
+        left: leftPadding,
+        right: rightPadding,
         bottom: 16,
       ),
       child: Row(
         children: [
           if (_isFullScreen || widget.onBack != null)
             IconButton(
-              icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
+              icon: const Icon(LucideIcons.chevronLeft, color: Colors.white, size: 22),
               onPressed: () {
                 if (_isFullScreen) {
                   _toggleFullScreen();
@@ -1017,16 +1322,56 @@ class _AuraPlayerState extends State<AuraPlayer>
             ),
           ),
           if (widget.extraActions != null) ...widget.extraActions!,
+          // 右上角更多设置图标
+          _buildMoreSettingsButton(),
         ],
       ),
     );
   }
 
-  /// 当前播放位置 (拖拽中优先取拖拽值，保证进度条跟手不回弹)
+  /// 顶部右上角「更多设置」按钮 (极简 LucideIcons 三点，全屏下右边缘与进度条/全屏键严格右对齐)
+  Widget _buildMoreSettingsButton() {
+    final icon = const Icon(
+      LucideIcons.ellipsis,
+      color: Colors.white,
+      size: 22,
+    );
+
+    if (_isFullScreen) {
+      return GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () {
+          HapticFeedback.lightImpact();
+          _showMoreSettingsDrawer();
+        },
+        child: Container(
+          width: 36,
+          height: 36,
+          alignment: Alignment.centerRight,
+          child: icon,
+        ),
+      );
+    }
+
+    return IconButton(
+      icon: icon,
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints.tightFor(width: 36, height: 36),
+      onPressed: () {
+        HapticFeedback.lightImpact();
+        _showMoreSettingsDrawer();
+      },
+    );
+  }
+
+  /// 当前播放位置 (拖拽或滑动手势中优先取临时目标值，保证进度条跟手不回弹)
   Duration get _currentPosition {
     if (_isDraggingProgress) {
       final totalMs = _controller?.value.duration.inMilliseconds ?? 1;
       return Duration(milliseconds: (_dragProgressValue * totalMs).round());
+    }
+    if (_isSeeking) {
+      return _seekTarget;
     }
     return _controller?.value.position ?? Duration.zero;
   }
@@ -1034,10 +1379,18 @@ class _AuraPlayerState extends State<AuraPlayer>
   /// 底部控制条
   ///
   /// 采用两套布局分支：
-  /// - 全屏（大屏）：进度条独占一行、按钮独占一行，操作区舒展、点击命中率高；
-  /// - 小屏（非全屏）：进度条与播放/时间/倍速/全屏压在**同一条水平线**上，
-  ///   压缩控制条整体高度，避免在低矮的竖屏播放器里遮挡画面。
+  /// - 全屏（大屏）：左右边距与锁图标严格对齐（_fullscreenLeftPadding / _fullscreenRightPadding）；
+  ///   进度条整体下沉贴地，时间移至进度条上方左侧（05:23 / 45:10），进度条全宽拉通；
+  /// - 小屏（非全屏）：进度条与播放/时间/倍速/全屏垂直居中精准对齐在 38px 高度中线上，
+  ///   消除多余外边距与垂直错位，彻底避免挤压溢出。
   Widget _buildBottomBar() {
+    final safePadding = MediaQuery.of(context).padding;
+    final double leftPadding = _isFullScreen ? _fullscreenLeftPadding : 8.0;
+    final double rightPadding = _isFullScreen ? _fullscreenRightPadding : 8.0;
+    final double bottomPadding = _isFullScreen
+        ? (safePadding.bottom > 0 ? safePadding.bottom + 4.0 : 12.0)
+        : 6.0;
+
     return Container(
       decoration: const BoxDecoration(
         gradient: LinearGradient(
@@ -1047,38 +1400,62 @@ class _AuraPlayerState extends State<AuraPlayer>
         ),
       ),
       padding: EdgeInsets.only(
-        left: 16,
-        right: 16,
-        bottom: _isFullScreen ? 24 : 8,
-        top: _isFullScreen ? 16 : 4,
+        left: leftPadding,
+        right: rightPadding,
+        bottom: bottomPadding,
+        top: _isFullScreen ? 8 : 4,
       ),
       child: _isFullScreen ? _buildWideControlLayout() : _buildCompactControlLayout(),
     );
   }
 
-  /// 全屏布局：上行「当前时间 + 进度条 + 总时长」，下行「播放 … 倍速 全屏」
+  /// 全屏商业级布局：
+  /// - 顶行：左上方显示「当前进度 / 总进度」时间组合文本（05:23 / 45:10）；
+  /// - 中行：全宽拉通进度条（下沉微移 8px，紧贴下方操作按键图标，消除视觉空隙）；
+  /// - 底行：播放/暂停键、倍速选择、退出全屏按键（紧凑排布）。
   Widget _buildWideControlLayout() {
+    final duration = _controller?.value.duration ?? Duration.zero;
     return Column(
       mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        // 1. 进度条上方左侧：当前进度与总进度 (正常流式排布)
         Row(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             _buildTimeText(_formatDuration(_currentPosition), primary: true),
-            const SizedBox(width: 8),
-            Expanded(child: _buildProgressSlider()),
-            const SizedBox(width: 8),
-            _buildTimeText(_formatDuration(_controller?.value.duration ?? Duration.zero)),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: Text(
+                '/',
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.4),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w400,
+                ),
+              ),
+            ),
+            _buildTimeText(_formatDuration(duration)),
           ],
         ),
-        const SizedBox(height: 4),
+        const SizedBox(height: 2),
+
+        // 2. 进度条：标准紧凑高度流式嵌入，完全消除 Offset 偏移，布局真实直观
+        _buildProgressSlider(),
+        const SizedBox(height: 2),
+
+        // 3. 控制按键行（播放/暂停、倍速、全屏，正常流式排列）
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             _buildPlayPauseButton(),
             Row(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                _buildSpeedPill(),
-                const SizedBox(width: 8),
+                _buildSpeedButton(),
+                const SizedBox(width: 10),
                 _buildFullscreenButton(),
               ],
             ),
@@ -1088,94 +1465,165 @@ class _AuraPlayerState extends State<AuraPlayer>
     );
   }
 
-  /// 小屏紧凑布局：播放、进度条、时间、倍速、全屏全部对齐在同一条水平线上
+  /// 小屏紧凑布局：播放、进度条、时间、全屏全部居中对齐在同一条水平中线上 (移除倍速按键，留白更舒展)
   Widget _buildCompactControlLayout() {
     final duration = _controller?.value.duration ?? Duration.zero;
-    return Row(
-      children: [
-        _buildPlayPauseButton(compact: true),
-        const SizedBox(width: 2),
-        Expanded(child: _buildProgressSlider()),
-        const SizedBox(width: 4),
-        // 小屏空间紧张，起止时间合并为「当前/总长」单段文本，省下一处间距
-        _buildTimeText(
-          '${_formatDuration(_currentPosition)}/${_formatDuration(duration)}',
-          primary: true,
-        ),
-        const SizedBox(width: 4),
-        _buildSpeedPill(compact: true),
-        _buildFullscreenButton(compact: true),
-      ],
+    return SizedBox(
+      height: 38,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          _buildPlayPauseButton(compact: true),
+          Expanded(child: _buildProgressSlider(compact: true)),
+          const SizedBox(width: 6),
+          // 小屏空间紧凑，起止时间合并为「当前/总长」等宽数字单段文本
+          _buildTimeText(
+            '${_formatDuration(_currentPosition)}/${_formatDuration(duration)}',
+            primary: true,
+            compact: true,
+          ),
+          const SizedBox(width: 4),
+          _buildFullscreenButton(compact: true),
+        ],
+      ),
     );
   }
 
   /// 等宽数字时间文本 (tabularFigures 保证秒数变化时宽度不抖动)
-  Widget _buildTimeText(String text, {bool primary = false}) {
+  Widget _buildTimeText(String text, {bool primary = false, bool compact = false}) {
     return Text(
       text,
       style: TextStyle(
         color: primary ? Colors.white : Colors.white70,
-        fontSize: 11,
+        fontSize: compact ? 10 : 11,
         fontFeatures: const [FontFeature.tabularFigures()],
         fontWeight: primary ? FontWeight.w600 : FontWeight.w400,
       ),
     );
   }
 
-  /// 极光翡翠流光进度条 (Slider 改造)
-  Widget _buildProgressSlider() {
+  /// 极光翡翠流光进度条 (集成缓冲进度、统一粗细与加载流光扫光动画)
+  Widget _buildProgressSlider({bool compact = false}) {
     final totalMs = _controller?.value.duration.inMilliseconds ?? 0;
     final progressRatio = totalMs > 0
         ? (_currentPosition.inMilliseconds / totalMs).clamp(0.0, 1.0)
         : 0.0;
 
-    return SliderTheme(
-      data: SliderTheme.of(context).copyWith(
-        trackHeight: 3,
-        thumbShape: RoundSliderThumbShape(
-          enabledThumbRadius: _isDraggingProgress ? 7 : 5,
+    // 计算已加载缓冲比例
+    double bufferedFraction = 0.0;
+    if (_controller != null && totalMs > 0 && _controller!.value.buffered.isNotEmpty) {
+      final lastBuffered = _controller!.value.buffered.last.end.inMilliseconds;
+      bufferedFraction = (lastBuffered / totalMs).clamp(0.0, 1.0);
+    }
+
+    final isBuffering = !_isInitialized || (_controller?.value.isBuffering == true) || _isSeekingTo;
+
+    return AnimatedBuilder(
+      animation: _shimmerController,
+      builder: (context, child) {
+        return SizedBox(
+          height: compact ? 18 : 22,
+          child: SliderTheme(
+            data: SliderTheme.of(context).copyWith(
+              trackShape: AuraSliderTrackShape(
+                bufferedFraction: bufferedFraction,
+                isBuffering: isBuffering,
+                shimmerProgress: _shimmerController.value,
+              ),
+              trackHeight: compact ? 2.5 : 3.5,
+              thumbShape: RoundSliderThumbShape(
+                enabledThumbRadius: _isDraggingProgress
+                    ? (compact ? 6.0 : 7.0)
+                    : (compact ? 4.5 : 5.5),
+              ),
+              overlayShape: RoundSliderOverlayShape(overlayRadius: compact ? 10 : 12),
+              activeTrackColor: AppColors.primary,
+              inactiveTrackColor: Colors.white24,
+              thumbColor: AppColors.primary,
+              overlayColor: AppColors.primary.withValues(alpha: 0.2),
+            ),
+          child: Slider(
+            value: progressRatio,
+            onChanged: (val) {
+              if (!_isDraggingProgress) {
+                _wasPlayingBeforeDrag = _controller?.value.isPlaying ?? false;
+              }
+              setState(() {
+                _isDraggingProgress = true;
+                _dragProgressValue = val;
+              });
+              _controlsTimer?.cancel();
+            },
+            onChangeEnd: (val) {
+              if (_controller != null && totalMs > 0) {
+                setState(() {
+                  _isSeekingTo = true;
+                });
+                _controller!.seekTo(Duration(milliseconds: (val * totalMs).round())).then((_) {
+                  if (mounted) {
+                    if (_wasPlayingBeforeDrag) {
+                      _controller?.play();
+                    }
+                    _seekToDebounceTimer?.cancel();
+                    _seekToDebounceTimer = Timer(const Duration(milliseconds: 350), () {
+                      if (mounted) {
+                        setState(() {
+                          _isSeekingTo = false;
+                        });
+                      }
+                    });
+                  }
+                });
+              }
+              setState(() {
+                _isDraggingProgress = false;
+              });
+              _startControlsTimer();
+            },
+          ),
         ),
-        overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
-        activeTrackColor: AppColors.primary,
-        inactiveTrackColor: Colors.white24,
-        thumbColor: AppColors.primary,
-        overlayColor: AppColors.primary.withValues(alpha: 0.2),
-      ),
-      child: Slider(
-        value: progressRatio,
-        onChanged: (val) {
-          setState(() {
-            _isDraggingProgress = true;
-            _dragProgressValue = val;
-          });
-          _controlsTimer?.cancel();
-        },
-        onChangeEnd: (val) {
-          if (_controller != null && totalMs > 0) {
-            _controller!.seekTo(Duration(milliseconds: (val * totalMs).round()));
-          }
-          setState(() {
-            _isDraggingProgress = false;
-          });
-          _startControlsTimer();
-        },
-      ),
-    );
+      );
+    },
+  );
   }
 
-  /// 播放 / 暂停按钮
+  /// 播放 / 暂停按钮 (全屏下图标左边缘与进度条左边缘严格像素级对齐，防跳变播放状态判定)
   Widget _buildPlayPauseButton({bool compact = false}) {
-    final isPlaying = _controller?.value.isPlaying ?? false;
+    final isPlaying = _effectiveIsPlaying;
+    // 采用 Lucide 600 加粗圆角变体 (round cap & join)，线条更饱满圆润
+    final icon = Icon(
+      isPlaying ? LucideIcons.pause600 : LucideIcons.play600,
+      color: Colors.white,
+      size: compact ? 20 : 22,
+    );
+
+    // 全屏模式下内容靠左紧贴，消除外围边距错位
+    if (_isFullScreen) {
+      return GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () {
+          if (isPlaying) {
+            _controller?.pause();
+          } else {
+            _controller?.play();
+          }
+          _startControlsTimer();
+        },
+        child: Container(
+          width: 38,
+          height: 38,
+          alignment: Alignment.centerLeft,
+          child: icon,
+        ),
+      );
+    }
+
     return IconButton(
-      icon: Icon(
-        isPlaying ? LucideIcons.pause : LucideIcons.play,
-        color: Colors.white,
-        size: compact ? 20 : 22,
-      ),
+      icon: icon,
       padding: EdgeInsets.zero,
       constraints: BoxConstraints.tightFor(
-        width: compact ? 36 : 44,
-        height: compact ? 36 : 44,
+        width: compact ? 32 : 38,
+        height: compact ? 32 : 38,
       ),
       onPressed: () {
         if (isPlaying) {
@@ -1188,97 +1636,490 @@ class _AuraPlayerState extends State<AuraPlayer>
     );
   }
 
-  /// 倍速选择药丸
-  Widget _buildSpeedPill({bool compact = false}) {
+  /// 倍速选择按钮 (纯净无背景无边框悬浮字，带微立体文字投影与触觉反馈)
+  Widget _buildSpeedButton() {
+    final speed = _controller?.value.playbackSpeed ?? 1.0;
+    // 1.0x 正常速度时直接显示“倍速”，非 1.0x 时显示当前倍率 (如 1.5x / 2x)
+    final speedText = speed == 1.0
+        ? '倍速'
+        : (speed % 1 == 0 ? '${speed.toInt()}x' : '${speed}x');
+
     return GestureDetector(
-      onTap: _showPlaybackSpeedDialog,
+      behavior: HitTestBehavior.opaque,
+      onTap: () {
+        HapticFeedback.lightImpact();
+        _showPlaybackSpeedDialog();
+      },
       child: Container(
-        padding: EdgeInsets.symmetric(horizontal: compact ? 8 : 10, vertical: 4),
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.15),
-          borderRadius: BorderRadius.circular(12),
-        ),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
         child: Text(
-          '${_controller?.value.playbackSpeed ?? 1.0}x',
-          style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600),
+          speedText,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            shadows: [
+              Shadow(
+                color: Colors.black87,
+                blurRadius: 6,
+                offset: Offset(0, 1),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  /// 全屏 / 退出全屏按钮
+  /// 全屏 / 退出全屏按钮 (全屏下图标右边缘与进度条右边缘严格像素级对齐)
   Widget _buildFullscreenButton({bool compact = false}) {
+    final icon = Icon(
+      _isFullScreen ? LucideIcons.minimize : LucideIcons.maximize,
+      color: Colors.white,
+      size: compact ? 20 : 22,
+    );
+
+    // 全屏模式下内容靠右紧贴，消除外围边距错位
+    if (_isFullScreen) {
+      return GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: _toggleFullScreen,
+        child: Container(
+          width: 38,
+          height: 38,
+          alignment: Alignment.centerRight,
+          child: icon,
+        ),
+      );
+    }
+
     return IconButton(
-      icon: Icon(
-        _isFullScreen ? LucideIcons.minimize : LucideIcons.maximize,
-        color: Colors.white,
-        size: compact ? 18 : 20,
-      ),
+      icon: icon,
       padding: EdgeInsets.zero,
       constraints: BoxConstraints.tightFor(
-        width: compact ? 36 : 44,
-        height: compact ? 36 : 44,
+        width: compact ? 32 : 38,
+        height: compact ? 32 : 38,
       ),
       onPressed: _toggleFullScreen,
     );
   }
 
-  /// 弹出倍速选择弹窗
+  /// 从右侧滑出全屏半透明倍速选择抽屉面板 (腾讯视频/B站全屏流媒体范式)
   void _showPlaybackSpeedDialog() {
     _controlsTimer?.cancel();
-    final speeds = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
+    final speeds = [2.0, 1.5, 1.25, 1.0, 0.75, 0.5];
     final currentSpeed = _controller?.value.playbackSpeed ?? 1.0;
 
-    showModalBottomSheet(
+    showGeneralDialog(
       context: context,
-      backgroundColor: AppColors.darkSurface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (ctx) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Padding(
-                  padding: EdgeInsets.only(left: 8, bottom: 12),
-                  child: Text(
-                    '播放速度',
-                    style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+      barrierDismissible: true,
+      barrierLabel: 'SpeedDrawer',
+      barrierColor: Colors.black.withValues(alpha: 0.35),
+      transitionDuration: const Duration(milliseconds: 240),
+      transitionBuilder: (dialogContext, animation, secondaryAnimation, child) {
+        return SlideTransition(
+          position: Tween<Offset>(
+            begin: const Offset(1.0, 0.0),
+            end: Offset.zero,
+          ).animate(
+            CurvedAnimation(
+              parent: animation,
+              curve: Curves.easeOutCubic,
+            ),
+          ),
+          child: child,
+        );
+      },
+      pageBuilder: (dialogContext, animation, secondaryAnimation) {
+        return Align(
+          alignment: Alignment.centerRight,
+          child: Material(
+            color: Colors.transparent,
+            child: ClipRRect(
+              borderRadius: const BorderRadius.horizontal(left: Radius.circular(16)),
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+                child: Container(
+                  width: 210,
+                  height: double.infinity,
+                  color: Colors.black.withValues(alpha: 0.52),
+                  child: SafeArea(
+                    left: false,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        // 顶部标题栏
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(20, 24, 20, 16),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Text(
+                                '播放倍速',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              GestureDetector(
+                                onTap: () => Navigator.pop(dialogContext),
+                                child: const Icon(LucideIcons.x, color: Colors.white60, size: 18),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Divider(
+                          height: 1,
+                          color: Colors.white.withValues(alpha: 0.08),
+                        ),
+
+                        // 倍速选项列表 (垂直排布)
+                        Expanded(
+                          child: ListView.builder(
+                            padding: const EdgeInsets.symmetric(vertical: 8),
+                            itemCount: speeds.length,
+                            itemBuilder: (context, index) {
+                              final speed = speeds[index];
+                              final isSelected = (currentSpeed - speed).abs() < 0.01;
+                              final label = speed == 1.0 ? '1.0x (正常)' : '${speed}x';
+
+                              return InkWell(
+                                onTap: () {
+                                  HapticFeedback.lightImpact();
+                                  _controller?.setPlaybackSpeed(speed);
+                                  _normalSpeed = speed;
+                                  setState(() {});
+                                  Navigator.pop(dialogContext);
+                                  _startControlsTimer();
+                                },
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Text(
+                                        label,
+                                        style: TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                                          color: isSelected ? AppColors.primary : Colors.white,
+                                        ),
+                                      ),
+                                      if (isSelected)
+                                        Container(
+                                          width: 6,
+                                          height: 6,
+                                          decoration: BoxDecoration(
+                                            color: AppColors.primary,
+                                            shape: BoxShape.circle,
+                                            boxShadow: [
+                                              BoxShadow(
+                                                color: AppColors.primary.withValues(alpha: 0.6),
+                                                blurRadius: 6,
+                                                spreadRadius: 1,
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-                Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
-                  children: speeds.map((speed) {
-                    final isSelected = (currentSpeed - speed).abs() < 0.01;
-                    return ActionChip(
-                      label: Text('${speed}x'),
-                      backgroundColor: isSelected ? AppColors.primary : AppColors.darkCard,
-                      labelStyle: TextStyle(
-                        color: isSelected ? Colors.white : AppColors.darkTextSecondary,
-                        fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                      ),
-                      side: BorderSide(
-                        color: isSelected ? AppColors.primary : AppColors.darkBorder,
-                      ),
-                      onPressed: () {
-                        _controller?.setPlaybackSpeed(speed);
-                        _normalSpeed = speed;
-                        Navigator.pop(ctx);
-                        _startControlsTimer();
-                      },
-                    );
-                  }).toList(),
-                ),
-              ],
+              ),
             ),
           ),
         );
       },
+    );
+  }
+
+  /// 从右侧滑出全屏半透明播放更多设置抽屉面板 (对标腾讯视频/B站全屏流媒体设置体系)
+  void _showMoreSettingsDrawer() {
+    _controlsTimer?.cancel();
+
+    showGeneralDialog(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'MoreSettingsDrawer',
+      barrierColor: Colors.black.withValues(alpha: 0.35),
+      transitionDuration: const Duration(milliseconds: 240),
+      transitionBuilder: (dialogContext, animation, secondaryAnimation, child) {
+        return SlideTransition(
+          position: Tween<Offset>(
+            begin: const Offset(1.0, 0.0),
+            end: Offset.zero,
+          ).animate(
+            CurvedAnimation(
+              parent: animation,
+              curve: Curves.easeOutCubic,
+            ),
+          ),
+          child: child,
+        );
+      },
+      pageBuilder: (dialogContext, animation, secondaryAnimation) {
+        return Align(
+          alignment: Alignment.centerRight,
+          child: Material(
+            color: Colors.transparent,
+            child: ClipRRect(
+              borderRadius: const BorderRadius.horizontal(left: Radius.circular(16)),
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+                child: Container(
+                  width: 280,
+                  height: double.infinity,
+                  color: Colors.black.withValues(alpha: 0.55),
+                  child: SafeArea(
+                    left: false,
+                    child: StatefulBuilder(
+                      builder: (context, setDrawerState) {
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            // 顶部标题栏
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(20, 20, 16, 14),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  const Text(
+                                    '播放设置',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  GestureDetector(
+                                    onTap: () => Navigator.pop(dialogContext),
+                                    child: const Icon(LucideIcons.x, color: Colors.white60, size: 20),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Divider(height: 1, color: Colors.white.withValues(alpha: 0.08)),
+
+                            // 设置列表项滚动区
+                            Expanded(
+                              child: ListView(
+                                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                                children: [
+                                  // 1. 画面比例
+                                  const Text(
+                                    '画面比例',
+                                    style: TextStyle(color: Colors.white60, fontSize: 12, fontWeight: FontWeight.w500),
+                                  ),
+                                  const SizedBox(height: 10),
+                                  Row(
+                                    children: [
+                                      _buildFitChip('适应', BoxFit.contain, setDrawerState),
+                                      const SizedBox(width: 8),
+                                      _buildFitChip('铺满', BoxFit.cover, setDrawerState),
+                                      const SizedBox(width: 8),
+                                      _buildFitChip('拉伸', BoxFit.fill, setDrawerState),
+                                    ],
+                                  ),
+
+                                  const SizedBox(height: 20),
+                                  Divider(height: 1, color: Colors.white.withValues(alpha: 0.06)),
+                                  const SizedBox(height: 16),
+
+                                  // 2. 画面视效与播放循环
+                                  const Text(
+                                    '播放视效与控制',
+                                    style: TextStyle(color: Colors.white60, fontSize: 12, fontWeight: FontWeight.w500),
+                                  ),
+                                  const SizedBox(height: 8),
+
+                                  // 镜像翻转开关 (舞蹈/跟练神器)
+                                  _buildSettingSwitchRow(
+                                    title: '画面水平镜像',
+                                    subtitle: '适合舞蹈、跟练与教程视频左右镜像观看',
+                                    value: _isMirrored,
+                                    onChanged: (val) {
+                                      HapticFeedback.lightImpact();
+                                      setState(() {
+                                        _isMirrored = val;
+                                      });
+                                      setDrawerState(() {});
+                                    },
+                                  ),
+
+                                  // 循环播放开关
+                                  _buildSettingSwitchRow(
+                                    title: '单视频循环播放',
+                                    subtitle: '播放结束时自动从头接力播放',
+                                    value: _isLooping,
+                                    onChanged: (val) {
+                                      HapticFeedback.lightImpact();
+                                      setState(() {
+                                        _isLooping = val;
+                                      });
+                                      setDrawerState(() {});
+                                    },
+                                  ),
+
+                                  const SizedBox(height: 14),
+                                  Divider(height: 1, color: Colors.white.withValues(alpha: 0.06)),
+                                  const SizedBox(height: 16),
+
+                                  // 3. 长按瞬时加速
+                                  const Text(
+                                    '长按加速配置',
+                                    style: TextStyle(color: Colors.white60, fontSize: 12, fontWeight: FontWeight.w500),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  _buildSettingSwitchRow(
+                                    title: '长按瞬时快进',
+                                    subtitle: '长按画面任意处即可按设定倍速快速播放',
+                                    value: appService.settings.enableLongPress2x,
+                                    onChanged: (val) {
+                                      HapticFeedback.lightImpact();
+                                      appService.updateSettings(appService.settings.copyWith(enableLongPress2x: val));
+                                      setDrawerState(() {});
+                                    },
+                                  ),
+                                  if (appService.settings.enableLongPress2x) ...[
+                                    const SizedBox(height: 8),
+                                    Row(
+                                      children: [
+                                        _buildSpeedChip(2.0, setDrawerState),
+                                        const SizedBox(width: 8),
+                                        _buildSpeedChip(3.0, setDrawerState),
+                                        const SizedBox(width: 8),
+                                        _buildSpeedChip(5.0, setDrawerState),
+                                      ],
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
+                          ],
+                        );
+                      },
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  /// 辅助构建画面比例选择胶囊
+  Widget _buildFitChip(String label, BoxFit fit, StateSetter setDrawerState) {
+    final isSelected = _videoFit == fit;
+    return Expanded(
+      child: GestureDetector(
+        onTap: () {
+          HapticFeedback.lightImpact();
+          setState(() {
+            _videoFit = fit;
+          });
+          setDrawerState(() {});
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          decoration: BoxDecoration(
+            color: isSelected ? AppColors.primary : Colors.white.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          alignment: Alignment.center,
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+              color: isSelected ? Colors.white : Colors.white70,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 辅助构建长按加速倍率选择胶囊
+  Widget _buildSpeedChip(double speed, StateSetter setDrawerState) {
+    final isSelected = appService.settings.longPressSpeed == speed;
+    return Expanded(
+      child: GestureDetector(
+        onTap: () {
+          HapticFeedback.lightImpact();
+          appService.updateSettings(appService.settings.copyWith(longPressSpeed: speed));
+          setDrawerState(() {});
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 7),
+          decoration: BoxDecoration(
+            color: isSelected ? AppColors.primary : Colors.white.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          alignment: Alignment.center,
+          child: Text(
+            '${speed.toInt()}x 快进',
+            style: TextStyle(
+              fontSize: 11.5,
+              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+              color: isSelected ? Colors.white : Colors.white70,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 辅助构建设置开关行
+  Widget _buildSettingSwitchRow({
+    required String title,
+    required String subtitle,
+    required bool value,
+    required ValueChanged<bool> onChanged,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(color: Colors.white, fontSize: 13.5, fontWeight: FontWeight.w500),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 10.5),
+                ),
+              ],
+            ),
+          ),
+          Transform.scale(
+            scale: 0.78,
+            child: Switch(
+              value: value,
+              activeThumbColor: AppColors.primary,
+              activeTrackColor: AppColors.primary.withValues(alpha: 0.35),
+              inactiveThumbColor: Colors.white60,
+              inactiveTrackColor: Colors.white12,
+              onChanged: onChanged,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1323,3 +2164,170 @@ class _AuraPlayerState extends State<AuraPlayer>
     );
   }
 }
+
+/// 自定义纯净流光进度条轨道形状
+///
+/// 1. 彻底消除 Flutter 原生 `Slider` 默认左右强制 24px 的内缩留白边距；
+/// 2. 严密统一未加载(背景轨)、已加载(缓冲轨)、已播放(翡翠轨)的高度与圆角，彻底消除粗细断层感；
+/// 3. 支持网络缓冲/加载中的动态羽化流光光斑扫光动画。
+class AuraSliderTrackShape extends RoundedRectSliderTrackShape {
+  const AuraSliderTrackShape({
+    this.bufferedFraction = 0.0,
+    this.isBuffering = false,
+    this.shimmerProgress = 0.0,
+  });
+
+  /// 已加载缓冲比例 (0.0 ~ 1.0)
+  final double bufferedFraction;
+
+  /// 是否处于缓冲加载中
+  final bool isBuffering;
+
+  /// 流光扫光动画进度 (0.0 ~ 1.0)
+  final double shimmerProgress;
+
+  @override
+  Rect getPreferredRect({
+    required RenderBox parentBox,
+    Offset offset = Offset.zero,
+    required SliderThemeData sliderTheme,
+    bool isEnabled = false,
+    bool isDiscrete = false,
+  }) {
+    final double trackHeight = sliderTheme.trackHeight ?? 3.5;
+    final double trackLeft = offset.dx;
+    final double trackTop = offset.dy + (parentBox.size.height - trackHeight) / 2;
+    final double trackWidth = parentBox.size.width;
+    return Rect.fromLTWH(trackLeft, trackTop, trackWidth, trackHeight);
+  }
+
+  @override
+  void paint(
+    PaintingContext context,
+    Offset offset, {
+    required RenderBox parentBox,
+    required SliderThemeData sliderTheme,
+    required Animation<double> enableAnimation,
+    required TextDirection textDirection,
+    required Offset thumbCenter,
+    Offset? secondaryOffset,
+    bool isDiscrete = false,
+    bool isEnabled = false,
+    double additionalActiveTrackHeight = 0,
+  }) {
+    if (sliderTheme.trackHeight == null || sliderTheme.trackHeight! <= 0) {
+      return;
+    }
+
+    final Rect trackRect = getPreferredRect(
+      parentBox: parentBox,
+      offset: offset,
+      sliderTheme: sliderTheme,
+      isEnabled: isEnabled,
+      isDiscrete: isDiscrete,
+    );
+
+    final double trackHeight = trackRect.height;
+    final Radius trackRadius = Radius.circular(trackHeight / 2);
+    final RRect fullRRect = RRect.fromRectAndRadius(trackRect, trackRadius);
+
+    final Canvas canvas = context.canvas;
+
+    // 1. 底层：未加载背景轨道（高度严格等于 trackHeight，圆角严格统一）
+    final Paint inactivePaint = Paint()
+      ..color = sliderTheme.inactiveTrackColor ?? Colors.white24
+      ..style = PaintingStyle.fill;
+    canvas.drawRRect(fullRRect, inactivePaint);
+
+    // 2. 中层：已加载缓冲轨道（Buffered Track，与未加载保持完全一致粗细）
+    if (bufferedFraction > 0.0) {
+      final double bufferedWidth = (trackRect.width * bufferedFraction.clamp(0.0, 1.0));
+      final Rect bufferedRect = Rect.fromLTWH(
+        trackRect.left,
+        trackRect.top,
+        bufferedWidth,
+        trackHeight,
+      );
+      final Paint bufferedPaint = Paint()
+        ..color = Colors.white.withValues(alpha: 0.35)
+        ..style = PaintingStyle.fill;
+
+      canvas.save();
+      canvas.clipRRect(fullRRect);
+      canvas.drawRect(bufferedRect, bufferedPaint);
+      canvas.restore();
+    }
+
+    // 3. 顶层：已播放极光翡翠轨道 (Active Track，高度与未加载完全一样粗)
+    final double activeWidth = (thumbCenter.dx - trackRect.left).clamp(0.0, trackRect.width);
+    final Rect activeRect = Rect.fromLTWH(
+      trackRect.left,
+      trackRect.top,
+      activeWidth,
+      trackHeight,
+    );
+    final Paint activePaint = Paint()
+      ..color = sliderTheme.activeTrackColor ?? AppColors.primary
+      ..style = PaintingStyle.fill;
+
+    canvas.save();
+    canvas.clipRRect(fullRRect);
+    canvas.drawRect(activeRect, activePaint);
+    canvas.restore();
+
+    // 4. 加载/缓冲状态动效：严格仅在【未加载区域 (Unloaded Area)】流动呈现
+    if (isBuffering) {
+      final double bufferedWidth = (trackRect.width * bufferedFraction.clamp(0.0, 1.0));
+      final double loadedRight = math.max(activeRect.right, trackRect.left + bufferedWidth);
+      final double unloadedLeft = loadedRight;
+      final double unloadedWidth = trackRect.right - unloadedLeft;
+
+      // 仅当存在未加载的空白轨道时执行未加载专属动画
+      if (unloadedWidth > 4.0) {
+        final Rect unloadedRect = Rect.fromLTWH(unloadedLeft, trackRect.top, unloadedWidth, trackHeight);
+
+        canvas.save();
+        canvas.clipRRect(fullRRect); // 约束在圆角轨道内
+        canvas.clipRect(unloadedRect); // 严格约束仅在未加载空白区域内
+
+        // A. 未加载区域柔和呼吸底色 (Breathing Pulse)
+        final double pulseOpacity = 0.12 + 0.10 * (0.5 + 0.5 * math.sin(shimmerProgress * 2 * math.pi));
+        final Paint pulsePaint = Paint()
+          ..color = Colors.white.withValues(alpha: pulseOpacity)
+          ..style = PaintingStyle.fill;
+        canvas.drawRect(unloadedRect, pulsePaint);
+
+        // B. 未加载区域专属流光光斑 (Shimmer Sweep，从缓冲端点向右掠过)
+        final double shimmerWidth = math.max(unloadedWidth * 0.45, 36.0);
+        final double shimmerLeft = unloadedLeft - shimmerWidth + (unloadedWidth + shimmerWidth * 2) * shimmerProgress;
+        final Rect shimmerRect = Rect.fromLTWH(shimmerLeft, trackRect.top, shimmerWidth, trackHeight);
+
+        final Paint shimmerPaint = Paint()
+          ..shader = LinearGradient(
+            colors: [
+              Colors.transparent,
+              Colors.white.withValues(alpha: 0.60),
+              Colors.transparent,
+            ],
+          ).createShader(shimmerRect);
+
+        canvas.drawRect(shimmerRect, shimmerPaint);
+
+        // C. 已缓冲端点向右微光波纹 (Buffer Head Glow)
+        final double headGlowWidth = 14.0;
+        final Rect headGlowRect = Rect.fromLTWH(unloadedLeft, trackRect.top, headGlowWidth, trackHeight);
+        final Paint headGlowPaint = Paint()
+          ..shader = LinearGradient(
+            colors: [
+              AppColors.primary.withValues(alpha: 0.70),
+              Colors.transparent,
+            ],
+          ).createShader(headGlowRect);
+        canvas.drawRect(headGlowRect, headGlowPaint);
+
+        canvas.restore();
+      }
+    }
+  }
+}
+

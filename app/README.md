@@ -8,7 +8,7 @@
 ## 📖 移动端架构概述
 
 FluxForge 移动端不仅是一个内容浏览器，更是一个**独立的客户端本地爬虫与解码沙箱**：
-- **本地独立运行**：基于 `flutter_js` (QuickJS 引擎)，在本地直接加载内置的 `axios.min.js` 与 `cheerio.js`，直接在手机端执行规则爬取与数据清洗，不强依赖后端代理服务；
+- **本地独立运行**：基于 `quickjs_engine` (现代 QuickJS-NG 0.14.0 内核)，在本地直接加载内置的 `axios.min.js` 与 `cheerio.js`，全平台统一引擎执行规则爬取与数据清洗，不强依赖后端代理服务；
 - **单代码统一契约**：严格遵循 `docs/RULE_SPECIFICATION.md` 规范，以单一 `defineRule` 脚本对接影视、小说、图集、音频等多媒体源；
 - **流光设计系统**：全局定制 `AppCard`（20px 黄金圆角、90ms 物理下沉弹性回弹、冷调发散微阴影），内置曜夜深空黑与纯净白双主题（支持 `DynamicSchemeVariant.expressive` 动态色彩算法）。
 
@@ -18,7 +18,7 @@ FluxForge 移动端不仅是一个内容浏览器，更是一个**独立的客�
 
 | 功能模块 | 详细特性描述 | 状态 | 规范与指引 |
 | :--- | :--- | :---: | :--- |
-| **本地 JS 规则引擎** | 基于 QuickJS 沙箱，支持 ES Module 转译、60秒防挂起超时、详细异常捕获 | ✅ 已完成 | `lib/services/rule_engine.dart` |
+| **本地 JS 规则引擎** | 基于 QuickJS-NG 现代沙箱，支持 ES Module 转译、全平台同核运行、详细异常捕获与原生 Dio 网络通道 | ✅ 已完成 | `lib/services/rule_engine.dart` |
 | **规则生命周期调度** | 完整调度 `discovery` (发现流)、`search` (全局搜索)、`detail` (详情)、`parse` (解析) | ✅ 已完成 | `lib/services/rule_service.dart` |
 | **规则管理与导入** | 规则启停 Switch、网络订阅 URL 导入、JSON 粘贴导入、按名称/地址即时检索 | ✅ 已完成 | `lib/views/rules/rules_page.dart` |
 | **主框架宿主** | 沉浸式 `ShellPage`，三大核心 Tab（发现/规则/我的），毛玻璃防重叠导航栏 | ✅ 已完成 | `lib/views/shell/shell_page.dart` |

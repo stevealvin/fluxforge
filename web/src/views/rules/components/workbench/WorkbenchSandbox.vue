@@ -216,15 +216,57 @@ const triggerFixError = () => {
   })
 }
 
-// 复制 JSON 结果
+/**
+ * 健壮的剪贴板复制工具方法
+ * 优先使用现代化 navigator.clipboard，异常或非安全上下文自动降级为 textarea execCommand
+ */
+const copyToClipboard = async (text: string, successTip = '已复制到剪贴板') => {
+  if (!text) return
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text)
+    } else {
+      const textarea = document.createElement('textarea')
+      textarea.value = text
+      textarea.style.position = 'fixed'
+      textarea.style.left = '-9999px'
+      textarea.style.top = '-9999px'
+      textarea.style.opacity = '0'
+      document.body.appendChild(textarea)
+      textarea.focus()
+      textarea.select()
+      document.execCommand('copy')
+      document.body.removeChild(textarea)
+    }
+    message.success(successTip)
+  } catch {
+    message.error('复制失败，请尝试手动划选复制')
+  }
+}
+
+// 复制测试结果 JSON
 const copyJsonResult = async () => {
   if (!jsonOutput.value) return
-  try {
-    await navigator.clipboard.writeText(jsonOutput.value)
-    message.success('已复制测试结果 JSON')
-  } catch {
-    message.error('复制失败')
+  await copyToClipboard(jsonOutput.value, '已复制测试结果 JSON')
+}
+
+// 一键复制全部沙箱控制台日志
+const copyAllLogs = async () => {
+  if (!sandboxLogs.value.length) {
+    message.info('当前暂无控制台日志可复制')
+    return
   }
+  const formatted = sandboxLogs.value
+    .map(log => `[${log.time}] [${log.level.toUpperCase()}] ${log.message}`)
+    .join('\n')
+  await copyToClipboard(formatted, `已复制全部 ${sandboxLogs.value.length} 条控制台日志`)
+}
+
+// 复制单条沙箱控制台日志
+const copySingleLog = async (log: { level: string; time: string; message: string }) => {
+  if (!log) return
+  const text = `[${log.time}] [${log.level.toUpperCase()}] ${log.message}`
+  await copyToClipboard(text, '已复制单条日志')
 }
 
 const clearLogs = () => {
@@ -237,7 +279,8 @@ defineExpose({
   activeAction,
   isCollapsed,
   toggleCollapsed,
-  clearLogs
+  clearLogs,
+  copyAllLogs
 })
 </script>
 
@@ -417,8 +460,22 @@ defineExpose({
         </div>
 
         <div class="flex items-center gap-2">
+          <!-- 处于日志视图且有日志时，显示复制日志按钮 -->
           <n-button
-            v-if="rawResult"
+            v-if="viewMode === 'logs' && sandboxLogs.length > 0"
+            size="tiny"
+            quaternary
+            class="!rounded-lg text-[10px]"
+            @click="copyAllLogs"
+          >
+            <template #icon>
+              <Copy class="w-3 h-3" />
+            </template>
+            <span>复制日志</span>
+          </n-button>
+          <!-- 处于其他视图且有运行结果时，显示复制 JSON 按钮 -->
+          <n-button
+            v-else-if="rawResult"
             size="tiny"
             quaternary
             class="!rounded-lg text-[10px]"
@@ -444,26 +501,38 @@ defineExpose({
           <div v-if="sandboxLogs.length === 0" class="h-full flex items-center justify-center text-xs text-zinc-400">
             沙箱未产生任何 console 输出
           </div>
-          <div v-else class="p-2 space-y-1.5 bg-zinc-950 rounded-xl font-mono text-xs overflow-y-auto h-full relative">
+          <div v-else class="p-2 space-y-1 bg-zinc-950 rounded-xl font-mono text-xs overflow-y-auto h-full relative">
             <div class="sticky top-0 z-10 flex items-center justify-between pb-1.5 mb-1.5 border-b border-zinc-800 bg-zinc-950/90 backdrop-blur-xs">
               <span class="text-[10px] text-zinc-400">输出日志 ({{ sandboxLogs.length }} 条)</span>
-              <button
-                type="button"
-                class="text-[10px] text-zinc-400 hover:text-white flex items-center gap-1 cursor-pointer transition-colors"
-                @click="clearLogs"
-              >
-                <Trash2 class="w-3 h-3" />
-                <span>清空</span>
-              </button>
+              <div class="flex items-center gap-3">
+                <button
+                  type="button"
+                  class="text-[10px] text-zinc-400 hover:text-emerald-400 flex items-center gap-1 cursor-pointer transition-colors"
+                  title="复制全部控制台日志"
+                  @click="copyAllLogs"
+                >
+                  <Copy class="w-3 h-3" />
+                  <span>复制全部</span>
+                </button>
+                <button
+                  type="button"
+                  class="text-[10px] text-zinc-400 hover:text-rose-400 flex items-center gap-1 cursor-pointer transition-colors"
+                  title="清空控制台日志"
+                  @click="clearLogs"
+                >
+                  <Trash2 class="w-3 h-3" />
+                  <span>清空</span>
+                </button>
+              </div>
             </div>
             <div
               v-for="(log, idx) in sandboxLogs"
               :key="idx"
-              class="flex items-start gap-2 py-0.5 text-zinc-300"
+              class="group flex items-start gap-2 py-1 px-1.5 rounded-lg text-zinc-300 hover:bg-white/[0.04] transition-colors relative select-text"
             >
-              <span class="text-[10px] text-zinc-500 shrink-0">{{ log.time }}</span>
+              <span class="text-[10px] text-zinc-500 shrink-0 select-none pt-0.5">{{ log.time }}</span>
               <span
-                class="text-[9px] px-1 py-0.2 rounded font-bold uppercase shrink-0"
+                class="text-[9px] px-1 py-0.2 rounded font-bold uppercase shrink-0 select-none"
                 :class="{
                   'bg-sky-500/20 text-sky-300': log.level === 'log' || log.level === 'info',
                   'bg-amber-500/20 text-amber-300': log.level === 'warn',
@@ -472,7 +541,16 @@ defineExpose({
               >
                 {{ log.level }}
               </span>
-              <pre class="flex-1 whitespace-pre-wrap break-all text-xs font-mono">{{ log.message }}</pre>
+              <pre class="flex-1 whitespace-pre-wrap break-all text-xs font-mono leading-relaxed select-text">{{ log.message }}</pre>
+              <!-- 悬停快捷复制单条日志按钮 -->
+              <button
+                type="button"
+                class="opacity-0 group-hover:opacity-100 p-1 text-zinc-500 hover:text-emerald-400 transition-opacity rounded hover:bg-zinc-800 shrink-0 cursor-pointer select-none"
+                title="复制单条日志"
+                @click.stop="copySingleLog(log)"
+              >
+                <Copy class="w-3 h-3" />
+              </button>
             </div>
           </div>
         </div>
