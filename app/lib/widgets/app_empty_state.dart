@@ -15,7 +15,7 @@ class EmptyState extends StatelessWidget {
   });
 
   /// 主图标
-  final IconData? icon;
+  final dynamic icon;
 
   /// 标题提示
   final String title;
@@ -52,11 +52,11 @@ class EmptyState extends StatelessWidget {
                     width: 0.8,
                   ),
                 ),
-                child: Icon(
-                  icon,
-                  size: 48,
-                  color: AppColors.primary,
-                ),
+                child: icon is IconData
+                    ? Icon(icon, size: 48, color: AppColors.primary)
+                    : (icon is IconData
+                        ? Icon(icon, size: 48, color: AppColors.primary)
+                        : (icon is Widget ? icon : const SizedBox.shrink())),
               ),
             const SizedBox(height: 16),
             Text(
@@ -98,3 +98,6 @@ class EmptyState extends StatelessWidget {
     );
   }
 }
+
+/// 语义化统一类型别名
+typedef AppEmptyState = EmptyState;

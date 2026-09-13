@@ -53,7 +53,7 @@ dependencies:
   get_it: ^9.2.0
   extended_image: ^10.1.0
   # 图标
-  lucide_icons_flutter: ^3.1.19
+  ionicons: ^0.2.3
   # 保持屏幕唤醒
   wakelock_plus: ^1.8.0
   url_launcher: ^6.3.2

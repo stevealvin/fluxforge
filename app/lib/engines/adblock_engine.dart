@@ -6,7 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
-import '../../core/storage/app_storage.dart';
+import '../core/storage/app_storage.dart';
 
 /// 广告拦截规则订阅源模型
 class AdFilterSource {

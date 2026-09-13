@@ -3,19 +3,18 @@ import 'dart:math' as math;
 import 'dart:ui';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:ionicons/ionicons.dart';
 import 'package:video_player/video_player.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../../core/theme/app_colors.dart';
-import '../../router.dart';
 import '../../services/di.dart';
-import '../../widgets/loading_indicator.dart';
+import '../../widgets/app_loading.dart';
 
 /// 现代视频播放器核心引擎 (AuraPlayer)
 /// 
-/// 彻底解耦第三方重量级播放器，底层基于官方原生 video_player 解码驱动
-/// 集成应用内音量/亮度手势免权限调节、长按2.0x震动倍速、微胶囊状态条与极光流光进度条
+/// 彻底解耦第三方重量级播放器与外部路由，底层基于官方原生 video_player 解码驱动
+/// 纯粹的受控与自闭环基础 UI 组件：集成音量/亮度手势免权限调节、长按2.0x震动倍速、微胶囊状态条与极光流光进度条
 class AuraPlayer extends StatefulWidget {
   const AuraPlayer({
     super.key,
@@ -29,56 +28,79 @@ class AuraPlayer extends StatefulWidget {
     this.onProgress,
     this.onEnded,
     this.onBack,
-    this.onFullScreenChanged,
     this.extraActions,
     this.autoPauseOnCovered = true,
+    this.onFullScreenChanged,
   });
 
-  /// 视频播放直链 (mp4, m3u8 等)
+  /// 播放源地址
   final String playUrl;
 
-  /// 外部共享的 VideoPlayerController (用于全屏路由无缝接力)
+  /// 外部复用或托管的视频控制器 (若为 null 则内部自主管理生命周期)
   final VideoPlayerController? controller;
 
-  /// 是否运行在全屏独立路由模式下
+  /// 是否运行于全屏独占沉浸路由模式下
   final bool isFullScreenMode;
 
-  /// 防盗链请求头 (Referer, User-Agent 等)
+  /// 自定义防盗链与鉴权请求头 (如 Referer, User-Agent)
   final Map<String, String> httpHeaders;
 
-  /// 视频/剧集标题
+  /// 视频主标题
   final String title;
 
-  /// 封面海报地址
+  /// 视频封面海报图 URL
   final String? coverUrl;
 
-  /// 断点续播初始跳转位置
+  /// 起播跳转定位
   final Duration initialPosition;
 
-  /// 播放进度回调
-  final void Function(Duration current, Duration total)? onProgress;
+  /// 播放进度实时回调 (当前位置, 总时长)
+  final void Function(Duration position, Duration duration)? onProgress;
 
-  /// 播放结束回调
+  /// 播放完毕自然结束回调
   final VoidCallback? onEnded;
 
   /// 顶部返回按钮回调
   final VoidCallback? onBack;
 
-  /// 全屏状态切换通知回调
+  /// 全屏状态变更回调
   final void Function(bool isFullScreen)? onFullScreenChanged;
 
   /// 顶部/底部扩展操作插槽
   final List<Widget>? extraActions;
 
-  /// 当有新路由压栈覆盖当前播放器时 (如进入相关推荐新页面) 是否自动暂停
+  /// 退至后台或失去焦点时是否自动暂停 (默认 true)
   final bool autoPauseOnCovered;
 
   @override
-  State<AuraPlayer> createState() => _AuraPlayerState();
+  State<AuraPlayer> createState() => AuraPlayerState();
 }
 
-class _AuraPlayerState extends State<AuraPlayer>
-    with SingleTickerProviderStateMixin, WidgetsBindingObserver, RouteAware {
+/// 导出公开的状态类，供业务代码通过 `GlobalKey<AuraPlayerState>` 执行主动暂停/播放等受控交互
+class AuraPlayerState extends State<AuraPlayer>
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
+  /// 主动暂停当前视频播放并解除屏幕常亮 (供业务层按需调用，例如点击相关推荐视频时)
+  void pause() {
+    if (_controller != null && _controller!.value.isPlaying) {
+      _controller!.pause();
+      _updateWakelock(false);
+    }
+  }
+
+  /// 主动恢复当前视频播放并恢复屏幕常亮
+  void play() {
+    if (_controller != null && !_controller!.value.isPlaying) {
+      _controller!.play();
+      _updateWakelock(true);
+    }
+  }
+
+  /// 获取底层视频控制器 (只读访问)
+  VideoPlayerController? get controller => _controller;
+
+  /// 当前是否正在播放
+  bool get isPlaying => _controller?.value.isPlaying ?? false;
+
   VideoPlayerController? _controller;
   bool _isInitialized = false;
   bool _hasError = false;
@@ -208,34 +230,6 @@ class _AuraPlayerState extends State<AuraPlayer>
   }
 
   @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    // 订阅当前页面的路由生命周期事件
-    final route = ModalRoute.of(context);
-    if (route != null) {
-      appRouteObserver.subscribe(this, route);
-    }
-  }
-
-  /// 当当前播放器所在路由被新页面 Push 压栈覆盖 (例如进入相关推荐新页面、选集详情等)
-  @override
-  void didPushNext() {
-    if (widget.autoPauseOnCovered) {
-      if (_controller != null && _controller!.value.isPlaying) {
-        _controller!.pause();
-      }
-      _updateWakelock(false);
-    }
-  }
-
-  /// 当覆盖在当前播放器之上的顶层页面被 Pop 移除、当前播放器重回顶层可见状态
-  @override
-  void didPopNext() {
-    // 页面重新露出时：
-    // 成熟流媒体体验原则：保持暂停状态，不擅自自动恢复外放声音，避免惊扰用户，静待用户自主点击播放
-  }
-
-  @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
     if (state == AppLifecycleState.inactive ||
@@ -257,7 +251,6 @@ class _AuraPlayerState extends State<AuraPlayer>
 
   @override
   void dispose() {
-    appRouteObserver.unsubscribe(this);
     WidgetsBinding.instance.removeObserver(this);
     _shimmerController.dispose();
     _seekToDebounceTimer?.cancel();
@@ -482,6 +475,10 @@ class _AuraPlayerState extends State<AuraPlayer>
         _volume = _controller?.value.volume ?? _volume;
       });
       _startControlsTimer();
+      // 从全屏无缝平滑切回竖屏后，若视频仍处于播放状态，维持屏幕常亮
+      if (_controller?.value.isPlaying ?? false) {
+        _updateWakelock(true);
+      }
     }
   }
 
@@ -813,8 +810,7 @@ class _AuraPlayerState extends State<AuraPlayer>
               color: Colors.black.withValues(alpha: 0.65),
               child: Column(
                 children: [
-                  Icon(
-                    _brightness > 0.5 ? LucideIcons.sun : LucideIcons.sunMedium,
+                  Icon(_brightness > 0.5 ? Ionicons.sunnyOutline : Ionicons.sunnyOutline,
                     color: Colors.white,
                     size: 18,
                   ),
@@ -863,10 +859,9 @@ class _AuraPlayerState extends State<AuraPlayer>
               color: Colors.black.withValues(alpha: 0.65),
               child: Column(
                 children: [
-                  Icon(
-                    _volume == 0
-                        ? LucideIcons.volumeX
-                        : (_volume > 0.5 ? LucideIcons.volume2 : LucideIcons.volume1),
+                  Icon(_volume == 0
+                        ? Ionicons.volumeMuteOutline
+                        : (_volume > 0.5 ? Ionicons.volumeHighOutline : Ionicons.volumeLowOutline),
                     color: Colors.white,
                     size: 18,
                   ),
@@ -923,8 +918,7 @@ class _AuraPlayerState extends State<AuraPlayer>
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(
-                      isForward ? LucideIcons.fastForward : LucideIcons.rewind,
+                    Icon(isForward ? Ionicons.playForwardOutline : Ionicons.playBackOutline,
                       color: accentColor,
                       size: 18,
                     ),
@@ -970,8 +964,7 @@ class _AuraPlayerState extends State<AuraPlayer>
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
               color: Colors.black.withValues(alpha: 0.55),
-              child: const Icon(
-                LucideIcons.fastForward,
+              child: const Icon(Ionicons.playForwardOutline,
                 color: AppColors.primary,
                 size: 20,
               ),
@@ -1028,7 +1021,7 @@ class _AuraPlayerState extends State<AuraPlayer>
                       _showResumeTip = false;
                     });
                   },
-                  child: const Icon(LucideIcons.x, color: Colors.white54, size: 14),
+                  child: const Icon(Ionicons.closeOutline, color: Colors.white54, size: 14),
                 ),
               ],
             ),
@@ -1106,8 +1099,7 @@ class _AuraPlayerState extends State<AuraPlayer>
                   width: 38,
                   height: 38,
                   alignment: Alignment.centerLeft, // 图标左边缘与基准线严格同轴对齐
-                  child: Icon(
-                    _isLocked ? LucideIcons.lock : LucideIcons.unlock,
+                  child: Icon(_isLocked ? Ionicons.lockClosedOutline : Ionicons.lockOpenOutline,
                     color: Colors.white, // 关闭锁定状态去掉颜色，保持纯白通透质感
                     size: 24,
                     shadows: const [
@@ -1167,9 +1159,7 @@ class _AuraPlayerState extends State<AuraPlayer>
                 width: 56,
                 height: 56,
                 child: Center(
-                  child: Icon(
-                    // 彻底去掉外圈：采用纯净无圈的 Lucide 600 加粗圆润图标 (暂停为两个圆润长方形竖条，播放为圆角三角形)
-                    isPlaying ? LucideIcons.pause600 : LucideIcons.play600,
+                  child: Icon(isPlaying ? Ionicons.pauseOutline : Ionicons.playOutline,
                     color: Colors.white,
                     size: 48,
                     shadows: const [
@@ -1297,7 +1287,7 @@ class _AuraPlayerState extends State<AuraPlayer>
         children: [
           if (_isFullScreen || widget.onBack != null)
             IconButton(
-              icon: const Icon(LucideIcons.chevronLeft, color: Colors.white, size: 22),
+              icon: const Icon(Ionicons.chevronBackOutline, color: Colors.white, size: 22),
               onPressed: () {
                 if (_isFullScreen) {
                   _toggleFullScreen();
@@ -1331,8 +1321,7 @@ class _AuraPlayerState extends State<AuraPlayer>
 
   /// 顶部右上角「更多设置」按钮 (极简 LucideIcons 三点，全屏下右边缘与进度条/全屏键严格右对齐)
   Widget _buildMoreSettingsButton() {
-    final icon = const Icon(
-      LucideIcons.ellipsis,
+    final icon = const Icon(Ionicons.ellipsisHorizontalOutline,
       color: Colors.white,
       size: 22,
     );
@@ -1591,8 +1580,7 @@ class _AuraPlayerState extends State<AuraPlayer>
   Widget _buildPlayPauseButton({bool compact = false}) {
     final isPlaying = _effectiveIsPlaying;
     // 采用 Lucide 600 加粗圆角变体 (round cap & join)，线条更饱满圆润
-    final icon = Icon(
-      isPlaying ? LucideIcons.pause600 : LucideIcons.play600,
+    final icon = Icon(isPlaying ? Ionicons.pauseOutline : Ionicons.playOutline,
       color: Colors.white,
       size: compact ? 20 : 22,
     );
@@ -1673,8 +1661,7 @@ class _AuraPlayerState extends State<AuraPlayer>
 
   /// 全屏 / 退出全屏按钮 (全屏下图标右边缘与进度条右边缘严格像素级对齐)
   Widget _buildFullscreenButton({bool compact = false}) {
-    final icon = Icon(
-      _isFullScreen ? LucideIcons.minimize : LucideIcons.maximize,
+    final icon = Icon(_isFullScreen ? Ionicons.contractOutline : Ionicons.expandOutline,
       color: Colors.white,
       size: compact ? 20 : 22,
     );
@@ -1764,7 +1751,7 @@ class _AuraPlayerState extends State<AuraPlayer>
                               ),
                               GestureDetector(
                                 onTap: () => Navigator.pop(dialogContext),
-                                child: const Icon(LucideIcons.x, color: Colors.white60, size: 18),
+                                child: const Icon(Ionicons.closeOutline, color: Colors.white60, size: 18),
                               ),
                             ],
                           ),
@@ -1901,7 +1888,7 @@ class _AuraPlayerState extends State<AuraPlayer>
                                   ),
                                   GestureDetector(
                                     onTap: () => Navigator.pop(dialogContext),
-                                    child: const Icon(LucideIcons.x, color: Colors.white60, size: 20),
+                                    child: const Icon(Ionicons.closeOutline, color: Colors.white60, size: 20),
                                   ),
                                 ],
                               ),
@@ -2132,7 +2119,7 @@ class _AuraPlayerState extends State<AuraPlayer>
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(LucideIcons.alertTriangle, color: Colors.amber, size: 36),
+              const Icon(Ionicons.warningOutline, color: Colors.amber, size: 36),
               const SizedBox(height: 12),
               Text(
                 _errorMessage,
@@ -2147,7 +2134,7 @@ class _AuraPlayerState extends State<AuraPlayer>
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                 ),
                 onPressed: _initializePlayer,
-                icon: const Icon(LucideIcons.refreshCw, size: 16),
+                icon: const Icon(Ionicons.refreshOutline, size: 16),
                 label: const Text('重试播放'),
               ),
             ],

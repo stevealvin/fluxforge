@@ -1,13 +1,13 @@
 import 'dart:convert';
 import 'package:material_ui/material_ui.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:ionicons/ionicons.dart';
 
 import '../../models/rule.dart';
 import '../../services/di.dart';
 import '../../services/rule_service.dart';
 import '../../widgets/app_card.dart';
 import '../../widgets/app_button.dart';
-import '../../widgets/loading_indicator.dart';
+import '../../widgets/app_loading.dart';
 
 class MarketPage extends StatefulWidget {
   const MarketPage({super.key});
@@ -148,7 +148,7 @@ class _MarketPageState extends State<MarketPage> {
       appBar: AppBar(
         title: const Row(
           children: [
-            Icon(LucideIcons.store, size: 20, color: Color(0xFF10B981)),
+            Icon(Ionicons.storefrontOutline, size: 20, color: Color(0xFF10B981)),
             SizedBox(width: 8),
             Text('规则市场', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 18)),
           ],
@@ -160,7 +160,7 @@ class _MarketPageState extends State<MarketPage> {
               child: AppButton.compactTonal(
                 onPressed: _importingAll ? null : _importAllRules,
                 loading: _importingAll,
-                icon: const Icon(LucideIcons.download),
+                icon: const Icon(Ionicons.downloadOutline),
                 label: _importingAll ? '导入中...' : '全部导入',
               ),
             ),
@@ -190,7 +190,7 @@ class _MarketPageState extends State<MarketPage> {
                     const SizedBox(height: 16),
                     OutlinedButton.icon(
                       onPressed: _fetchMarketRules,
-                      icon: const Icon(LucideIcons.refreshCw, size: 16),
+                      icon: const Icon(Ionicons.refreshOutline, size: 16),
                       label: const Text('点击重试'),
                     ),
                   ],
@@ -204,7 +204,7 @@ class _MarketPageState extends State<MarketPage> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(LucideIcons.inbox, size: 48, color: Colors.grey),
+                  const Icon(Ionicons.fileTrayOutline, size: 48, color: Colors.grey),
                   const SizedBox(height: 12),
                   const Text('市场暂无可用的公共规则', style: TextStyle(color: Colors.grey)),
                   const SizedBox(height: 16),
@@ -291,7 +291,7 @@ class _MarketPageState extends State<MarketPage> {
                         const SizedBox(height: 12),
                         Row(
                           children: [
-                            const Icon(LucideIcons.globe, size: 14, color: Colors.grey),
+                            const Icon(Ionicons.globeOutline, size: 14, color: Colors.grey),
                             const SizedBox(width: 4),
                             Expanded(
                               child: Text(
@@ -313,7 +313,7 @@ class _MarketPageState extends State<MarketPage> {
                                 child: const Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    Icon(LucideIcons.check, size: 13, color: Color(0xFF10B981)),
+                                    Icon(Ionicons.checkmarkOutline, size: 13, color: Color(0xFF10B981)),
                                     SizedBox(width: 4),
                                     Text(
                                       '已导入',
@@ -329,7 +329,7 @@ class _MarketPageState extends State<MarketPage> {
                             else
                               AppButton.compact(
                                 onPressed: () => _importSingleRule(rule),
-                                icon: const Icon(LucideIcons.download),
+                                icon: const Icon(Ionicons.downloadOutline),
                                 label: '一键导入',
                               ),
                           ],

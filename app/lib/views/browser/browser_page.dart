@@ -2,7 +2,7 @@ import 'dart:ui' as ui;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:ionicons/ionicons.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
@@ -10,8 +10,8 @@ import 'package:webview_flutter_android/webview_flutter_android.dart';
 import '../../core/theme/app_colors.dart';
 import '../../services/di.dart';
 import '../../widgets/app_button.dart';
-import 'adblock_engine.dart';
-import 'web_video_gesture_engine.dart';
+import '../../engines/adblock_engine.dart';
+import '../../engines/web_video_gesture_engine.dart';
 
 /// 现代化内置聚合浏览器页面
 /// 
@@ -247,8 +247,7 @@ class _BrowserPageState extends State<BrowserPage> {
                 color: (isAdRedirect ? AppColors.accentAmber : AppColors.primary).withValues(alpha: 0.14),
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: Icon(
-                isAdRedirect ? LucideIcons.shieldAlert : LucideIcons.externalLink,
+              child: Icon(isAdRedirect ? Ionicons.shieldCheckmarkOutline : Ionicons.openOutline,
                 size: 20,
                 color: isAdRedirect ? AppColors.accentAmber : AppColors.primary,
               ),
@@ -465,8 +464,7 @@ class _BrowserPageState extends State<BrowserPage> {
                           mainAxisSize: MainAxisSize.min,
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Icon(
-                              LucideIcons.globe,
+                            Icon(Ionicons.globeOutline,
                               size: 13,
                               color: isDark ? AppColors.darkTextTertiary : AppColors.lightTextTertiary,
                             ),
@@ -495,7 +493,7 @@ class _BrowserPageState extends State<BrowserPage> {
                         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                         children: [
                           _buildActionButton(
-                            icon: LucideIcons.rotateCw,
+                            icon: Ionicons.reloadOutline,
                             label: '刷新',
                             isDark: isDark,
                             onTap: () {
@@ -504,7 +502,7 @@ class _BrowserPageState extends State<BrowserPage> {
                             },
                           ),
                           _buildActionButton(
-                            icon: LucideIcons.copy,
+                            icon: Ionicons.copyOutline,
                             label: '复制链接',
                             isDark: isDark,
                             onTap: () async {
@@ -525,7 +523,7 @@ class _BrowserPageState extends State<BrowserPage> {
                             },
                           ),
                           _buildActionButton(
-                            icon: LucideIcons.externalLink,
+                            icon: Ionicons.openOutline,
                             label: '浏览器',
                             isDark: isDark,
                             onTap: () async {
@@ -539,7 +537,7 @@ class _BrowserPageState extends State<BrowserPage> {
                             },
                           ),
                           _buildActionButton(
-                            icon: LucideIcons.shieldCheck,
+                            icon: Ionicons.shieldCheckmarkOutline,
                             label: '广告拦截',
                             iconColor: _isAdBlockActive ? AppColors.primary : null,
                             isDark: isDark,
@@ -563,7 +561,7 @@ class _BrowserPageState extends State<BrowserPage> {
   }
 
   Widget _buildActionButton({
-    required IconData icon,
+    required dynamic icon,
     required String label,
     required bool isDark,
     required VoidCallback onTap,

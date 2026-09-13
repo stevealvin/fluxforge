@@ -1,5 +1,5 @@
 import 'package:material_ui/material_ui.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:ionicons/ionicons.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../services/di.dart';
@@ -38,8 +38,7 @@ class _CardGalleryPageState extends State<CardGalleryPage> {
           ),
         ),
         leading: IconButton(
-          icon: Icon(
-            LucideIcons.arrowLeft,
+          icon: Icon(Ionicons.arrowBackOutline,
             color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
           ),
           onPressed: () => Navigator.of(context).maybePop(),
@@ -47,8 +46,7 @@ class _CardGalleryPageState extends State<CardGalleryPage> {
         actions: [
           IconButton(
             tooltip: '切换主题预览效果',
-            icon: Icon(
-              isDark ? LucideIcons.sun : LucideIcons.moon,
+            icon: Icon(isDark ? Ionicons.sunnyOutline : Ionicons.moonOutline,
               color: AppColors.primary,
             ),
             onPressed: () {
@@ -65,7 +63,7 @@ class _CardGalleryPageState extends State<CardGalleryPage> {
           const SizedBox(height: 20),
 
           // 1. 五大核心形态
-          _buildSectionHeader('1. 五大核心卡片构造形态', LucideIcons.layoutGrid, isDark),
+          _buildSectionHeader('1. 五大核心卡片构造形态', Ionicons.gridOutline, isDark),
           const SizedBox(height: 12),
           _buildTypeStandard(isDark),
           const SizedBox(height: 12),
@@ -79,13 +77,13 @@ class _CardGalleryPageState extends State<CardGalleryPage> {
           const SizedBox(height: 24),
 
           // 2. 交互手感与物理反馈
-          _buildSectionHeader('2. 交互手感与按压微缩反馈', LucideIcons.mousePointerClick, isDark),
+          _buildSectionHeader('2. 交互手感与按压微缩反馈', Ionicons.navigateOutline, isDark),
           const SizedBox(height: 12),
           _buildInteractionDemos(isDark),
           const SizedBox(height: 24),
 
           // 3. 真实业务场景模板
-          _buildSectionHeader('3. 真实业务场景模板', LucideIcons.sparkles, isDark),
+          _buildSectionHeader('3. 真实业务场景模板', Ionicons.sparklesOutline, isDark),
           const SizedBox(height: 12),
           _buildMetricsScenario(isDark),
           const SizedBox(height: 12),
@@ -95,7 +93,7 @@ class _CardGalleryPageState extends State<CardGalleryPage> {
           const SizedBox(height: 24),
 
           // 4. 圆角与边框自定义
-          _buildSectionHeader('4. 圆角与边框自由定制', LucideIcons.squareDashed, isDark),
+          _buildSectionHeader('4. 圆角与边框自由定制', Ionicons.gridOutline, isDark),
           const SizedBox(height: 12),
           _buildRadiusDemos(isDark),
           const SizedBox(height: 36),
@@ -130,8 +128,7 @@ class _CardGalleryPageState extends State<CardGalleryPage> {
               color: AppColors.primary.withValues(alpha: 0.16),
               borderRadius: BorderRadius.circular(12),
             ),
-            child: const Icon(
-              LucideIcons.layers,
+            child: const Icon(Ionicons.layersOutline,
               color: AppColors.primary,
               size: 24,
             ),
@@ -167,10 +164,10 @@ class _CardGalleryPageState extends State<CardGalleryPage> {
   }
 
   /// 分组标题
-  Widget _buildSectionHeader(String title, IconData icon, bool isDark) {
+  Widget _buildSectionHeader(String title, dynamic icon, bool isDark) {
     return Row(
       children: [
-        Icon(icon, size: 16, color: AppColors.primary),
+        icon is IconData ? Icon(icon, size: 16, color: AppColors.primary) : Icon(icon as IconData, size: 16, color: AppColors.primary),
         const SizedBox(width: 8),
         Text(
           title,
@@ -217,8 +214,7 @@ class _CardGalleryPageState extends State<CardGalleryPage> {
                 ),
               ),
               const Spacer(),
-              Icon(
-                LucideIcons.sparkle,
+              Icon(Ionicons.sparklesOutline,
                 size: 14,
                 color: isDark ? AppColors.darkTextTertiary : AppColors.lightTextTertiary,
               ),
@@ -272,8 +268,7 @@ class _CardGalleryPageState extends State<CardGalleryPage> {
                 ),
               ),
               const Spacer(),
-              Icon(
-                LucideIcons.sparkles,
+              Icon(Ionicons.sparklesOutline,
                 size: 14,
                 color: isDark ? AppColors.darkTextTertiary : AppColors.lightTextTertiary,
               ),
@@ -439,8 +434,7 @@ class _CardGalleryPageState extends State<CardGalleryPage> {
                 ),
               ),
               const Spacer(),
-              const Icon(
-                LucideIcons.crown,
+              const Icon(Ionicons.ribbonOutline,
                 size: 16,
                 color: Colors.white,
               ),
@@ -477,7 +471,7 @@ class _CardGalleryPageState extends State<CardGalleryPage> {
               children: [
                 Row(
                   children: [
-                    const Icon(LucideIcons.hand, size: 16, color: AppColors.primary),
+                    const Icon(Ionicons.handRightOutline, size: 16, color: AppColors.primary),
                     const SizedBox(width: 6),
                     Text(
                       '标准水波纹',
@@ -533,7 +527,7 @@ class _CardGalleryPageState extends State<CardGalleryPage> {
               children: [
                 Row(
                   children: [
-                    const Icon(LucideIcons.sparkles, size: 16, color: AppColors.accentPurple),
+                    const Icon(Ionicons.sparklesOutline, size: 16, color: AppColors.accentPurple),
                     const SizedBox(width: 6),
                     Text(
                       '弹性微缩按压',
@@ -595,7 +589,7 @@ class _CardGalleryPageState extends State<CardGalleryPage> {
                     color: AppColors.primary.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(10),
                   ),
-                  child: const Icon(LucideIcons.codeXml, color: AppColors.primary, size: 20),
+                  child: const Icon(Ionicons.codeSlashOutline, color: AppColors.primary, size: 20),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
@@ -639,7 +633,7 @@ class _CardGalleryPageState extends State<CardGalleryPage> {
                     color: AppColors.accentBlue.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(10),
                   ),
-                  child: const Icon(LucideIcons.zap, color: AppColors.accentBlue, size: 20),
+                  child: const Icon(Ionicons.flashOutline, color: AppColors.accentBlue, size: 20),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
@@ -696,8 +690,7 @@ class _CardGalleryPageState extends State<CardGalleryPage> {
             child: Stack(
               children: [
                 Center(
-                  child: Icon(
-                    LucideIcons.clapperboard,
+                  child: Icon(Ionicons.filmOutline,
                     size: 40,
                     color: isDark ? Colors.white24 : Colors.black26,
                   ),

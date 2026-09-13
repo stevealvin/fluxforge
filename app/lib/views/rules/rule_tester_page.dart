@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:ionicons/ionicons.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../core/utils/app_logger.dart';
@@ -11,7 +11,7 @@ import '../../models/rule.dart';
 import '../../services/rule_engine.dart';
 import '../../widgets/app_button.dart';
 import '../../widgets/app_card.dart';
-import '../../widgets/loading_indicator.dart';
+import '../../widgets/app_loading.dart';
 
 /// 规则测试阶段类型枚举
 enum RuleTestStepType {
@@ -688,12 +688,12 @@ class _RuleTesterPageState extends State<RuleTesterPage> {
       ),
       actions: [
         IconButton(
-          icon: const Icon(LucideIcons.copy, size: 18),
+          icon: const Icon(Ionicons.copyOutline, size: 18),
           tooltip: '复制调试诊断报告',
           onPressed: _copyDebugReport,
         ),
         IconButton(
-          icon: const Icon(LucideIcons.trash2, size: 18),
+          icon: const Icon(Ionicons.trashOutline, size: 18),
           tooltip: '清空沙箱控制台日志',
           onPressed: () {
             AppLogger.clear();
@@ -787,7 +787,7 @@ class _RuleTesterPageState extends State<RuleTesterPage> {
           // 测试启动/停止按钮
           AppButton.compact(
             label: _isTesting ? '停止' : '开始测试',
-            icon: _isTesting ? const Icon(LucideIcons.square, size: 14) : const Icon(LucideIcons.play, size: 14),
+            icon: _isTesting ? const Icon(Ionicons.squareOutline, size: 14) : const Icon(Ionicons.playOutline, size: 14),
             color: _isTesting ? Colors.redAccent : AppColors.primary,
             onPressed: _isTesting ? _stopPipeline : _startPipeline,
           ),
@@ -962,7 +962,7 @@ class _RuleTesterPageState extends State<RuleTesterPage> {
                 ),
                 if (step.formattedJson != null)
                   IconButton(
-                    icon: const Icon(LucideIcons.copy, size: 13),
+                    icon: const Icon(Ionicons.copyOutline, size: 13),
                     tooltip: '复制该阶段 JSON',
                     visualDensity: VisualDensity.compact,
                     onPressed: () {
@@ -1021,7 +1021,7 @@ class _RuleTesterPageState extends State<RuleTesterPage> {
             children: [
               Row(
                 children: [
-                  const Icon(LucideIcons.terminal, size: 16, color: AppColors.primary),
+                  const Icon(Ionicons.terminalOutline, size: 16, color: AppColors.primary),
                   const SizedBox(width: 8),
                   Text(
                     '沙箱实时控制台 (Console)',
@@ -1049,7 +1049,7 @@ class _RuleTesterPageState extends State<RuleTesterPage> {
                 children: [
                   if (logs.isNotEmpty)
                     IconButton(
-                      icon: const Icon(LucideIcons.copy, size: 16),
+                      icon: const Icon(Ionicons.copyOutline, size: 16),
                       tooltip: '复制全部控制台日志',
                       visualDensity: VisualDensity.compact,
                       onPressed: () {

@@ -1,6 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:ionicons/ionicons.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../core/theme/app_colors.dart';
@@ -118,7 +118,7 @@ class _LogsPageState extends State<LogsPage> {
             mainAxisSize: MainAxisSize.min,
             children: [
               const ListTile(
-                leading: Icon(LucideIcons.checkCheck, color: AppColors.primary),
+                leading: Icon(Ionicons.checkmarkDoneOutline, color: AppColors.primary),
                 title: Text('全量日志已复制到剪贴板', style: TextStyle(fontWeight: FontWeight.bold)),
                 subtitle: Text('您可以直接粘贴发送给开发者或附加至 Issue 中', style: TextStyle(fontSize: 12)),
               ),
@@ -127,7 +127,7 @@ class _LogsPageState extends State<LogsPage> {
                 children: [
                   Expanded(
                     child: OutlinedButton.icon(
-                      icon: const Icon(LucideIcons.share2, size: 16),
+                      icon: const Icon(Ionicons.shareSocialOutline, size: 16),
                       label: const Text('系统分享文本'),
                       onPressed: () {
                         Navigator.pop(ctx);
@@ -268,8 +268,7 @@ class _LogsPageState extends State<LogsPage> {
           // Live 实时滚动追踪开关
           IconButton(
             tooltip: _autoScroll ? '实时跟踪模式 (已开启)' : '开启实时跟踪',
-            icon: Icon(
-              _autoScroll ? LucideIcons.radio : LucideIcons.arrowDownToLine,
+            icon: Icon(_autoScroll ? Ionicons.radioOutline : Ionicons.downloadOutline,
               color: _autoScroll ? AppColors.primary : Colors.grey,
               size: 20,
             ),
@@ -287,13 +286,13 @@ class _LogsPageState extends State<LogsPage> {
           // 一键全量导出与复制
           IconButton(
             tooltip: '导出/复制全部日志',
-            icon: const Icon(LucideIcons.copy, size: 20),
+            icon: const Icon(Ionicons.copyOutline, size: 20),
             onPressed: () => _shareOrExportLogs(context),
           ),
           // 清空日志
           IconButton(
             tooltip: '清空日志',
-            icon: const Icon(LucideIcons.trash2, size: 20),
+            icon: const Icon(Ionicons.trashOutline, size: 20),
             onPressed: () => _confirmClearLogs(context),
           ),
         ],
@@ -361,7 +360,7 @@ class _LogsPageState extends State<LogsPage> {
                 fontSize: 12,
                 color: isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted,
               ),
-              prefixIcon: const Icon(LucideIcons.search, size: 16),
+              prefixIcon: const Icon(Ionicons.searchOutline, size: 16),
               suffixIcon: _searchQuery.isNotEmpty
                   ? IconButton(
                       icon: const Icon(Icons.clear, size: 16),
@@ -403,7 +402,7 @@ class _LogsPageState extends State<LogsPage> {
               children: [
                 _buildFilterChip('ALL', '全部', isDark),
                 const SizedBox(width: 6),
-                _buildFilterChip('RULE', '规则沙箱', isDark, icon: LucideIcons.code),
+                _buildFilterChip('RULE', '规则沙箱', isDark, icon: Ionicons.codeSlashOutline),
                 const SizedBox(width: 6),
                 _buildFilterChip('ERROR', '错误', isDark, color: Colors.redAccent),
                 const SizedBox(width: 6),
@@ -413,7 +412,7 @@ class _LogsPageState extends State<LogsPage> {
                 const SizedBox(width: 6),
                 _buildFilterChip('DEBUG', '调试', isDark, color: Colors.blueAccent),
                 const SizedBox(width: 6),
-                _buildFilterChip('NETWORK', '网络', isDark, icon: LucideIcons.globe),
+                _buildFilterChip('NETWORK', '网络', isDark, icon: Ionicons.globeOutline),
               ],
             ),
           ),
@@ -422,7 +421,7 @@ class _LogsPageState extends State<LogsPage> {
     );
   }
 
-  Widget _buildFilterChip(String key, String label, bool isDark, {Color? color, IconData? icon}) {
+  Widget _buildFilterChip(String key, String label, bool isDark, {Color? color, dynamic icon}) {
     final isSelected = _selectedFilter == key;
     final activeColor = color ?? AppColors.primary;
 
@@ -448,7 +447,9 @@ class _LogsPageState extends State<LogsPage> {
           mainAxisSize: MainAxisSize.min,
           children: [
             if (icon != null) ...[
-              Icon(icon, size: 12, color: isSelected ? activeColor : (isDark ? Colors.grey : Colors.black54)),
+              icon is IconData
+                  ? Icon(icon, size: 12, color: isSelected ? activeColor : (isDark ? Colors.grey : Colors.black54))
+                  : Icon(icon as IconData, size: 12, color: isSelected ? activeColor : (isDark ? Colors.grey : Colors.black54)),
               const SizedBox(width: 4),
             ],
             Text(
@@ -558,8 +559,7 @@ class _LogsPageState extends State<LogsPage> {
                           ),
                         ),
                         if (hasStackOrLong)
-                          Icon(
-                            isExpanded ? LucideIcons.chevronUp : LucideIcons.chevronDown,
+                          Icon(isExpanded ? Ionicons.chevronUpOutline : Ionicons.chevronDownOutline,
                             size: 14,
                             color: Colors.grey,
                           ),
@@ -646,7 +646,7 @@ class _LogsPageState extends State<LogsPage> {
                 color: AppColors.primary.withValues(alpha: 0.1),
                 shape: BoxShape.circle,
               ),
-              child: const Icon(LucideIcons.fileCode, size: 36, color: AppColors.primary),
+              child: const Icon(Ionicons.documentTextOutline, size: 36, color: AppColors.primary),
             ),
             const SizedBox(height: 16),
             Text(
@@ -671,7 +671,7 @@ class _LogsPageState extends State<LogsPage> {
             if (isTotalEmpty) ...[
               const SizedBox(height: 20),
               OutlinedButton.icon(
-                icon: const Icon(LucideIcons.sparkles, size: 16),
+                icon: const Icon(Ionicons.sparklesOutline, size: 16),
                 label: const Text('写入模拟测试日志'),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: AppColors.primary,

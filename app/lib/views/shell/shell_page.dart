@@ -1,7 +1,7 @@
 import 'dart:ui' as ui;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:ionicons/ionicons.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../discover/discover_page.dart';
@@ -85,18 +85,18 @@ class ShellPage extends HookWidget {
                 animationDuration: const Duration(milliseconds: 300),
                 destinations: const [
                   NavigationDestination(
-                    icon: Icon(LucideIcons.compass, size: 22),
-                    selectedIcon: Icon(LucideIcons.compass, size: 24, color: AppColors.primary),
+                    icon: Icon(Ionicons.compassOutline, size: 22),
+                    selectedIcon: Icon(Ionicons.compassOutline, size: 24, color: AppColors.primary),
                     label: '发现',
                   ),
                   NavigationDestination(
-                    icon: Icon(LucideIcons.code, size: 22),
-                    selectedIcon: Icon(LucideIcons.code, size: 24, color: AppColors.primary),
+                    icon: Icon(Ionicons.codeSlashOutline, size: 22),
+                    selectedIcon: Icon(Ionicons.codeSlashOutline, size: 24, color: AppColors.primary),
                     label: '规则',
                   ),
                   NavigationDestination(
-                    icon: Icon(LucideIcons.user, size: 22),
-                    selectedIcon: Icon(LucideIcons.user, size: 24, color: AppColors.primary),
+                    icon: Icon(Ionicons.personOutline, size: 22),
+                    selectedIcon: Icon(Ionicons.personOutline, size: 24, color: AppColors.primary),
                     label: '我的',
                   ),
                 ],

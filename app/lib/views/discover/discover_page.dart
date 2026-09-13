@@ -1,14 +1,14 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:go_router/go_router.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:ionicons/ionicons.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../models/rule.dart';
 import '../../services/di.dart';
 import '../../services/rule_engine.dart';
 import '../../widgets/app_card.dart';
-import '../../widgets/loading_indicator.dart';
+import '../../widgets/app_loading.dart';
 
 /// 现代化多规则动态发现推荐流视图
 class DiscoverPage extends StatefulWidget {
@@ -161,7 +161,7 @@ class _DiscoverPageState extends State<DiscoverPage> with AutomaticKeepAliveClie
                 color: AppColors.primary.withValues(alpha: 0.12),
                 shape: BoxShape.circle,
               ),
-              child: const Icon(LucideIcons.compass, size: 36, color: AppColors.primary),
+              child: const Icon(Ionicons.compassOutline, size: 36, color: AppColors.primary),
             ),
             const SizedBox(height: 16),
             const Text(
@@ -183,7 +183,7 @@ class _DiscoverPageState extends State<DiscoverPage> with AutomaticKeepAliveClie
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               ),
               onPressed: () => context.push('/market'),
-              icon: const Icon(LucideIcons.store, size: 16),
+              icon: const Icon(Ionicons.storefrontOutline, size: 16),
               label: const Text('前往规则市场'),
             ),
           ],
@@ -511,7 +511,7 @@ class _DiscoverPageState extends State<DiscoverPage> with AutomaticKeepAliveClie
                 'assets/icon/icon.png',
                 width: 32,
                 height: 32,
-                errorBuilder: (_, _, _) => const Icon(LucideIcons.zap, color: AppColors.primary),
+                errorBuilder: (_, _, _) => const Icon(Ionicons.flashOutline, color: AppColors.primary),
               ),
             ),
             const SizedBox(width: 8),
@@ -524,12 +524,12 @@ class _DiscoverPageState extends State<DiscoverPage> with AutomaticKeepAliveClie
         actions: [
           IconButton(
             tooltip: '搜索',
-            icon: const Icon(LucideIcons.search),
+            icon: const Icon(Ionicons.searchOutline),
             onPressed: () => context.push('/search'),
           ),
           IconButton(
             tooltip: '规则市场',
-            icon: const Icon(LucideIcons.store),
+            icon: const Icon(Ionicons.storefrontOutline),
             onPressed: () => context.push('/market'),
           ),
         ],

@@ -31,8 +31,8 @@
 ## 2. 现代视频播放器 (AuraPlayer) 技术实现规格
 
 ### 2.1 模块定位与替换目标
-- **目标路径**：`app/lib/widgets/player/aura_player.dart`（及 `app/lib/widgets/player/` 子目录辅助组件）；
-- **替换目标**：彻底替换 `app/lib/views/detail/media_detail_page.dart` 中原有的 `Chewie` 逻辑，成为应用内唯一的全功能视频播放引擎。
+- **目标路径**：`app/lib/widgets/player/aura_player.dart`（全局独立基础组件）；
+- **替换目标**：彻底替换 `app/lib/views/media/media_detail_page.dart` 中原有的 `Chewie` 逻辑，成为应用内唯一的全功能视频播放引擎。
 
 ### 2.2 组件接口定义 (API Contract)
 ```dart
@@ -132,7 +132,7 @@ class AuraPlayer extends StatefulWidget {
 ## 4. 纯净小说阅读引擎 (FluxReader) 实现规格
 
 ### 4.1 模块定位与新建文件
-- **目标路径**：`app/lib/views/reader/novel_reader_page.dart`（及关联排版计算辅助类）。
+- **目标路径**：`app/lib/views/media/novel/reader/novel_reader_page.dart`（及关联排版计算辅助类）。
 
 ### 4.2 核心排版引擎与翻页机制
 - **排版计算器**：
@@ -154,7 +154,7 @@ class AuraPlayer extends StatefulWidget {
 ## 5. 漫画与图集查看器 (FluxGallery) 实现规格
 
 ### 5.1 模块定位与新建文件
-- **目标路径**：`app/lib/views/gallery/gallery_viewer_page.dart`。
+- **目标路径**：`app/lib/views/media/comic/reader/comic_reader_page.dart`。
 
 ### 5.2 查看模式与双指交互
 - **双阅读模式**：
@@ -170,7 +170,7 @@ class AuraPlayer extends StatefulWidget {
 ## 6. 本地全量数据一键备份与恢复实现规格
 
 ### 6.1 模块定位与服务新建
-- **目标路径**：`app/lib/services/backup_service.dart`，入口嵌入设置页 `app/lib/views/profile/settings_page.dart`。
+- **目标路径**：`app/lib/services/backup_service.dart`，入口嵌入设置页 `app/lib/views/settings/settings_page.dart`。
 
 ### 6.2 JSON 数据包结构契约 (Backup Schema)
 导出的单文件命名为 `fluxforge_backup_YYYYMMDD_HHmm.json`（或 `.flux`），结构严格如下：
@@ -231,7 +231,7 @@ class FavoriteItem {
 ## 8. 全局偏好与系统设置 (AppSettings) 实现规格
 
 ### 8.1 模块定位与涉及文件
-- **目标路径**：`app/lib/views/profile/settings_page.dart` 及 `app/lib/services/app_service.dart`（全局偏好状态持久化）。
+- **目标路径**：`app/lib/views/settings/settings_page.dart` 及 `app/lib/services/app_service.dart`（全局偏好状态持久化）。
 
 ### 8.2 核心偏好模型契约 (Settings Model)
 ```dart

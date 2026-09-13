@@ -239,3 +239,5 @@ class _ImagePlaceholderPainter extends CustomPainter {
             oldDelegate.iconSize != iconSize);
   }
 }
+/// 语义化统一类型别名
+typedef AppNetImage = NetImage;

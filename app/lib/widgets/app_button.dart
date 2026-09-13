@@ -1,6 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 import '../core/theme/app_colors.dart';
-import 'loading_indicator.dart';
+import 'app_loading.dart';
 
 /// 按钮样式变体
 enum AppButtonVariant {

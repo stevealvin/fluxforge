@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'package:material_ui/material_ui.dart';
 import 'package:go_router/go_router.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:ionicons/ionicons.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../models/rule.dart';
@@ -9,9 +9,9 @@ import '../../services/di.dart';
 import '../../services/rule_engine.dart';
 import '../../widgets/app_card.dart';
 import '../../widgets/app_button.dart';
-import '../../widgets/empty_state.dart';
-import '../../widgets/loading_indicator.dart';
-import '../../widgets/net_image.dart';
+import '../../widgets/app_empty_state.dart';
+import '../../widgets/app_loading.dart';
+import '../../widgets/app_net_image.dart';
 
 /// 单个源规则的检索状态
 class _RuleSearchStatus {
@@ -728,8 +728,7 @@ class _SearchPageState extends State<SearchPage> {
                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                     child: Row(
                       children: [
-                        Icon(
-                          _isGridView ? LucideIcons.list : LucideIcons.layoutGrid,
+                        Icon(_isGridView ? Ionicons.listOutline : Ionicons.gridOutline,
                           size: 14,
                           color: AppColors.primary,
                         ),
@@ -820,7 +819,7 @@ class _SearchPageState extends State<SearchPage> {
             runSpacing: 8,
             children: _historyList.map((text) {
               return InputChip(
-                avatar: const Icon(LucideIcons.clock, size: 13, color: AppColors.primary),
+                avatar: const Icon(Ionicons.timeOutline, size: 13, color: AppColors.primary),
                 label: Text(
                   text,
                   style: TextStyle(
@@ -850,7 +849,7 @@ class _SearchPageState extends State<SearchPage> {
         // 探索灵感推荐词
         Row(
           children: [
-            const Icon(LucideIcons.sparkles, size: 16, color: AppColors.primary),
+            const Icon(Ionicons.sparklesOutline, size: 16, color: AppColors.primary),
             const SizedBox(width: 6),
             Text(
               '探索推荐',
@@ -969,7 +968,7 @@ class _SearchPageState extends State<SearchPage> {
 
       return Center(
         child: EmptyState(
-          icon: LucideIcons.searchX,
+          icon: Ionicons.searchOutline,
           title: '未检索到相关内容',
           description: widget.targetRule != null
               ? '在「${widget.targetRule!.name}」中未搜到结果，建议更换简短词汇'
@@ -1204,7 +1203,7 @@ class _SearchPageState extends State<SearchPage> {
                         ),
                       ),
                       const SizedBox(width: 8),
-                      const Icon(LucideIcons.playCircle, size: 16, color: AppColors.primary),
+                      const Icon(Ionicons.playCircleOutline, size: 16, color: AppColors.primary),
                     ],
                   ),
                 ],

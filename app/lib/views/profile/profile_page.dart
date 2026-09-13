@@ -1,7 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:ionicons/ionicons.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../models/rule.dart';
@@ -80,7 +80,7 @@ class _ProfilePageState extends State<ProfilePage> {
                 ),
               ),
               ListTile(
-                leading: const Icon(LucideIcons.fileUp, color: AppColors.primary),
+                leading: const Icon(Ionicons.cloudUploadOutline, color: AppColors.primary),
                 title: const Text('一键导出备份数据包'),
                 subtitle: const Text('将规则库、收藏与搜索历史打包为 JSON 并分享/保存至本地', style: TextStyle(fontSize: 11)),
                 onTap: () async {
@@ -97,7 +97,7 @@ class _ProfilePageState extends State<ProfilePage> {
                 },
               ),
               ListTile(
-                leading: const Icon(LucideIcons.fileDown, color: Colors.amber),
+                leading: const Icon(Ionicons.cloudDownloadOutline, color: Colors.amber),
                 title: const Text('从 JSON 文本/剪贴板恢复'),
                 subtitle: const Text('解析备份文件，支持合并追加或全量覆盖', style: TextStyle(fontSize: 11)),
                 onTap: () {
@@ -139,7 +139,7 @@ class _ProfilePageState extends State<ProfilePage> {
                   hintText: '{\n  "app": "FluxForge",\n  "data": { ... }\n}',
                   border: const OutlineInputBorder(),
                   suffixIcon: IconButton(
-                    icon: const Icon(LucideIcons.clipboard, size: 16),
+                    icon: const Icon(Ionicons.clipboardOutline, size: 16),
                     tooltip: '粘贴剪贴板',
                     onPressed: () async {
                       final data = await Clipboard.getData('text/plain');
@@ -275,7 +275,7 @@ class _ProfilePageState extends State<ProfilePage> {
             ],
           ),
           child: const Center(
-            child: Icon(LucideIcons.compass, color: Colors.white, size: 28),
+            child: Icon(Ionicons.compassOutline, color: Colors.white, size: 28),
           ),
         ),
         const SizedBox(width: 14),
@@ -321,8 +321,7 @@ class _ProfilePageState extends State<ProfilePage> {
         // 主题切换按钮
         IconButton(
           tooltip: '快速切换深浅主题',
-          icon: Icon(
-            isDark ? LucideIcons.moon : LucideIcons.sun,
+          icon: Icon(isDark ? Ionicons.moonOutline : Ionicons.sunnyOutline,
             color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
             size: 20,
           ),
@@ -332,8 +331,7 @@ class _ProfilePageState extends State<ProfilePage> {
         // 设置入口
         IconButton(
           tooltip: '系统偏好设置',
-          icon: Icon(
-            LucideIcons.settings,
+          icon: Icon(Ionicons.settingsOutline,
             color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
             size: 20,
           ),
@@ -497,8 +495,7 @@ class _ProfilePageState extends State<ProfilePage> {
                       : (isDark ? Colors.white10 : Colors.black12),
                   shape: BoxShape.circle,
                 ),
-                child: Icon(
-                  hasUpdate ? LucideIcons.sparkles : LucideIcons.bookmarkCheck,
+                child: Icon(hasUpdate ? Ionicons.sparklesOutline : Ionicons.bookmarkOutline,
                   color: hasUpdate ? AppColors.primary : Colors.grey,
                   size: 20,
                 ),
@@ -556,7 +553,7 @@ class _ProfilePageState extends State<ProfilePage> {
                 color: AppColors.primary.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: const Icon(LucideIcons.bookmark, color: AppColors.primary, size: 18),
+              child: const Icon(Ionicons.bookmarkOutline, color: AppColors.primary, size: 18),
             ),
             title: const Text('我的收藏与追更', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
             subtitle: const Text('管理关注的剧集、小说与漫画更新', style: TextStyle(fontSize: 11)),
@@ -588,7 +585,7 @@ class _ProfilePageState extends State<ProfilePage> {
                 color: Colors.purpleAccent.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: const Icon(LucideIcons.hardDriveDownload, color: Colors.purpleAccent, size: 18),
+              child: const Icon(Ionicons.hardwareChipOutline, color: Colors.purpleAccent, size: 18),
             ),
             title: const Text('数据备份与还原', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
             subtitle: const Text('规则库、收藏夹及历史记录单文件 JSON 导出/导入', style: TextStyle(fontSize: 11)),
@@ -605,7 +602,7 @@ class _ProfilePageState extends State<ProfilePage> {
                 color: Colors.teal.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: const Icon(LucideIcons.store, color: Colors.teal, size: 18),
+              child: const Icon(Ionicons.storefrontOutline, color: Colors.teal, size: 18),
             ),
             title: const Text('规则订阅市场', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
             subtitle: const Text('探索与一键订阅最新聚合跨媒体解析源', style: TextStyle(fontSize: 11)),
@@ -622,7 +619,7 @@ class _ProfilePageState extends State<ProfilePage> {
                 color: Colors.blueAccent.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: const Icon(LucideIcons.sliders, color: Colors.blueAccent, size: 18),
+              child: const Icon(Ionicons.optionsOutline, color: Colors.blueAccent, size: 18),
             ),
             title: const Text('系统偏好设置', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
             subtitle: const Text('播放手势、小说翻页、沙箱请求超时、广告拦截', style: TextStyle(fontSize: 11)),

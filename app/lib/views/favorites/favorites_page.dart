@@ -1,13 +1,13 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:ionicons/ionicons.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../services/di.dart';
 import '../../services/favorite_service.dart';
 import '../../widgets/app_card.dart';
-import '../../widgets/empty_state.dart';
-import '../detail/media_detail_page.dart';
+import '../../widgets/app_empty_state.dart';
+import '../media/media_detail_page.dart';
 
 /// 我的收藏与智能追更中心页面 (FavoritesPage)
 class FavoritesPage extends StatefulWidget {
@@ -78,16 +78,16 @@ class _FavoritesPageState extends State<FavoritesPage> {
       case 'video':
       case 'tv':
       case 'movie':
-        return LucideIcons.film;
+        return Ionicons.filmOutline;
       case 'novel':
       case 'book':
-        return LucideIcons.bookOpen;
+        return Ionicons.bookOutline;
       case 'comic':
       case 'picture':
       case 'gallery':
-        return LucideIcons.image;
+        return Ionicons.imageOutline;
       default:
-        return LucideIcons.bookmark;
+        return Ionicons.bookmarkOutline;
     }
   }
 
@@ -115,7 +115,7 @@ class _FavoritesPageState extends State<FavoritesPage> {
                 )
               : IconButton(
                   tooltip: '检查全量追更',
-                  icon: const Icon(LucideIcons.refreshCw),
+                  icon: const Icon(Ionicons.refreshOutline),
                   onPressed: _checkUpdates,
                 ),
         ],
@@ -137,7 +137,7 @@ class _FavoritesPageState extends State<FavoritesPage> {
               Expanded(
                 child: filtered.isEmpty
                     ? const EmptyState(
-                        icon: LucideIcons.bookmark,
+                        icon: Ionicons.bookmarkOutline,
                         title: '暂无收藏条目',
                         description: '在浏览影视、小说或画廊时点击收藏，享受智能追更提醒',
                       )
@@ -214,7 +214,7 @@ class _FavoritesPageState extends State<FavoritesPage> {
               type: item.mediaType,
               title: item.title,
               cover: item.cover,
-              url: item.id.startsWith('http') ? item.id : null,
+              url: item.id.startsWith('http') ? item.id : '',
             ),
           ),
         );
@@ -282,7 +282,7 @@ class _FavoritesPageState extends State<FavoritesPage> {
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            const Icon(LucideIcons.sparkles, color: Colors.white, size: 10),
+                            const Icon(Ionicons.sparklesOutline, color: Colors.white, size: 10),
                             const SizedBox(width: 3),
                             Text(
                               'NEW · ${item.latestEpisode.isNotEmpty ? item.latestEpisode : "有更新"}',
@@ -315,7 +315,7 @@ class _FavoritesPageState extends State<FavoritesPage> {
 
           // 右侧取消收藏按钮
           IconButton(
-            icon: const Icon(LucideIcons.trash2, size: 16, color: Colors.grey),
+            icon: const Icon(Ionicons.trashOutline, size: 16, color: Colors.grey),
             onPressed: () {
               favoriteService.removeFavorite(item.id);
               ScaffoldMessenger.of(context).showSnackBar(

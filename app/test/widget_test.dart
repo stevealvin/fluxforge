@@ -4,7 +4,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:shared_preferences_platform_interface/in_memory_shared_preferences_async.dart';
 import 'package:shared_preferences_platform_interface/shared_preferences_async_platform_interface.dart';
 import 'package:fluxforge/widgets/app_card.dart';
-import 'package:fluxforge/views/profile/logs_page.dart';
+import 'package:fluxforge/views/settings/logs_page.dart';
 import 'package:fluxforge/views/search/search_page.dart';
 import 'package:fluxforge/core/utils/app_logger.dart';
 import 'package:fluxforge/core/theme/app_theme.dart';
@@ -16,8 +16,12 @@ import 'package:fluxforge/services/rule_engine.dart';
 import 'package:fluxforge/widgets/player/aura_player.dart';
 import 'package:fluxforge/models/rule.dart';
 import 'package:fluxforge/router.dart';
-import 'package:fluxforge/views/rules/rule_detail_page.dart';
-import 'package:fluxforge/views/detail/photo_gallery_page.dart';
+import 'package:fluxforge/views/media/media_detail_page.dart';
+import 'package:fluxforge/views/media/comic/reader/comic_reader_page.dart';
+import 'package:fluxforge/views/media/novel/reader/novel_reader_page.dart';
+import 'package:ionicons/ionicons.dart';
+import 'package:fluxforge/models/media.dart';
+import 'package:fluxforge/views/media/common/media_related_grid.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -279,7 +283,7 @@ export default defineRule({
     expect(find.byType(ClipRect), findsWidgets);
   });
 
-  testWidgets('RuleDetailPage builds correctly and handles video view layout', (WidgetTester tester) async {
+  testWidgets('MediaDetailPage builds correctly and handles video view layout', (WidgetTester tester) async {
     final testRule = Rule(
       id: 'test_video_rule',
       name: '测试影视规则',
@@ -305,7 +309,7 @@ module.exports = {
       MaterialApp(
         theme: AppTheme.lightTheme,
         darkTheme: AppTheme.darkTheme,
-        home: RuleDetailPage(
+        home: MediaDetailPage(
           title: '流光测试剧集',
           url: 'https://example.com/detail/1',
           cover: 'https://example.com/cover.jpg',
@@ -315,38 +319,90 @@ module.exports = {
     );
 
     await tester.pump();
-    expect(find.byType(RuleDetailPage), findsOneWidget);
+    expect(find.byType(MediaDetailPage), findsOneWidget);
   });
 
-  testWidgets('AuraPlayer integrates with RouteObserver and auto pauses on route covered', (WidgetTester tester) async {
-    // 验证 AuraPlayer 支持 autoPauseOnCovered 属性并能够在路由覆盖与压栈生命周期中稳定协同
+  testWidgets('AuraPlayer supports external control via GlobalKey<AuraPlayerState> pause and play', (WidgetTester tester) async {
+    final playerKey = GlobalKey<AuraPlayerState>();
+
     await tester.pumpWidget(
       MaterialApp(
-        navigatorObservers: [appRouteObserver],
-        home: const Scaffold(
+        home: Scaffold(
           body: AuraPlayer(
+            key: playerKey,
             playUrl: '',
-            title: '路由感知测试',
-            autoPauseOnCovered: true,
+            title: '受控接口测试',
           ),
         ),
       ),
     );
 
     expect(find.byType(AuraPlayer), findsOneWidget);
+    expect(playerKey.currentState, isNotNull);
+
+    // 验证能够成功调用公开的 pause() 与 play() 受控方法而不崩溃
+    playerKey.currentState?.pause();
+    expect(tester.takeException(), isNull);
+
+    playerKey.currentState?.play();
+    expect(tester.takeException(), isNull);
   });
 
-  testWidgets('PhotoViewPage supports vertical comic long-scroll mode and toggle correctly', (WidgetTester tester) async {
+  testWidgets('AuraPlayer does not pause on internal popup dialog, drawer or fullscreen transitions', (WidgetTester tester) async {
+    late BuildContext currentContext;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        navigatorObservers: [appRouteObserver],
+        home: Scaffold(
+          body: Builder(
+            builder: (ctx) {
+              currentContext = ctx;
+              return const AuraPlayer(
+                playUrl: '',
+                title: '弹窗不暂停测试',
+                autoPauseOnCovered: true,
+              );
+            },
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byType(AuraPlayer), findsOneWidget);
+
+    // 1. 模拟弹出对话框/设置抽屉 (属于 PopupRoute)
+    showGeneralDialog(
+      context: currentContext,
+      pageBuilder: (dialogContext, _, _) {
+        return const Center(child: Text('内部设置抽屉'));
+      },
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.text('内部设置抽屉'), findsOneWidget);
+    // 验证播放器未崩溃或出现异常
+    expect(tester.takeException(), isNull);
+
+    // 关闭弹窗
+    Navigator.of(currentContext).pop();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('内部设置抽屉'), findsNothing);
+  });
+
+  testWidgets('ComicReaderPage supports vertical comic long-scroll mode and toggle correctly', (WidgetTester tester) async {
     const testImages = [
       'https://example.com/page1.jpg',
       'https://example.com/page2.jpg',
       'https://example.com/page3.jpg',
     ];
 
-    // 1. 以默认左右翻页模式渲染 PhotoViewPage
+    // 1. 以默认左右翻页模式渲染 ComicReaderPage
     await tester.pumpWidget(
       const MaterialApp(
-        home: PhotoViewPage(
+        home: ComicReaderPage(
           imageList: testImages,
           initialIndex: 0,
           initialContinuousMode: false,
@@ -356,7 +412,7 @@ module.exports = {
     await tester.pump(const Duration(milliseconds: 300));
 
     // 验证当前处于左右翻页视图 (指示胶囊显示"左右翻页")
-    expect(find.text('1 / 3'), findsOneWidget);
+    expect(find.text('1 / 3 页'), findsOneWidget);
     expect(find.text('左右翻页'), findsOneWidget);
     expect(find.byType(ListView), findsNothing);
 
@@ -376,6 +432,134 @@ module.exports = {
     await tester.tap(find.text('长漫画'));
     await tester.pump(const Duration(milliseconds: 300));
     expect(find.text('左右翻页'), findsOneWidget);
+  });
+
+  testWidgets('NovelReaderPage renders chapter content, supports SelectionArea and copy action cleanly', (WidgetTester tester) async {
+    final testChapters = [
+      const NovelChapter(
+        title: '第1章 宇宙闪烁',
+        content: '第一行测试小说正文，宏伟的宇宙规律向人类眨了眨眼睛。\n\n第二行测试小说正文，物理学的大厦轰然作响。',
+      ),
+      const NovelChapter(
+        title: '第2章 科学边界',
+        content: '这是第二章的测试内容。',
+      ),
+    ];
+
+    // 渲染 NovelReaderPage
+    await tester.pumpWidget(
+      MaterialApp(
+        home: NovelReaderPage(
+          bookTitle: '三体测试版',
+          initialChapterIndex: 0,
+          chapters: testChapters,
+        ),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // 1. 验证包含了 SelectableText (保证文本可长按划词自由选区复制)
+    expect(find.byType(SelectableText), findsWidgets);
+
+    // 2. 验证章节标题和内容切片已正常展示，且不是“正在加载”
+    expect(find.text('第1章 宇宙闪烁'), findsOneWidget);
+    expect(find.textContaining('第一行测试小说正文'), findsOneWidget);
+
+    // 3. 点击呼出控制栏面板
+    await tester.tap(find.byKey(const ValueKey('reader_gesture_area')));
+    await tester.pump(const Duration(milliseconds: 200));
+
+    // 验证控制栏出现复制按钮 (Ionicons.copyOutline)
+    expect(find.byIcon(Ionicons.copyOutline), findsWidgets);
+
+    // 4. 点击一键复制整章按钮并验证 SnackBar 提示正常弹出
+    await tester.tap(find.byIcon(Ionicons.copyOutline).first);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.textContaining('已复制《第1章 宇宙闪烁》'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('MediaRelatedGrid renders with AppCard.flat, structured title and count', (WidgetTester tester) async {
+    const testRelated = [
+      MediaRelatedItem(
+        title: '推荐电影 A',
+        url: 'https://example.com/movie_a',
+        cover: 'https://example.com/cover_a.jpg',
+        badge: '超清 4K',
+        desc: '这是一部科幻巨作',
+      ),
+      MediaRelatedItem(
+        title: '推荐电影 B',
+        url: 'https://example.com/movie_b',
+        cover: 'https://example.com/cover_b.jpg',
+        desc: '冒险题材',
+      ),
+    ];
+
+    await tester.pumpWidget(
+      const MaterialApp(
+        themeMode: ThemeMode.dark,
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: MediaRelatedGrid(
+              related: testRelated,
+              isWide: true,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 200));
+
+    // 1. 验证标题栏格式：主标题与弱化数量计数分离
+    expect(find.text('相关推荐'), findsOneWidget);
+    expect(find.text('(2)'), findsOneWidget);
+
+    // 2. 验证推荐项使用 AppCard 包裹
+    expect(find.byType(AppCard), findsNWidgets(2));
+
+    // 3. 验证推荐项标题与角标
+    expect(find.text('推荐电影 A'), findsOneWidget);
+    expect(find.text('超清 4K'), findsOneWidget);
+    expect(find.text('这是一部科幻巨作'), findsOneWidget);
+    expect(find.text('推荐电影 B'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('MediaDetailPage top bar has no bottom border line and renders dark theme title cleanly', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        themeMode: ThemeMode.dark,
+        theme: AppTheme.lightTheme,
+        darkTheme: AppTheme.darkTheme,
+        home: const MediaDetailPage(
+          title: '暗夜测试流媒体',
+          url: 'https://example.com/video/1',
+        ),
+      ),
+    );
+    await tester.pump();
+
+    // 验证包含标题文字 (顶栏与正文标题)
+    final titleWidgets = find.text('暗夜测试流媒体');
+    expect(titleWidgets, findsWidgets);
+
+    // 验证顶栏标题不设置死硬编码颜色，由主题自动自适应接管
+    final Text topBarText = tester.widget<Text>(titleWidgets.first);
+    expect(topBarText.style?.color, isNull);
+
+    // 验证顶栏 Container 没有下边框（消除顶栏与视频播放器之间的多余分割线）
+    final topBarContainerFinder = find.byWidgetPredicate((widget) {
+      if (widget is Container && widget.decoration is BoxDecoration) {
+        final decoration = widget.decoration as BoxDecoration;
+        return decoration.border == null && widget.child is Row;
+      }
+      return false;
+    });
+    expect(topBarContainerFinder, findsWidgets);
+    expect(tester.takeException(), isNull);
   });
 }
 

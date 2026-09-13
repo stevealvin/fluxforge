@@ -4,6 +4,241 @@
 
 ## [2026-09-13]
 
+### 🎯 详情页文字颜色架构重塑：彻底废除硬编码分支，全面交由 Flutter 全局主题原生自适应
+- **用户建议与核心洞察**：
+  - 用户敏锐地指出：“详情视频类型内暗色主题标题文字、预览标题、相关推荐标题文字、相关推荐列表元素文字颜色不对，是设置了文字颜色吗，如果直接不设置颜色是不是就行了”；
+  - **根本原因深度排查**：
+    1. **硬编码颜色的脆弱性**：此前在详情页各模块标题（视频主大标题、选集标题、剧照与预览标题、相关推荐标题、推荐卡片标题、顶栏标题等）显式设置了 `color: isDark ? Colors.white : AppColors.lightTextPrimary`。一旦上下文或环境在路由转场时偶发状态错位，硬编码不仅会产生生硬死白（`#FFFFFF`），甚至会错误应用浅色文字（暗黑背景下的黑字），直接破坏视觉可读性；
+    2. **用户提议直击本质**：Flutter 的 `Scaffold`、`Material` 与 `Card` 本身内置了完善的 `DefaultTextStyle` 级联体系。在不显式指定 `color` 时，所有文本天然会自动继承当前主题的 `colorScheme.onSurface`（深色模式为柔和亮白，浅色模式为深黑 Slate 900），不仅彻底杜绝错乱，而且严格符合 Material 3 与 Apple 人机交互设计规范。
+- **重构落地与精简**：
+  1. **主标题全面脱色，交由全局 Theme 原生驱动**：
+     - 在 [`VideoDetailView`](file:///c:/dev/projects/fluxforge/app/lib/views/media/video/video_detail_view.dart) 中，彻底移除视频大标题 `_displayTitle`、“选集”标题、“全部剧集”抽屉标题、“剧照与预览”标题中的死硬 `color` 参数；
+     - 在 [`MediaRelatedGrid`](file:///c:/dev/projects/fluxforge/app/lib/views/media/common/media_related_grid.dart) 中，移除“相关推荐”主标题与卡片项标题 `item.title` 中的 `color` 参数；
+     - 在 [`MediaDetailPage`](file:///c:/dev/projects/fluxforge/app/lib/views/media/media_detail_page.dart) 中，移除顶栏标题中的 `color` 参数；
+     - 同步对齐 [`ComicDetailView`](file:///c:/dev/projects/fluxforge/app/lib/views/media/comic/comic_detail_view.dart) 与 [`NovelDetailView`](file:///c:/dev/projects/fluxforge/app/lib/views/media/novel/novel_detail_view.dart) 章节选集标题；
+  2. **次级文本层次清晰化**：
+     - 保留集数提示、图片数量及描述等次级提示的弱化色彩（`darkTextMuted / lightTextMuted`），确保主标题高对比、次级文本柔和不抢戏。
+- **全量测试与代码静态审查验证**：
+  - `flutter analyze` 运行验证：**No issues found (0 warnings, 0 errors)**；
+  - `flutter test` 运行验证：**全套 25 项自动化测试用例 100% 全部通过 (25/25 Passed)**；
+  - 严格遵守最高指令要求，未向远程仓库提交或推送 Git。
+
+
+### ⚡ 全工程全面接入 `ionicons`：回归精致轻盈现代细线条美学与原生架构瘦身
+- **重构背景与审美驱动**：
+  - 用户反馈指出：“font_awesome_flutter有细一点的图标吗”，“用ionicons看看”；
+  - **核心痛点深度剖析**：
+    1. **Font Awesome 免费版视觉偏粗**：开源免费版主要打包的是 Solid（实心粗体），在浅色和深色主题下视觉分量过重、块状感强，且绝大多数业务图标没有 Regular（细线）版本；官方真正的细线（Light / Thin）属于年费 \$99+ 的 Pro 商业闭源授权；
+    2. **工程组件封装冗余**：`font_awesome_flutter` 需借助非标准容器 `FaIcon` 渲染，破坏了 Flutter 标准的 `Icon(IconData)` 泛型规范；
+    3. **Ionicons 核心优势挖掘**：
+       - **纯正细线美学**：每个图标均提供对应且统一粗细（1.5~2px）的 `_outline` 细线变体，端点饱满微弧，极度契合现代移动端与极光翡翠双主题的轻盈质感；
+       - **超低包体积**：整个包仅 **790 KB**（比 Font Awesome 1.55 MB 再降近 50%，比原 Lucide 49.8 MB 缩减 98.4%）；
+       - **原生 IconData**：原生支持 Flutter 标准 `Icon(...)` 组件，与 Material/Cupertino 设计完全平滑兼容；
+       - **成对双态交互**：完美支持未选中细线（如 `compassOutline`）与选中实心（如 `compass`）的状态切换，对齐移动端顶级交互规范。
+- **全量迁移与工程落地**：
+  1. **依赖升级与依赖瘦身**：
+     - 在 [`pubspec.yaml`](file:///c:/dev/projects/fluxforge/app/pubspec.yaml) 中移除 `font_awesome_flutter`，接入 `ionicons: ^0.2.3`；
+  2. **跨 25 个文件与测试的精准语义对齐 (86 组图标映射)**：
+     - 将全工程各业务组件（播放器、媒体详情、选集栏、漫画小说阅读器、底部导航、搜索发现、规则调试器等）的 211 处图标调用全部平滑升级为 `Icon(Ionicons.xxxOutline)`；
+     - 还原为 Flutter 标准原生的 `Icon` 组件，废除自定义 `FaIcon`，类型系统全面收敛至原生 `IconData`；
+  3. **单元测试与测试断言对齐**：
+     - 同步更新 [`test/widget_test.dart`](file:///c:/dev/projects/fluxforge/app/test/widget_test.dart) 中的断言逻辑，彻底消除 `.data` 别名依赖。
+- **全量测试与代码静态审查验证**：
+  - `flutter analyze` 运行验证：**No issues found (0 warnings, 0 errors)**；
+  - `flutter test` 运行验证：**全套 25 项自动化测试用例 100% 全部通过 (25/25 Passed)**；
+  - 严格遵守最高指令要求，未向远程仓库提交或推送 Git。
+
+
+### 💎 视频详情页深色主题深度打磨：标题层级纯白高亮、剧照与推荐标题规范、AppCard.flat 全面换装与无缝顶栏
+- **用户反馈与针对性排查**：
+  - 用户提出 4 项核心诉求：“你改了什么，暗色主题标题文字颜色有问题，预览标题和相关推荐标题有问题，相关推荐列表用appcard了吗，去掉顶部栏和视频中间的分割线”；
+  - **问题深度溯源与成因剖析**：
+    1. **暗色模式标题文字颜色发暗/灰白**：顶栏标题与视频大标题此前使用了 `AppColors.darkTextPrimary`（`Slate 50`），在暗黑纯黑底色与播放器附近对比度不足，未能呈现出高亮纯白的锐利精致感；
+    2. **预览与相关推荐标题排版失真**：此前粗暴将数量拼接在主标题粗体文字内（如 `剧照与预览 (10)`），缺少旧版精致的视觉层级节奏；相关推荐甚至缺失数量指示，不符合项目规范；
+    3. **相关推荐卡片遗漏 AppCard 包装**：[`MediaRelatedGrid`](file:///c:/dev/projects/fluxforge/app/lib/views/media/common/media_related_grid.dart) 此前仅给封面图片包裹了容器，下方文字直接裸露在背景上，深色模式下文字背部“死黑悬浮”，丧失卡片实体感与防溢出圆角裁剪；
+    4. **顶栏与视频之间存在突兀割裂灰线**：[`MediaDetailPage`](file:///c:/dev/projects/fluxforge/app/lib/views/media/media_detail_page.dart) 顶栏此前残留了 0.5px `Border(bottom: ...)` 底部边框，在深色顶栏与纯黑视频播放器之间横插了一条生硬亮灰线。
+- **重构落地与质感精修**：
+  1. **无缝沉浸顶栏（彻底移除与视频之间的分割线）**：
+     - 在 [`MediaDetailPage`](file:///c:/dev/projects/fluxforge/app/lib/views/media/media_detail_page.dart) 的 `_buildTopBar` 中彻底移除底部 Border 分割线，让暗色顶栏与下方纯黑播放器实现纯净浑然一体的视觉过渡；
+     - 顶栏主标题与返回按钮在暗色模式下统一强化为 `Colors.white`（最高对比度），刷新图标对齐 `Colors.white70`；
+  2. **暗色主题文字全面纯白高亮与对比度重塑**：
+     - 在 [`VideoDetailView`](file:///c:/dev/projects/fluxforge/app/lib/views/media/video/video_detail_view.dart) 中将视频主大标题重塑为高亮纯白 `isDark ? Colors.white : AppColors.lightTextPrimary`（18px, w600）；
+     - 同步规范“选集”与抽屉内“全部剧集”标题在暗色下为纯白 `Colors.white`；
+     - 同步对齐 [`ComicDetailView`](file:///c:/dev/projects/fluxforge/app/lib/views/media/comic/comic_detail_view.dart) 与 [`NovelDetailView`](file:///c:/dev/projects/fluxforge/app/lib/views/media/novel/novel_detail_view.dart) 章节目录标题颜色；
+  3. **标题层级全面对齐旧版规范标准**：
+     - 将“剧照与预览”和“相关推荐”标题统一规范为：**3.5px 极光翡翠指示条** + **14.5px SemiBold w600 主标题（`Colors.white`）** + **间距 6px** + **12px 弱化次级数量提示（`(${count})`, `AppColors.darkTextMuted`）**；
+     - 彻底告别粗暴拼串与字体失衡，视觉层级干练典雅；
+     - 优化预览缩略图列表高度为 76px（严格契合 16:9 比例）；
+  4. **相关推荐列表全面换装 `AppCard.flat` 标准卡片**：
+     - 在 [`MediaRelatedGrid`](file:///c:/dev/projects/fluxforge/app/lib/views/media/common/media_related_grid.dart) 中全量改用 `AppCard.flat`（`padding: EdgeInsets.zero`, `borderRadius: 10`）进行整卡包裹；
+     - 封面内嵌底部暗部渐变遮罩 `LinearGradient(colors: [transparent, Colors.black87])`，确保右下角角标 Badge 胶囊清晰醒目；
+     - 底部文字信息区规整 `EdgeInsets.fromLTRB(8, 6, 8, 6)` 内边距，主标题纯白高亮，副标题次级灰；
+     - 宽屏网格宽高比调整为 `childAspectRatio: 1.34`（旧版黄金比），彻底消除底部冗余空白，深色模式自动享有 0.5px 微光轮廓；
+     - 在 [`MediaRelatedItem`](file:///c:/dev/projects/fluxforge/app/lib/models/media.dart) 契约模型中新增 `badge` 字段并支持 `status`/`rating` 智能兜底，提升沙箱解析容错。
+- **全量测试与代码静态审查验证**：
+  - `flutter analyze` 运行验证：**No issues found (0 warnings, 0 errors)**；
+  - `flutter test` 运行验证：**全套 25 项自动化测试用例 100% 全部通过 (25/25 Passed)**；
+  - 严格遵守最高指令要求，未向远程仓库提交或推送 Git。
+
+
+### 🎬 视频详情页极致体验还原与暗色模式深度重塑 (吸顶播放器 + 纯净平铺元数据 + 横向选集滑动条 + 全量抽屉)
+- **核心诉求与重构对齐**：
+  - 用户指出：“视频详情暗色模式下还是有问题，看一下重构之前的文件这个部分是怎么写的，有提交记录”，“顶栏保留，其他的实现”；
+  - **历史源码与深色问题深度复盘**：
+    1. **滚动失焦与播放器被卷走**：新版此前把整个页面（包括播放器）塞在外层单一 `SingleChildScrollView` 中，导致用户在下方选集翻找或查看推荐时，播放器直接被滚出屏幕；
+    2. **元数据生硬框选与暗色融底**：视频区强行套用了通用 `MediaMetaHeader`，在深色背景上套了一层厚重的 `AppCard` 简介框，线条突兀，缺乏沉浸感；
+    3. **选集体验倒退**：新版之前把几十上百集全部用 4 列 GridView 竖向全部铺平在页面，占据海量纵向空间，把剧照和相关推荐无限往下推，破坏了流媒体选集节奏；
+    4. **旧版优秀设计挖掘**：重构前 [`rule_detail_page.dart`](file:///c:/dev/projects/fluxforge/app/lib/views/rules/rule_detail_page.dart) 采用了极致沉浸的视频交互规范——吸顶播放器始终驻顶、元数据纯净平铺零多余边框、单行横向快速切集滑动条、大集数呼出半屏抽屉。
+- **重构落地与体验升华**：
+  1. **保留统一顶栏，实现 16:9 吸顶常驻播放器**：
+     - 在 [`MediaDetailPage`](file:///c:/dev/projects/fluxforge/app/lib/views/media/media_detail_page.dart) 完美保留统一流光沉浸式顶栏；
+     - 视频类型重塑为分层架构：顶部 16:9 `AuraPlayer` 吸顶常驻（Pinned），无论下方如何滚动，播放画面始终清晰可见；
+  2. **纯净平铺视频元数据与折叠简介**：
+     - 在 [`VideoDetailView`](file:///c:/dev/projects/fluxforge/app/lib/views/media/video/video_detail_view.dart) 彻底移除多余的卡片与简介外框；
+     - 标题采用 `18px FontWeight.w600`（深色 `darkTextPrimary`），流式平铺琥珀黄评分胶囊（`#F59E0B`）、极光幽绿规则源、分类题材微光药丸与作者演职员；
+     - 简介直接平铺于主视口，采用 `GestureDetector` + `AnimatedCrossFade` 平滑展开折叠，深色次级文本高清晰度对比；
+  3. **商业级长视频选集体系完全恢复**：
+     - **多线路切换**：支持横向滑动 `ChoiceChip` 胶囊，选中为极光翠绿实体；
+     - **单行横向快速滑动条 (46px)**：横向单行滑动（`ListView.separated(scrollDirection: Axis.horizontal)`），当前播放集采用极光翠绿实体背景 + 翠绿发光阴影 + 白色小播放三角图标（`FontAwesomeIcons.play`）+ 白色粗体字；未播放集为微光实体卡片 `darkCard` + `darkBorder`；
+     - **全量剧集底部半屏抽屉 (`_showAllEpisodesSheet`)**：当集数 > 5 时，选集标题栏右侧展示“全部”按钮（`FontAwesomeIcons.tableCellsLarge`），点击呼出 65% 高度底部抽屉，支持顶部药丸把手、抽屉内正倒序即时切换与 4 列网格自由点播，选中即刻切集并关闭抽屉；
+  4. **剧照截图横向流与宽屏相关推荐完整衔接**：
+     - 剧照预览采用 16:10 宽屏卡片，相关推荐采用 16:9 现代宽屏双列流，点击相关推荐自动受控暂停当前视频播放。
+- **全量测试与代码静态审查验证**：
+  - `flutter analyze` 运行验证：**No issues found (0 warnings, 0 errors)**；
+  - `flutter test` 运行验证：**全套 23 项自动化测试用例 100% 全部通过 (23/23 Passed)**；
+  - 严格遵守最高指令要求，未向远程仓库提交或推送 Git。
+
+### ✨ 全工程图标体系升维：全面迁移至 `font_awesome_flutter` 11.0 质感图标生态
+- **重构背景与审美驱动**：
+  - 用户反馈指出：“font_awesome_flutter 图标好像好看一点”，明确指示执行“全量替换”；
+  - **深度解析**：`font_awesome_flutter` 相比原先的细线 Outline 图标，具有更高的视觉分量（Visual Weight）、更扎实的实心轮廓与更强的辨识度。在深色（曜夜暗黑）与浅色（星暮白）双主题下，实体剪影的色彩饱和度与光影对比显著增强，大幅提升了流媒体播放、操作交互及导航栏的沉浸高级感；
+  - **工程瘦身**：原依赖包 `lucide_icons_flutter` 在 pub 缓存中携带了 20MB SVG 源码与 13MB 冗余元数据，总计占用 49.8MB；全量迁移至 `font_awesome_flutter` (v11.0.0) 后，本地依赖包大幅精简至 1.55MB，依赖解析与开发编译更加敏捷。
+- **全量迁移与类型系统兼容落地**：
+  1. **依赖升级与引擎适配**：
+     - 在 [`pubspec.yaml`](file:///c:/dev/projects/fluxforge/app/pubspec.yaml) 中彻底移除 `lucide_icons_flutter`，引入现代适配 Flutter 3.27+ / 3.47+ 架构的 `font_awesome_flutter: ^11.0.0`；
+  2. **跨 24 个源文件与测试的精准语义对齐 (211 处图标调用)**：
+     - 构建了完备的 100 组 Lucide 到 FontAwesome 的高颜值语义映射词典（涵盖播放控制 `play`/`pause`/`forward`/`backward`、导航路由 `compass`/`store`/`wandMagicSparkles`/`user`、文档与书卷 `bookOpen`/`film`/`image`、通用交互 `magnifyingGlass`/`gear`/`arrowsRotate`/`copy`/`shareNodes`/`shieldHalved` 等）；
+     - 将全工程各业务组件、抽屉弹层、控制栏与底部导航的 211 处图标调用全部平滑升级为 `FaIcon(FontAwesomeIcons.xxx)`；
+  3. **架构健壮性升维与泛型兼容**：
+     - 升级通用组件 [`EmptyState`](file:///c:/dev/projects/fluxforge/app/lib/widgets/app_empty_state.dart) 及各级配置瓦片（如 `_buildFilterChip`、`_buildThemeTile`、`_buildSectionHeader` 等），原生支持 `FaIconData`、`IconData` 与 `Widget` 复合输入，避免强转异常；
+     - 深度重构 [`AuraPlayer`](file:///c:/dev/projects/fluxforge/app/lib/widgets/player/aura_player.dart) 视频播控层与滑动音量/亮度/寻道 HUD，全面换装 FontAwesome 高清图标；
+     - 同步更新 [`test/widget_test.dart`](file:///c:/dev/projects/fluxforge/app/test/widget_test.dart)，支持测试环境断言。
+- **全量测试与代码静态审查验证**：
+  - `flutter analyze` 运行验证：**No issues found (0 warnings, 0 errors)**；
+  - `flutter test` 运行验证：**全套 23 项自动化测试用例 100% 全部通过 (23/23 Passed)**；
+  - 严格遵守最高指令要求，未执行 Git 提交或推送。
+
+### 🎨 详情页深色模式质感重塑与跨媒体头部组件参数精简 (`MediaMetaHeader`)
+- **核心痛点定位与分析**：
+  - 用户反馈：“不需要这两个设置，深色模式下详情页面颜色有问题”；
+  - **根本原因排查**：
+    1. **深色融底与无层级感**：之前详情页各模块大量使用 `Colors.white.withValues(alpha: 0.04~0.06)` 作为深色卡片背景。在全局曜夜暗黑背景 `AppColors.darkBg` (`#0A0D14`) 下，这种半透明黑色几乎完全丧失实体材质边界，导致标题卡片、简介区域、选集网格、线路切换按钮与整页背景“死黑融底”，无边框微光、无立体层级感；
+    2. **组件契约冗余**：[`MediaMetaHeader`](file:///c:/dev/projects/fluxforge/app/lib/views/media/common/media_meta_header.dart) 历史遗留了 `showFavoriteButton` 与 `showActions` 两个布尔开关，不仅导致上层构造参数冗长，且逻辑与媒体中心职责重叠。
+- **重构落地与质感升华**：
+  1. **彻底移除冗余参数，精简组件契约**：
+     - 从 `MediaMetaHeader` 中彻底移除 `showFavoriteButton` 与 `showActions`，移除了大块追更栏并收敛为右上角轻量分享按钮；
+     - 外部使用点（[`VideoDetailView`](file:///c:/dev/projects/fluxforge/app/lib/views/media/video/video_detail_view.dart)、[`NovelDetailView`](file:///c:/dev/projects/fluxforge/app/lib/views/media/novel/novel_detail_view.dart)、[`ComicDetailView`](file:///c:/dev/projects/fluxforge/app/lib/views/media/comic/comic_detail_view.dart)）全面同步精简传参。
+  2. **全面重构详情页深色模式色彩体系**：
+     - **实体卡片底色升级**：全链路采用设计系统标准 `AppColors.darkCard` (`#151C2C`)，替换原先的 `white.withValues(alpha: 0.04)`，形成坚实深邃的暗曜微光材质；
+     - **极光微光发光边框**：所有海报卡片、简介卡片、线路药丸胶囊、选集按钮及剧照图文容器均启用 `AppColors.darkBorder` (`#1E293B`)，打造 0.8px 高级冷色微发光描边；
+     - **高对比度文字与标签层级**：标题统一采用 `AppColors.darkTextPrimary` (`#F8FAFC`)，副标题与说明采用 `AppColors.darkTextSecondary` (`#94A3B8`)，辅助与来源采用 `AppColors.darkTextTertiary` (`#64748B`)，彻底告别文字灰暗模糊；
+     - **选集网格交互升华**：未选中剧集/章节采用微光暗曜实体卡片，选中态采用极光翠绿 `AppColors.primary.withValues(alpha: 0.22)` 高亮衬底与翠绿主边框，对比强烈、焦点清晰；
+     - **顶部导航与沉浸底色贯通**：[`MediaDetailPage`](file:///c:/dev/projects/fluxforge/app/lib/views/media/media_detail_page.dart) 顶栏、占位骨架与正文统一接入深色模式微边框与纯正曜夜底色。
+- **全量测试与代码静态审查验证**：
+  - `flutter analyze` 运行验证：**No issues found (0 warnings, 0 errors)**；
+  - `flutter test` 运行验证：**全套 23 项测试用例全部通过 (100% Passed)**；
+  - 严格遵守指令要求，未向远程仓库提交或推送 Git。
+
+### 📖 小说文学阅读引擎 (FluxReader) 正文沙箱异步按需抓取与自由划选/一键复制重构
+- **核心痛点定位与分析**：
+  - 用户反馈：“小说类型，点击章节的时候好像一直是‘正在加载章节内容...’，小说内容增加可以复制”；
+  - **根本原因排查**：原小说详情页在组装 `NovelChapter` 时将所有章节内容硬编码为占位文本 `'正在加载章节正文内容...'`，而 `NovelReaderPage` 历史版本仅为静态展示容器，未持有 `Rule` 对象且没有任何调用沙箱 `RuleEngine.parse` 抓取正文的代码，导致用户切章后永远停留于占位文本中；同时旧文本采用只读 `Text` 渲染，无法长按选词或复制。
+- **重构落地与体验升华**：
+  1. **全链路接入沙箱 `parse` 生命周期动作**：
+     - 在 [`NovelDetailView`](file:///c:/dev/projects/fluxforge/app/lib/views/media/novel/novel_detail_view.dart) 打开阅读器时完整透传 `rule`、`customHeaders` 及待加载章节清单；
+     - 在 [`NovelReaderPage`](file:///c:/dev/projects/fluxforge/app/lib/views/media/novel/reader/novel_reader_page.dart) 建立异步加载流水线 `_loadChapterContent(index)`，按需调用 `RuleEngine.parse(widget.rule!, chapterUrl)`；
+     - 建立基于内存的 `_contentCache` 章节缓存字典，切章已加载内容实现 0ms 秒开无缝切换；
+     - 注入 `_cleanNovelContent` 智能正文排版清洗器，过滤 HTML 残留标签、转换 HTML 实体符号、智能压缩空行，并自动补齐标准的两格全角空格首行缩进（`　　`）；
+     - 打造优雅的状态分流：加载中展示极光幽绿微光旋转动效，加载失败展示轻量空状态及“重试加载”操作。
+  2. **双重内容复制体验打造（长按自由划选 + 一键整章导出）**：
+     - **自由选段复制**：阅读器视口全面改用 `SelectableText`（横向翻页与纵向长卷模式双适配），保留单触控唤起控制栏的同时，原生支持手指长按划词选区与系统浮窗气泡（复制/全选/分享）；
+     - **一键整章复制**：在顶部导航栏与底部操作面板同步新增“复制本章”按钮（`LucideIcons.copy`），点击后自动组装《章节名》与正文全篇复制到系统剪贴板，伴随触觉微震反馈与浮层提示。
+- **测试与静态审查验证**：
+  - 新增 `NovelReaderPage renders chapter content, supports SelectionArea and copy action cleanly` 单元部件测试；
+  - `flutter analyze` 保持 **0 issues**；
+  - `flutter test` 全套 **23 项自动化测试用例 100% 全部通过**。
+
+### 📺 影视详情页视觉与交互深度调优 (还原极简宽屏沉浸视界)
+- **核心诉求与体验调优**：
+  1. **标题区域去除重复封面**：影视详情页顶部已由 16:9 大视口 `AuraPlayer` 接管视频与海报展示，下方元数据区通过 `showCover: false` 去掉左侧竖向封面卡片，标题与题材标签全宽延展呈现，字号提升至 20px，排版清爽大气；
+  2. **去除大块追更按钮**：通过 `showFavoriteButton: false` 与 `showActions: false` 隐藏侵入感较强的追更栏，让视觉焦点彻底回归视频选集与内容信息本身；
+  3. **恢复剧照与预览截图流**：恢复重构时遗漏的 `MediaDetailData.previews` 剧照模块，在选集与相关推荐之间插入 16:10 宽屏横向滑动流，注入防盗链 Referer 头部与圆角微光容器；
+  4. **相关推荐列表升级为 16:9 现代流媒体宽屏**：`MediaRelatedGrid` 扩展支持 `isWide: true` 模式，切换为双列（`crossAxisCount: 2`）、`childAspectRatio: 1.28` 及 16:9 宽屏封面，彻底消除了底部留白，贴合影视类流媒体的现代视觉审美；
+- **涉及组件演进**：
+  - [`MediaMetaHeader`](file:///c:/dev/projects/fluxforge/app/lib/views/media/common/media_meta_header.dart)：新增受控开关 `showCover`、`showFavoriteButton` 与 `showActions`，并补全各个私有 UI 构建组件；
+  - [`MediaRelatedGrid`](file:///c:/dev/projects/fluxforge/app/lib/views/media/common/media_related_grid.dart)：支持 `isWide` 构造参数，自适应 16:9 宽屏双列与 1:1.34 竖版三列，图片加载接入防盗链 Referer；
+  - [`VideoDetailView`](file:///c:/dev/projects/fluxforge/app/lib/views/media/video/video_detail_view.dart)：无缝协同新配置，恢复剧照滑动流，并将相关推荐设为宽屏展示；
+- **全量测试与静态分析验证**：
+  - `flutter analyze` 保持 0 issues；
+  - `flutter test` 22 项全量自动化测试 100% 通过。
+
+### 🎬 视频播放器 (AuraPlayer) 彻底解耦全局 Router：由业务层显式受控暂停，全局基础组件彻底纯粹化
+- **架构洞察与战略升华（采纳用户高水准建议）**：
+  - 用户指出：“点击详情其他视频暂停是不是写在业务代码比较好，AuraPlayer可以不用额外使用router”；
+  - **深度剖析**：`AuraPlayer` 作为全局基础 UI 组件（`lib/widgets/player/aura_player.dart`），反向依赖 `router.dart` 与 `RouteAware` 是导致全屏与弹窗“过度敏感/误伤暂停”的根本源头。把路由跳转暂停的动作下沉到业务代码中，能让组件和业务两端同时获得最大化解耦与简洁；
+- **底层重构落地**：
+  1. **AuraPlayer 彻底解耦外部路由 (`app/lib/widgets/player/aura_player.dart`)**：
+     - 彻底移除 `import '../../router.dart';` 与 `with RouteAware`；
+     - 彻底移除 `didPushNext()`、`didPopNext()`、`appRouteObserver.subscribe` 及全屏/弹窗状态锁等一系列黑魔法过度防御；
+     - 导出受控状态类 `AuraPlayerState`，并公开纯粹的 `pause()`、`play()`、`isPlaying` 受控方法；
+     - 保留原生 `WidgetsBindingObserver`（仅在 App 进入手机后台或锁屏时自动暂停以保护电量与流量）；
+  2. **业务层显式控制跳转暂停 (`app/lib/views/media/video/video_detail_view.dart`)**：
+     - `VideoDetailView` 持有 `GlobalKey<AuraPlayerState> _playerKey`，并挂载给 `AuraPlayer(key: _playerKey)`；
+     - 当用户点击相关推荐卡片（`MediaRelatedGrid.onItemTap`）跳转新视频详情前，业务代码主动调用 `_playerKey.currentState?.pause()`；
+     - 跳转动作与暂停意图 100% 显式透明，零隐式副作用，全屏与任何抽屉/弹层天然绝对不会被误暂停；
+- **全量测试与规范达标**：
+  - 更新并新增 `AuraPlayer supports external control via GlobalKey<AuraPlayerState> pause and play` 测试；
+  - `flutter analyze` 0 issues，全套 22 项测试用例 100% 全部通过。
+
+### 🏗️ 客户端 `lib/` 体系全栈架构治理与模块化彻底重构 (一步到位长期可持续设计)
+- **核心动机与战略重塑**：
+  - 彻底打破历史技术包袱，不向旧兼容性妥协，按「长期可维护性、高内聚低耦合、领域清晰」原则完成移动客户端 `lib/` 的全量治理与重命名；
+  - 明确基础组件与业务页面职责：`AuraPlayer` 保持为全局基础核心组件，不内嵌业务特化逻辑；消除 `views/` 与底层引擎概念倒错；
+- **阶段一：无死角清理历史僵尸代码与冗余孤儿文件**：
+  - 彻底移除已被现代化重构替代的历史死文件：
+    - `lib/models/detail_result.dart` 与 `lib/models/search_result.dart`（已被全局媒体领域模型 `models/media.dart` 全面替代）；
+    - `lib/widgets/media_grid.dart`、`lib/widgets/media_list.dart` 与 `lib/widgets/card_block.dart`（已被通用 `AppCard` 与业务展厅彻底替代）；
+    - `lib/views/reader/novel_reader_page.dart`（已被 `views/media/novel/reader/novel_reader_page.dart` 彻底替代，并清理空目录）；
+  - 全工程累计删除 3,500+ 行死代码，实现零孤儿引用、零编译干扰。
+- **阶段二：计算与拦截引擎层升维独立 (`lib/engines/`)**：
+  - 将深埋在视图层 `views/browser/` 中的两大无 UI 计算与注入引擎提升为顶级架构层：
+    - `lib/views/browser/adblock_engine.dart` -> **`lib/engines/adblock_engine.dart`**（ABP 规则匹配、反钓鱼与黑名单过滤）；
+    - `lib/views/browser/web_video_gesture_engine.dart` -> **`lib/engines/web_video_gesture_engine.dart`**（网页全屏视频手势注入）；
+  - 全量迁移并更新 `test/adblock_engine_test.dart`、`test/web_video_gesture_engine_test.dart`、`browser_page.dart`、`settings_page.dart` 引用。
+- **阶段三：领域模型层统领升华 (`lib/models/media.dart`)**：
+  - 将原仅服务于媒体页面的私有模型 `views/media/models/media_detail_data.dart` 升华为全局通用跨端领域模型；
+  - 统一契约：涵盖 `MediaItem`、`MediaDetailData`、`MediaEpisodeGroup`、`MediaEpisodeItem` 及 `EpisodeWatchState`；
+  - 清理 `views/media/models/` 空目录，更新所有上层引用。
+- **阶段四：全局设计系统组件统一规范 (`lib/widgets/app_*.dart`)**：
+  - 消除命名参差不齐，全面遵循 `app_` 前缀通用组件命名规范：
+    - `widgets/empty_state.dart` -> **`widgets/app_empty_state.dart`**（导出 `AppEmptyState` 别名）；
+    - `widgets/loading_indicator.dart` -> **`widgets/app_loading.dart`**（导出 `AppLoading` 别名）；
+    - `widgets/net_image.dart` -> **`widgets/app_net_image.dart`**（导出 `AppNetImage` 别名）；
+  - `AuraPlayer` 保持位于 `lib/widgets/player/aura_player.dart` 全局独立基础组件定位。
+- **阶段五：视图层领域目录归位与命名混淆消除**：
+  - **消除动名词混淆**：
+    - 将 `lib/views/rules/rule_discovery_page.dart` 重命名并重构为 **`lib/views/rules/rule_catalog_page.dart`**（`RuleCatalogPage`），彻底解决其与底部主 Tab `views/discover/discover_page.dart` 动名词同名的困扰；
+  - **解耦 `views/profile/` 杂物箱**：
+    - 收藏与追更独立建域：新建 **`lib/views/favorites/favorites_page.dart`**；
+    - 系统设置与日志中心独立建域：新建 **`lib/views/settings/settings_page.dart`** 与 **`lib/views/settings/logs_page.dart`**；
+    - 调试与设计组件画廊独立建域：新建 **`lib/views/dev/card_gallery_page.dart`**；
+    - `lib/views/profile/` 提纯为纯粹的用户个人中心主页 `profile_page.dart`。
+- **阶段六：全量测试与代码静态审查验证**：
+  - `flutter analyze` 运行验证：**0 issues found**，零警告零报错；
+  - `flutter test` 运行验证：**21 项测试用例全部通过 (100%)**；
+  - 严格遵守指令要求，未向远程仓库提交或推送 Git。
+
+
 ### 📖 图片/漫画解析展示架构重构：长漫画无缝全宽长列表模式与双向切换
 - **大图/全屏手势查看器支持长漫画模式与模式切换胶囊 (`app/lib/views/detail/photo_gallery_page.dart`)**：
   - **核心痛点根治**：原先 `PhotoViewPage` 仅支持 `ExtendedImageGesturePageView.builder(scrollDirection: Axis.horizontal)` 左右水平滑动翻页，用户在浏览漫画或长图集时无法像真实条漫一样连贯纵向阅读；

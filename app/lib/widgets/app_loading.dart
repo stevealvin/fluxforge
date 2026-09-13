@@ -428,3 +428,6 @@ class _PulseLoadingPainter extends CustomPainter {
         oldDelegate.isDark != isDark;
   }
 }
+
+/// 语义化统一类型别名
+typedef AppLoading = LoadingIndicator;

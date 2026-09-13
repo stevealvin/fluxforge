@@ -1,8 +1,11 @@
+import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:ionicons/ionicons.dart';
 
-import '../../core/storage/app_storage.dart';
-import '../../core/theme/app_colors.dart';
+import '../../../../core/storage/app_storage.dart';
+import '../../../../core/theme/app_colors.dart';
+import '../../../../models/rule.dart';
+import '../../../../services/rule_engine.dart';
 
 /// 护眼阅读配色方案枚举与配置
 enum ReaderTheme {
@@ -61,26 +64,43 @@ class NovelChapter {
 
   const NovelChapter({
     required this.title,
-    required this.content,
+    this.content = '',
     this.url,
   });
+
+  NovelChapter copyWith({
+    String? title,
+    String? content,
+    String? url,
+  }) {
+    return NovelChapter(
+      title: title ?? this.title,
+      content: content ?? this.content,
+      url: url ?? this.url,
+    );
+  }
 }
 
 /// 纯净小说阅读引擎 (FluxReader)
 /// 
-/// 支持视口文本切片分页、上下连续长篇滚动、四大经典护眼底色、
-/// 字号与行间距无级微调、目录抽屉快速切章及断点进度记忆
+/// 支持按需异步调度沙箱 parse 抓取正文、智能排版切片分页、
+/// 一键整章复制与 SelectableText 长按划词自由选区复制、上下连续长篇滚动、
+/// 四大经典护眼底色、字号行距无级微调及目录抽屉快速切章
 class NovelReaderPage extends StatefulWidget {
   const NovelReaderPage({
     super.key,
     this.bookTitle = '小说阅读',
     this.initialChapterIndex = 0,
     this.chapters = const [],
+    this.rule,
+    this.customHeaders = const {},
   });
 
   final String bookTitle;
   final int initialChapterIndex;
   final List<NovelChapter> chapters;
+  final Rule? rule;
+  final Map<String, String> customHeaders;
 
   @override
   State<NovelReaderPage> createState() => _NovelReaderPageState();
@@ -90,6 +110,11 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
   // 章节与数据
   late List<NovelChapter> _chapters;
   late int _currentChapterIndex;
+
+  // 正文异步沙箱加载状态与缓存
+  bool _isLoadingContent = false;
+  String? _contentError;
+  final Map<int, String> _contentCache = {};
 
   // 排版与阅读样式设置
   double _fontSize = 18.0;
@@ -121,12 +146,6 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
 
 　　那是宏伟的诗篇，也是残酷的丧钟。
 　　在这浩瀚苍穹之下，两个不同文明的命运齿轮，就此轰然交错。
-
-　　第二节 虚无的重构
-　　“三体问题在数学上是无解的，正如文明在黑暗丛林中的生存概率。”
-　　丁仪吐出一口烟圈，烟雾在微弱的红光中缭绕升腾。他把一枚台球放在桌面上，轻轻一推，球击中边框，弹向未知的角度。“如果物理学的规律在时间和空间上并不是均匀的，那么我们所坚信的一切科学大厦，也不过是一座建立在沙滩上的精致沙雕罢了。”
-
-　　汪淼沉默良久。他看着窗外的城市霓虹，车流如金色的血液在夜色深渊中流淌。他第一次感受到，脚下这颗平静安详的蓝色星球，不过是漂浮在无边黑夜中的一粒微尘。
 ''';
 
   @override
@@ -137,6 +156,9 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
     _loadUserPreferences();
     _pageController = PageController(initialPage: _currentPageIndex);
     _recalculatePages();
+
+    // 初始进入立即按需调度沙箱加载章节内容
+    _loadChapterContent(_currentChapterIndex);
   }
 
   @override
@@ -146,10 +168,10 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
     super.dispose();
   }
 
-  /// 准备章节数据
+  /// 准备章节数据并初始化缓存
   void _setupChapters() {
     if (widget.chapters.isNotEmpty) {
-      _chapters = widget.chapters;
+      _chapters = List<NovelChapter>.from(widget.chapters);
     } else {
       _chapters = [
         const NovelChapter(title: '第一章 科学边界', content: _sampleChapterContent),
@@ -157,12 +179,151 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
           title: '第二章 台球与物理规律',
           content: '　　丁仪领着汪淼穿过昏暗的实验室，中央摆放着一台巨大的超高能粒子对撞机模型...\n\n　　“物理学从来没有真正存在过，汪淼，我们只是在黑暗的密室里摸索规律的盲人。”',
         ),
-        const NovelChapter(
-          title: '第三章 射手与农场主',
-          content: '　　“射手假说”：有一名神枪手，在靶子上每隔十厘米打一个洞。如果靶子上的二维智能生物观察这个宇宙，他们会发现一条伟大的物理规律：宇宙每隔十厘米必然存在一个洞...\n\n　　“农场主假说”：农场里有一群火鸡，农场主每天上午十一点准时喂食。火鸡中的科学家观察了一年，总结出一条铁律：“每天上午十一点有食物降临”。直到感恩节那天，降临的不是食物，而是屠刀。',
-        ),
       ];
     }
+
+    for (int i = 0; i < _chapters.length; i++) {
+      if (_chapters[i].content.isNotEmpty) {
+        _contentCache[i] = _chapters[i].content;
+      }
+    }
+  }
+
+  /// 切换控制栏显示/收起状态
+  void _toggleControls() {
+    setState(() {
+      _showControls = !_showControls;
+      if (!_showControls) _showSettingsPanel = false;
+    });
+  }
+
+  /// 异步按需加载指定章节正文
+  Future<void> _loadChapterContent(int index, {bool forceReload = false}) async {
+    if (index < 0 || index >= _chapters.length) return;
+
+    // 1. 如果已有本地缓存且非强制刷新，直接挂载并重新切片
+    if (!forceReload && _contentCache.containsKey(index) && _contentCache[index]!.isNotEmpty) {
+      final cached = _contentCache[index]!;
+      setState(() {
+        _chapters[index] = _chapters[index].copyWith(content: cached);
+        _isLoadingContent = false;
+        _contentError = null;
+        _recalculatePages();
+      });
+      return;
+    }
+
+    final currentCh = _chapters[index];
+    final chapterUrl = currentCh.url?.trim() ?? '';
+
+    // 若无目标 URL 且已有正文，直接使用
+    if (chapterUrl.isEmpty) {
+      if (currentCh.content.isNotEmpty) {
+        _contentCache[index] = currentCh.content;
+        _recalculatePages();
+      }
+      return;
+    }
+
+    // 2. 调度沙箱执行 parse 动作
+    setState(() {
+      _isLoadingContent = true;
+      _contentError = null;
+    });
+
+    try {
+      if (widget.rule == null) {
+        throw Exception('未绑定解析规则，无法调度沙箱抓取章节内容');
+      }
+
+      final res = await RuleEngine.parse(widget.rule!, chapterUrl);
+      String rawContent = '';
+
+      if (res is Map) {
+        rawContent = res['content']?.toString() ??
+            res['text']?.toString() ??
+            res['data']?.toString() ??
+            '';
+      } else if (res is String) {
+        rawContent = res;
+      }
+
+      final cleanContent = _cleanNovelContent(rawContent);
+
+      if (cleanContent.isEmpty) {
+        throw Exception('目标站点响应完成，但未提取到正文文本内容');
+      }
+
+      // 写入缓存并挂载更新
+      _contentCache[index] = cleanContent;
+      if (mounted && _currentChapterIndex == index) {
+        setState(() {
+          _chapters[index] = _chapters[index].copyWith(content: cleanContent);
+          _isLoadingContent = false;
+          _contentError = null;
+          _recalculatePages();
+        });
+      }
+    } catch (e) {
+      if (mounted && _currentChapterIndex == index) {
+        setState(() {
+          _isLoadingContent = false;
+          _contentError = '正文加载失败: $e';
+        });
+      }
+    }
+  }
+
+  /// 智能清洗与规范化小说正文排版 (去除 HTML 标签、实体字符、自动补齐两格首行缩进)
+  String _cleanNovelContent(String raw) {
+    if (raw.isEmpty) return '';
+    String text = raw
+        .replaceAll(RegExp(r'<br\s*/?>', caseSensitive: false), '\n')
+        .replaceAll(RegExp(r'</p>', caseSensitive: false), '\n\n')
+        .replaceAll(RegExp(r'<[^>]+>'), '')
+        .replaceAll('&nbsp;', ' ')
+        .replaceAll('&quot;', '"')
+        .replaceAll('&lt;', '<')
+        .replaceAll('&gt;', '>')
+        .replaceAll('&amp;', '&');
+
+    final lines = text.split('\n');
+    final formattedLines = <String>[];
+    for (final l in lines) {
+      final trimmed = l.trim();
+      if (trimmed.isEmpty) continue;
+      // 自动补齐两格全角空格标准首行缩进
+      if (!trimmed.startsWith('　　')) {
+        formattedLines.add('　　$trimmed');
+      } else {
+        formattedLines.add(trimmed);
+      }
+    }
+    return formattedLines.join('\n\n');
+  }
+
+  /// 复制当前章节完整正文至系统剪贴板
+  void _copyCurrentChapter() {
+    final chapter = _chapters[_currentChapterIndex];
+    if (chapter.content.isEmpty || _isLoadingContent) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('当前章节正文尚未就绪，暂无法复制'),
+          duration: Duration(seconds: 1),
+        ),
+      );
+      return;
+    }
+
+    final fullText = '${chapter.title}\n\n${chapter.content}';
+    Clipboard.setData(ClipboardData(text: fullText));
+    HapticFeedback.lightImpact();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('已复制《${chapter.title}》全篇正文到剪贴板'),
+        duration: const Duration(seconds: 2),
+      ),
+    );
   }
 
   /// 读取用户阅读偏好
@@ -207,6 +368,14 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
   /// 依据视口和字号切片计算当前章节分页
   void _recalculatePages() {
     final currentContent = _chapters[_currentChapterIndex].content;
+    if (currentContent.isEmpty) {
+      setState(() {
+        _pageSlices = [];
+        _currentPageIndex = 0;
+      });
+      return;
+    }
+
     // 根据字号粗略计算每页字符承载量 (约 450 ~ 750 字)
     final charsPerPage = ((600 * (18.0 / _fontSize))).round().clamp(200, 1500);
 
@@ -241,6 +410,10 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
       _currentPageIndex = 0;
       _recalculatePages();
     });
+
+    // 触发异步加载目标章节
+    _loadChapterContent(index);
+
     if (_pageMode == PageTurnMode.horizontal && _pageController != null) {
       _pageController!.jumpToPage(0);
     } else if (_pageMode == PageTurnMode.verticalScroll && _scrollController.hasClients) {
@@ -257,21 +430,15 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
       body: SafeArea(
         child: Stack(
           children: [
-            // 1. 核心阅读排版视口
+            // 1. 核心阅读排版视口 (支持长按划词自由选区复制与点击控制栏)
             GestureDetector(
+              key: const ValueKey('reader_gesture_area'),
               behavior: HitTestBehavior.opaque,
-              onTap: () {
-                setState(() {
-                  _showControls = !_showControls;
-                  if (!_showControls) _showSettingsPanel = false;
-                });
-              },
-              child: _pageMode == PageTurnMode.horizontal
-                  ? _buildHorizontalPageView(chapter)
-                  : _buildVerticalScrollView(chapter),
+              onTap: _toggleControls,
+              child: _buildReaderBody(chapter),
             ),
 
-            // 2. 顶部微拟态控制栏 (返回、书名、章节号)
+            // 2. 顶部微拟态控制栏 (返回、书名、复制、刷新、目录)
             if (_showControls) _buildTopBar(chapter),
 
             // 3. 底部微拟态控制面板 (上一章、下一章、目录、排版设置、进度条)
@@ -285,29 +452,107 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
     );
   }
 
+  /// 构建阅读器主体（状态分流：加载中 / 加载失败 / 正文排版）
+  Widget _buildReaderBody(NovelChapter chapter) {
+    // 状态 A：正文加载中且无可用内容
+    if (_isLoadingContent && chapter.content.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const SizedBox(
+              width: 28,
+              height: 28,
+              child: CircularProgressIndicator(strokeWidth: 2.5, color: AppColors.primary),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              '正在抓取并排版章节正文...',
+              style: TextStyle(fontSize: 13, color: _readerTheme.subText),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // 状态 B：正文加载失败且无可用内容
+    if (_contentError != null && chapter.content.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Ionicons.alertCircleOutline, size: 36, color: _readerTheme.subText),
+              const SizedBox(height: 12),
+              Text(
+                '章节正文抓取失败',
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.bold,
+                  color: _readerTheme.text,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                _contentError!,
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 12, color: _readerTheme.subText),
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+                onPressed: () => _loadChapterContent(_currentChapterIndex, forceReload: true),
+                icon: const Icon(Ionicons.refreshOutline, size: 14),
+                label: const Text('重试加载'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // 状态 C：正文就绪，根据模式渲染平滑横翻或长篇纵滚
+    return _pageMode == PageTurnMode.horizontal
+        ? _buildHorizontalPageView(chapter)
+        : _buildVerticalScrollView(chapter);
+  }
+
   /// 横向平滑翻页视口
   Widget _buildHorizontalPageView(NovelChapter chapter) {
     return Column(
       children: [
-        // 顶部小标题栏 (章节名与电量/时间)
+        // 顶部小标题栏 (章节名与书名)
         Padding(
           padding: const EdgeInsets.fromLTRB(20, 8, 20, 4),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                chapter.title,
-                style: TextStyle(fontSize: 11, color: _readerTheme.subText),
+              Expanded(
+                child: Text(
+                  chapter.title,
+                  style: TextStyle(fontSize: 11, color: _readerTheme.subText),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
+              const SizedBox(width: 12),
               Text(
                 widget.bookTitle,
                 style: TextStyle(fontSize: 11, color: _readerTheme.subText),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
             ],
           ),
         ),
 
-        // 翻页主体
+        // 翻页主体 (采用 SelectableText，支持长按划词复制，单击穿透触发控制栏)
         Expanded(
           child: PageView.builder(
             controller: _pageController,
@@ -320,7 +565,7 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
             itemBuilder: (context, index) {
               return Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-                child: Text(
+                child: SelectableText(
                   _pageSlices[index],
                   style: TextStyle(
                     fontSize: _fontSize,
@@ -328,6 +573,7 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
                     color: _readerTheme.text,
                     letterSpacing: 0.5,
                   ),
+                  onTap: _toggleControls,
                 ),
               );
             },
@@ -345,7 +591,7 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
                 style: TextStyle(fontSize: 11, color: _readerTheme.subText),
               ),
               Text(
-                '${_currentPageIndex + 1} / ${_pageSlices.length}',
+                _pageSlices.isNotEmpty ? '${_currentPageIndex + 1} / ${_pageSlices.length}' : '',
                 style: TextStyle(fontSize: 11, color: _readerTheme.subText),
               ),
             ],
@@ -372,7 +618,7 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
           ),
         ),
         const SizedBox(height: 16),
-        Text(
+        SelectableText(
           chapter.content,
           style: TextStyle(
             fontSize: _fontSize,
@@ -380,6 +626,7 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
             color: _readerTheme.text,
             letterSpacing: 0.5,
           ),
+          onTap: _toggleControls,
         ),
         const SizedBox(height: 32),
         Row(
@@ -390,7 +637,7 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
               child: Text('上一章', style: TextStyle(color: _readerTheme.subText)),
             ),
             Text(
-              '${_currentChapterIndex + 1} / ${_chapters.length}',
+              '第 ${_currentChapterIndex + 1} / ${_chapters.length} 章',
               style: TextStyle(color: _readerTheme.subText, fontSize: 12),
             ),
             TextButton(
@@ -406,7 +653,7 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
     );
   }
 
-  /// 顶部控制栏
+  /// 顶部控制栏 (支持一键复制整章、重新加载、查看目录)
   Widget _buildTopBar(NovelChapter chapter) {
     return Positioned(
       top: 0,
@@ -433,8 +680,25 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
                 ),
               ),
             ),
+
+            // 一键复制本章全部内容
             IconButton(
-              icon: Icon(LucideIcons.listOrdered, color: _readerTheme.text, size: 20),
+              icon: Icon(Ionicons.copyOutline, color: _readerTheme.text, size: 19),
+              tooltip: '复制本章正文',
+              onPressed: _copyCurrentChapter,
+            ),
+
+            // 重新刷新加载章节
+            IconButton(
+              icon: Icon(Ionicons.refreshOutline, color: _readerTheme.text, size: 18),
+              tooltip: '刷新章节',
+              onPressed: () => _loadChapterContent(_currentChapterIndex, forceReload: true),
+            ),
+
+            // 章节目录抽屉
+            IconButton(
+              icon: Icon(Ionicons.reorderFourOutline, color: _readerTheme.text, size: 20),
+              tooltip: '章节目录',
               onPressed: _showCatalogDrawer,
             ),
           ],
@@ -459,7 +723,7 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
             Row(
               children: [
                 IconButton(
-                  icon: Icon(LucideIcons.chevronLeft, color: _readerTheme.text),
+                  icon: Icon(Ionicons.chevronBackOutline, color: _readerTheme.text),
                   onPressed: _currentChapterIndex > 0 ? () => _switchChapter(_currentChapterIndex - 1) : null,
                 ),
                 Expanded(
@@ -485,7 +749,7 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
                   ),
                 ),
                 IconButton(
-                  icon: Icon(LucideIcons.chevronRight, color: _readerTheme.text),
+                  icon: Icon(Ionicons.chevronForwardOutline, color: _readerTheme.text),
                   onPressed: _currentChapterIndex < _chapters.length - 1
                       ? () => _switchChapter(_currentChapterIndex + 1)
                       : null,
@@ -500,12 +764,17 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
                 _buildActionButton(
-                  icon: LucideIcons.bookOpen,
+                  icon: Ionicons.bookOutline,
                   label: '目录',
                   onTap: _showCatalogDrawer,
                 ),
                 _buildActionButton(
-                  icon: _pageMode == PageTurnMode.horizontal ? LucideIcons.columns2 : LucideIcons.rows3,
+                  icon: Ionicons.copyOutline,
+                  label: '复制本章',
+                  onTap: _copyCurrentChapter,
+                ),
+                _buildActionButton(
+                  icon: _pageMode == PageTurnMode.horizontal ? Ionicons.tabletPortraitOutline : Ionicons.menuOutline,
                   label: _pageMode.label,
                   onTap: () {
                     setState(() {
@@ -517,7 +786,7 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
                   },
                 ),
                 _buildActionButton(
-                  icon: LucideIcons.settings2,
+                  icon: Ionicons.optionsOutline,
                   label: '排版',
                   onTap: () {
                     setState(() {
@@ -534,7 +803,7 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
   }
 
   Widget _buildActionButton({
-    required IconData icon,
+    required dynamic icon,
     required String label,
     required VoidCallback onTap,
   }) {
@@ -546,24 +815,27 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 20, color: _readerTheme.text),
+            icon is IconData ? Icon(icon, size: 20, color: _readerTheme.text) : Icon(icon as IconData, size: 20, color: _readerTheme.text),
             const SizedBox(height: 4),
-            Text(label, style: TextStyle(fontSize: 11, color: _readerTheme.text)),
+            Text(
+              label,
+              style: TextStyle(fontSize: 11, color: _readerTheme.text),
+            ),
           ],
         ),
       ),
     );
   }
 
-  /// 排版设置抽屉 (字号、行距、护眼色)
+  /// 排版设置扩展抽屉 (底色、字号、行距)
   Widget _buildSettingsDrawer() {
     return Positioned(
-      bottom: 90,
+      bottom: 96,
       left: 16,
       right: 16,
       child: Container(
         decoration: BoxDecoration(
-          color: _readerTheme.bg.withValues(alpha: 0.98),
+          color: _readerTheme.bg,
           borderRadius: BorderRadius.circular(16),
           boxShadow: [
             BoxShadow(
@@ -768,7 +1040,7 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
                         ),
                       ),
                       trailing: isCurrent
-                          ? const Icon(LucideIcons.check, color: AppColors.primary, size: 16)
+                          ? const Icon(Ionicons.checkmarkOutline, color: AppColors.primary, size: 16)
                           : null,
                       onTap: () {
                         Navigator.pop(ctx);

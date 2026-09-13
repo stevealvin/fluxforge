@@ -1,14 +1,14 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:ionicons/ionicons.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../core/utils/app_logger.dart';
 import '../../services/app_service.dart';
 import '../../services/di.dart';
 import '../../widgets/app_card.dart';
-import '../browser/adblock_engine.dart';
+import '../../engines/adblock_engine.dart';
 
 /// 全局偏好与系统设置中心 (SettingsPage)
 /// 
@@ -81,7 +81,7 @@ class _SettingsPageState extends State<SettingsPage> {
                 _buildThemeTile(
                   title: '跟随系统',
                   subtitle: '与手机系统的深浅模式自动同步',
-                  icon: LucideIcons.smartphone,
+                  icon: Ionicons.phonePortraitOutline,
                   isSelected: currentMode == ThemeMode.system,
                   isDark: isDark,
                   onTap: () {
@@ -92,7 +92,7 @@ class _SettingsPageState extends State<SettingsPage> {
                 _buildThemeTile(
                   title: '纯净星暮白',
                   subtitle: '清爽通透的高雅浅色视觉风格',
-                  icon: LucideIcons.sun,
+                  icon: Ionicons.sunnyOutline,
                   isSelected: currentMode == ThemeMode.light,
                   isDark: isDark,
                   onTap: () {
@@ -103,7 +103,7 @@ class _SettingsPageState extends State<SettingsPage> {
                 _buildThemeTile(
                   title: '曜夜极光翡翠',
                   subtitle: '沉浸舒适的极夜暗色与翡翠光辉',
-                  icon: LucideIcons.moon,
+                  icon: Ionicons.moonOutline,
                   isSelected: currentMode == ThemeMode.dark,
                   isDark: isDark,
                   onTap: () {
@@ -122,7 +122,7 @@ class _SettingsPageState extends State<SettingsPage> {
   Widget _buildThemeTile({
     required String title,
     required String subtitle,
-    required IconData icon,
+    required dynamic icon,
     required bool isSelected,
     required bool isDark,
     required VoidCallback onTap,
@@ -142,11 +142,9 @@ class _SettingsPageState extends State<SettingsPage> {
                     : (isDark ? AppColors.darkCard : AppColors.lightCard),
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: Icon(
-                icon,
-                size: 20,
-                color: isSelected ? AppColors.primary : Colors.grey,
-              ),
+              child: icon is IconData
+                  ? Icon(icon, size: 20, color: isSelected ? AppColors.primary : Colors.grey)
+                  : Icon(icon as IconData, size: 20, color: isSelected ? AppColors.primary : Colors.grey),
             ),
             const SizedBox(width: 14),
             Expanded(
@@ -282,7 +280,7 @@ class _SettingsPageState extends State<SettingsPage> {
                 ),
               ),
               ListTile(
-                leading: const Icon(LucideIcons.fileUp, color: AppColors.primary),
+                leading: const Icon(Ionicons.cloudUploadOutline, color: AppColors.primary),
                 title: const Text('一键导出备份数据包'),
                 subtitle: const Text('将规则库、收藏与搜索历史打包为 JSON 并分享/保存至本地', style: TextStyle(fontSize: 11)),
                 onTap: () async {
@@ -299,7 +297,7 @@ class _SettingsPageState extends State<SettingsPage> {
                 },
               ),
               ListTile(
-                leading: const Icon(LucideIcons.fileDown, color: Colors.amber),
+                leading: const Icon(Ionicons.cloudDownloadOutline, color: Colors.amber),
                 title: const Text('从 JSON 文本/剪贴板恢复'),
                 subtitle: const Text('解析备份 JSON，支持「合并追加」或「全量覆盖」', style: TextStyle(fontSize: 11)),
                 onTap: () {
@@ -341,7 +339,7 @@ class _SettingsPageState extends State<SettingsPage> {
                   hintText: '{\n  "app": "FluxForge",\n  "data": { ... }\n}',
                   border: const OutlineInputBorder(),
                   suffixIcon: IconButton(
-                    icon: const Icon(LucideIcons.clipboard, size: 16),
+                    icon: const Icon(Ionicons.clipboardOutline, size: 16),
                     tooltip: '粘贴剪贴板',
                     onPressed: () async {
                       final data = await Clipboard.getData('text/plain');
@@ -500,7 +498,7 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
           ),
           SwitchListTile(
-            secondary: const Icon(LucideIcons.sliders, color: AppColors.primary, size: 20),
+            secondary: const Icon(Ionicons.optionsOutline, color: AppColors.primary, size: 20),
             title: const Text('屏幕滑动手势调节', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
             subtitle: const Text('左侧滑动调节亮度、右侧应用内免权限音量调节', style: TextStyle(fontSize: 11)),
             value: settings.enablePlayerGestures,
@@ -511,7 +509,7 @@ class _SettingsPageState extends State<SettingsPage> {
           ),
           Divider(height: 1, indent: 56, color: isDark ? AppColors.darkBorder : AppColors.lightBorder),
           SwitchListTile(
-            secondary: const Icon(LucideIcons.zap, color: Colors.amber, size: 20),
+            secondary: const Icon(Ionicons.flashOutline, color: Colors.amber, size: 20),
             title: const Text('长按瞬时加速与触觉震动', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
             subtitle: Text(
               '长按屏幕以 ${settings.longPressSpeed.toStringAsFixed(1)}x 加速播放，并触发原生轻微物理震动',
@@ -526,7 +524,7 @@ class _SettingsPageState extends State<SettingsPage> {
           Divider(height: 1, indent: 56, color: isDark ? AppColors.darkBorder : AppColors.lightBorder),
           // 长按加速倍率 (2.0x / 3.0x / 5.0x)
           ListTile(
-            leading: const Icon(LucideIcons.gauge, color: Colors.amber, size: 20),
+            leading: const Icon(Ionicons.speedometerOutline, color: Colors.amber, size: 20),
             title: const Text('长按加速倍率', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
             subtitle: const Text('长按屏幕时瞬时提升到的播放倍速', style: TextStyle(fontSize: 11)),
             trailing: DropdownButton<double>(
@@ -546,7 +544,7 @@ class _SettingsPageState extends State<SettingsPage> {
           ),
           Divider(height: 1, indent: 56, color: isDark ? AppColors.darkBorder : AppColors.lightBorder),
           ListTile(
-            leading: const Icon(LucideIcons.history, color: AppColors.accentTeal, size: 20),
+            leading: const Icon(Ionicons.refreshOutline, color: AppColors.accentTeal, size: 20),
             title: const Text('断点续播行为', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
             subtitle: Text('当前策略：${settings.resumeBehavior.label}', style: const TextStyle(fontSize: 11)),
             trailing: DropdownButton<ResumeBehavior>(
@@ -586,7 +584,7 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
           ),
           ListTile(
-            leading: const Icon(LucideIcons.bookOpen, color: Color(0xFFF59E0B), size: 20),
+            leading: const Icon(Ionicons.bookOutline, color: Color(0xFFF59E0B), size: 20),
             title: const Text('小说默认翻页模式', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
             subtitle: Text(settings.novelPageMode == 'vertical' ? '上下连续长篇滚动' : '标准平滑横向翻页', style: const TextStyle(fontSize: 11)),
             trailing: DropdownButton<String>(
@@ -605,7 +603,7 @@ class _SettingsPageState extends State<SettingsPage> {
           ),
           Divider(height: 1, indent: 56, color: isDark ? AppColors.darkBorder : AppColors.lightBorder),
           ListTile(
-            leading: const Icon(LucideIcons.image, color: Color(0xFF8B5CF6), size: 20),
+            leading: const Icon(Ionicons.imageOutline, color: Color(0xFF8B5CF6), size: 20),
             title: const Text('图集与画廊默认视图', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
             subtitle: Text(settings.galleryLayout == 'comicStrip' ? '垂直条漫连续拼接' : '瀑布流展厅网格', style: const TextStyle(fontSize: 11)),
             trailing: DropdownButton<String>(
@@ -646,7 +644,7 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
           ),
           ListTile(
-            leading: const Icon(LucideIcons.timer, color: AppColors.primary, size: 20),
+            leading: const Icon(Ionicons.stopwatchOutline, color: AppColors.primary, size: 20),
             title: const Text('沙箱请求超时时限', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
             subtitle: Text('针对复杂网络源弹性宽容 (${settings.requestTimeoutSeconds}秒)', style: const TextStyle(fontSize: 11)),
             trailing: DropdownButton<int>(
@@ -666,7 +664,7 @@ class _SettingsPageState extends State<SettingsPage> {
           ),
           Divider(height: 1, indent: 56, color: isDark ? AppColors.darkBorder : AppColors.lightBorder),
           ListTile(
-            leading: const Icon(LucideIcons.shieldCheck, color: Colors.green, size: 20),
+            leading: const Icon(Ionicons.shieldCheckmarkOutline, color: Colors.green, size: 20),
             title: const Text('内置网页广告拦截', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
             subtitle: const Text('智能阻断小说/影视网页弹窗、牛皮癣横幅与恶意外链', style: TextStyle(fontSize: 11)),
             trailing: Switch(
@@ -769,7 +767,7 @@ class _SettingsPageState extends State<SettingsPage> {
           ],
           Divider(height: 1, indent: 56, color: isDark ? AppColors.darkBorder : AppColors.lightBorder),
           ListTile(
-            leading: const Icon(LucideIcons.globe, color: Colors.blueAccent, size: 20),
+            leading: const Icon(Ionicons.globeOutline, color: Colors.blueAccent, size: 20),
             title: const Text('自定义 User-Agent', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
             subtitle: Text(
               settings.customUserAgent.isNotEmpty ? settings.customUserAgent : '使用内置移动端伪装标头',
@@ -782,7 +780,7 @@ class _SettingsPageState extends State<SettingsPage> {
           ),
           Divider(height: 1, indent: 56, color: isDark ? AppColors.darkBorder : AppColors.lightBorder),
           SwitchListTile(
-            secondary: const Icon(LucideIcons.refreshCw, color: AppColors.accentTeal, size: 20),
+            secondary: const Icon(Ionicons.refreshOutline, color: AppColors.accentTeal, size: 20),
             title: const Text('启动时自动同步规则', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
             subtitle: const Text('从规则市场同步已订阅源的最新解析补丁', style: TextStyle(fontSize: 11)),
             value: settings.autoCheckRuleUpdates,
@@ -815,7 +813,7 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
           ),
           ListTile(
-            leading: const Icon(LucideIcons.hardDrive, color: Colors.purpleAccent, size: 20),
+            leading: const Icon(Ionicons.hardwareChipOutline, color: Colors.purpleAccent, size: 20),
             title: const Text('数据全量备份与还原', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
             subtitle: Text(
               '规则库 (${ruleService.rules.length}条) · 收藏 (${favoriteService.favorites.length}项)',
@@ -826,7 +824,7 @@ class _SettingsPageState extends State<SettingsPage> {
           ),
           Divider(height: 1, indent: 56, color: isDark ? AppColors.darkBorder : AppColors.lightBorder),
           ListTile(
-            leading: const Icon(LucideIcons.trash2, color: Colors.amber, size: 20),
+            leading: const Icon(Ionicons.trashOutline, color: Colors.amber, size: 20),
             title: const Text('清理临时与网络图片缓存', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
             subtitle: Text(
               '占用空间：${_cacheSizeMB.toStringAsFixed(1)} MB',
@@ -850,7 +848,7 @@ class _SettingsPageState extends State<SettingsPage> {
           ),
           Divider(height: 1, indent: 56, color: isDark ? AppColors.darkBorder : AppColors.lightBorder),
           ListTile(
-            leading: const Icon(LucideIcons.history, color: Colors.grey, size: 20),
+            leading: const Icon(Ionicons.refreshOutline, color: Colors.grey, size: 20),
             title: const Text('清空搜索历史记录', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
             subtitle: Text('共 ${historyService.searchHistory.length} 条记录', style: const TextStyle(fontSize: 11)),
             trailing: TextButton(
@@ -889,7 +887,7 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
           ),
           ListTile(
-            leading: const Icon(LucideIcons.palette, color: AppColors.primary, size: 20),
+            leading: const Icon(Ionicons.colorPaletteOutline, color: AppColors.primary, size: 20),
             title: const Text('界面风格主题', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
             subtitle: Text(_getThemeModeLabel(settings.themeMode, isDark), style: const TextStyle(fontSize: 11)),
             trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 14),
@@ -927,7 +925,7 @@ class _SettingsPageState extends State<SettingsPage> {
                   : '已记录 ${logs.length} 条日志${errorCount > 0 ? " (含 $errorCount 项异常)" : ""}';
 
               return ListTile(
-                leading: const Icon(LucideIcons.fileText, color: Colors.blueAccent, size: 20),
+                leading: const Icon(Ionicons.documentOutline, color: Colors.blueAccent, size: 20),
                 title: const Text('沙箱与系统日志中心', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
                 subtitle: Text(subtitleText, style: const TextStyle(fontSize: 11)),
                 trailing: Row(

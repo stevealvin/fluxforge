@@ -1,7 +1,7 @@
 import 'dart:io';
 import 'package:material_ui/material_ui.dart';
 import 'package:logger/logger.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:ionicons/ionicons.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
@@ -70,15 +70,15 @@ class LogEntry {
   IconData get levelIcon {
     switch (level.toUpperCase()) {
       case 'ERROR':
-        return LucideIcons.circleAlert;
+        return Ionicons.alertCircleOutline;
       case 'WARN':
       case 'WARNING':
-        return LucideIcons.triangleAlert;
+        return Ionicons.warningOutline;
       case 'INFO':
-        return LucideIcons.info;
+        return Ionicons.informationCircleOutline;
       case 'DEBUG':
       default:
-        return LucideIcons.terminal;
+        return Ionicons.terminalOutline;
     }
   }
 

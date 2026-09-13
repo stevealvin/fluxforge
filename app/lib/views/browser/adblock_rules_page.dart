@@ -1,12 +1,12 @@
 import 'package:material_ui/material_ui.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:ionicons/ionicons.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../services/app_service.dart';
 import '../../services/di.dart';
 import '../../widgets/app_button.dart';
 import '../../widgets/app_card.dart';
-import 'adblock_engine.dart';
+import '../../engines/adblock_engine.dart';
 
 /// 广告拦截规则管理独立页面
 ///
@@ -85,7 +85,7 @@ class _AdBlockRulesPageState extends State<AdBlockRulesPage> {
                     color: AppColors.primary.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: const Icon(LucideIcons.plus, size: 18, color: AppColors.primary),
+                  child: const Icon(Ionicons.addOutline, size: 18, color: AppColors.primary),
                 ),
                 const SizedBox(width: 10),
                 const Text('添加自定义规则订阅', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
@@ -182,7 +182,7 @@ class _AdBlockRulesPageState extends State<AdBlockRulesPage> {
         actions: [
           IconButton(
             tooltip: '添加自定义订阅',
-            icon: const Icon(LucideIcons.plus, size: 20),
+            icon: const Icon(Ionicons.addOutline, size: 20),
             onPressed: _showAddCustomSourceDialog,
           ),
           ValueListenableBuilder<bool>(
@@ -201,7 +201,7 @@ class _AdBlockRulesPageState extends State<AdBlockRulesPage> {
                     )
                   : IconButton(
                       tooltip: '拉取全部更新',
-                      icon: const Icon(LucideIcons.refreshCw, size: 18),
+                      icon: const Icon(Ionicons.refreshOutline, size: 18),
                       onPressed: _triggerGlobalSync,
                     );
             },
@@ -251,8 +251,7 @@ class _AdBlockRulesPageState extends State<AdBlockRulesPage> {
                   borderRadius: BorderRadius.circular(13),
                 ),
                 child: Center(
-                  child: Icon(
-                    settings.enableAdBlock ? LucideIcons.shieldCheck : LucideIcons.shieldAlert,
+                  child: Icon(settings.enableAdBlock ? Ionicons.shieldCheckmarkOutline : Ionicons.shieldCheckmarkOutline,
                     color: settings.enableAdBlock
                         ? AppColors.primary
                         : (isDark ? AppColors.darkTextTertiary : AppColors.lightTextTertiary),
@@ -328,7 +327,7 @@ class _AdBlockRulesPageState extends State<AdBlockRulesPage> {
                   valueListenable: _engine.isUpdatingNotifier,
                   builder: (context, isUpdating, _) {
                     return AppButton.compactTonal(
-                      icon: const Icon(LucideIcons.refreshCw, size: 12),
+                      icon: const Icon(Ionicons.refreshOutline, size: 12),
                       label: isUpdating ? '正在同步...' : '立即同步',
                       loading: isUpdating,
                       onPressed: isUpdating ? null : _triggerGlobalSync,
@@ -352,7 +351,7 @@ class _AdBlockRulesPageState extends State<AdBlockRulesPage> {
           padding: const EdgeInsets.symmetric(horizontal: 4),
           child: Row(
             children: [
-              const Icon(LucideIcons.listFilter, size: 16, color: AppColors.primary),
+              const Icon(Ionicons.filterOutline, size: 16, color: AppColors.primary),
               const SizedBox(width: 8),
               Text(
                 '规则订阅源',
@@ -463,8 +462,7 @@ class _AdBlockRulesPageState extends State<AdBlockRulesPage> {
             // 底部：镜像节点数 + 操作按钮
             Row(
               children: [
-                Icon(
-                  LucideIcons.server,
+                Icon(Ionicons.serverOutline,
                   size: 11.5,
                   color: isDark ? AppColors.darkTextTertiary : AppColors.lightTextTertiary,
                 ),
@@ -487,7 +485,7 @@ class _AdBlockRulesPageState extends State<AdBlockRulesPage> {
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(LucideIcons.refreshCw, size: 11, color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary),
+                        Icon(Ionicons.refreshOutline, size: 11, color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary),
                         const SizedBox(width: 3),
                         Text(
                           '拉取更新',
@@ -517,7 +515,7 @@ class _AdBlockRulesPageState extends State<AdBlockRulesPage> {
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(LucideIcons.trash2, size: 11, color: AppColors.danger),
+                          Icon(Ionicons.trashOutline, size: 11, color: AppColors.danger),
                           SizedBox(width: 3),
                           Text('删除', style: TextStyle(fontSize: 11, color: AppColors.danger)),
                         ],

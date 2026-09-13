@@ -5,21 +5,21 @@ import 'models/rule.dart';
 import 'services/di.dart';
 import 'views/browser/adblock_rules_page.dart';
 import 'views/browser/browser_page.dart';
-import 'views/detail/media_detail_page.dart';
 import 'views/market/market_page.dart';
-import 'views/profile/card_gallery_page.dart';
-import 'views/profile/favorites_page.dart';
-import 'views/profile/logs_page.dart';
-import 'views/profile/settings_page.dart';
-import 'views/rules/rule_detail_page.dart';
-import 'views/rules/rule_discovery_page.dart';
+import 'views/media/media_detail_page.dart';
+import 'views/dev/card_gallery_page.dart';
+import 'views/favorites/favorites_page.dart';
+import 'views/settings/logs_page.dart';
+import 'views/settings/settings_page.dart';
+import 'views/rules/rule_catalog_page.dart';
 import 'views/rules/rule_tester_page.dart';
 import 'views/search/search_page.dart';
 import 'views/shell/shell_page.dart';
 import 'views/splash/splash_page.dart';
 
 /// 全局路由监听器 (供 AuraPlayer 等多媒体组件实现 RouteAware 生命周期自治)
-final RouteObserver<ModalRoute<void>> appRouteObserver = RouteObserver<ModalRoute<void>>();
+/// 泛型显式约束为 `PageRoute<void>`，仅监听真正的页面级导航压栈，自动过滤 Dialog/BottomSheet/Drawer 等局部弹窗 PopupRoute
+final RouteObserver<PageRoute<void>> appRouteObserver = RouteObserver<PageRoute<void>>();
 
 /// 全局 GoRouter 统一路由配置
 final GoRouter router = GoRouter(
@@ -101,7 +101,7 @@ final GoRouter router = GoRouter(
               );
             }
 
-            return RuleDiscoveryPage(
+            return RuleCatalogPage(
               rule: rule,
             );
           },
@@ -136,7 +136,7 @@ final GoRouter router = GoRouter(
           },
         ),
 
-        // 规则内容详情
+        // 规则内容详情 (统一调度引擎)
         GoRoute(
           path: 'rule_detail',
           builder: (BuildContext context, GoRouterState state) {
@@ -149,7 +149,7 @@ final GoRouter router = GoRouter(
               rule = Rule.fromJson(Map<String, dynamic>.from(ruleData));
             }
 
-            return RuleDetailPage(
+            return MediaDetailPage(
               title: extra?['title']?.toString() ?? '',
               url: extra?['url']?.toString() ?? '',
               cover: extra?['cover']?.toString() ?? '',
@@ -158,16 +158,16 @@ final GoRouter router = GoRouter(
           },
         ),
 
-        // 媒体播放与详情分发
+        // 媒体播放与详情分发 (统一调度引擎)
         GoRoute(
           path: 'detail',
           builder: (BuildContext context, GoRouterState state) {
             final extra = state.extra as Map<String, dynamic>?;
             return MediaDetailPage(
-              type: extra?['type']?.toString() ?? 'movie',
-              url: extra?['url']?.toString(),
+              type: extra?['type']?.toString() ?? 'video',
+              url: extra?['url']?.toString() ?? '',
               title: extra?['title']?.toString() ?? '媒体详情',
-              cover: extra?['cover']?.toString(),
+              cover: extra?['cover']?.toString() ?? '',
             );
           },
         ),

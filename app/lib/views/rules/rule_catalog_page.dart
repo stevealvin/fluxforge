@@ -1,14 +1,14 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:go_router/go_router.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:ionicons/ionicons.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../models/rule.dart';
 import '../../services/rule_engine.dart';
 import '../../widgets/app_card.dart';
-import '../../widgets/empty_state.dart';
-import '../../widgets/loading_indicator.dart';
-import '../../widgets/net_image.dart';
+import '../../widgets/app_empty_state.dart';
+import '../../widgets/app_loading.dart';
+import '../../widgets/app_net_image.dart';
 
 /// 规范化的媒体条目模型（严格遵循固定契约）
 class _MediaItem {
@@ -59,8 +59,8 @@ class _DiscoveryTab {
 /// 
 /// 固定接收规则 discovery 生命周期返回的结构：
 /// { tabs?: Array<{ title: string, url: string }>, items: MediaItem[], hasMore?: boolean } 或 MediaItem[]
-class RuleDiscoveryPage extends StatefulWidget {
-  const RuleDiscoveryPage({
+class RuleCatalogPage extends StatefulWidget {
+  const RuleCatalogPage({
     super.key,
     required this.rule,
   });
@@ -68,10 +68,10 @@ class RuleDiscoveryPage extends StatefulWidget {
   final Rule rule;
 
   @override
-  State<RuleDiscoveryPage> createState() => _RuleDiscoveryPageState();
+  State<RuleCatalogPage> createState() => _RuleCatalogPageState();
 }
 
-class _RuleDiscoveryPageState extends State<RuleDiscoveryPage> {
+class _RuleCatalogPageState extends State<RuleCatalogPage> {
   final ScrollController _scrollController = ScrollController();
   final ScrollController _tabsScrollController = ScrollController();
 
@@ -193,7 +193,7 @@ class _RuleDiscoveryPageState extends State<RuleDiscoveryPage> {
         });
       }
     } catch (e) {
-      debugPrint('[RuleDiscoveryPage] load error: $e');
+      debugPrint('[RuleCatalogPage] load error: $e');
       if (mounted) {
         setState(() {
           _error = '发现内容加载失败: $e';
@@ -286,7 +286,7 @@ class _RuleDiscoveryPageState extends State<RuleDiscoveryPage> {
         actions: [
           IconButton(
             tooltip: _isGridView ? '切换为列表视图' : '切换为网格视图',
-            icon: Icon(_isGridView ? LucideIcons.list : LucideIcons.layoutGrid),
+            icon: Icon(_isGridView ? Ionicons.listOutline : Ionicons.gridOutline),
             onPressed: () {
               setState(() {
                 _isGridView = !_isGridView;
@@ -295,14 +295,14 @@ class _RuleDiscoveryPageState extends State<RuleDiscoveryPage> {
           ),
           IconButton(
             tooltip: '在此源中搜索',
-            icon: const Icon(LucideIcons.search),
+            icon: const Icon(Ionicons.searchOutline),
             onPressed: () {
               context.push('/search', extra: {'rule': widget.rule});
             },
           ),
           IconButton(
             tooltip: '刷新',
-            icon: const Icon(LucideIcons.refreshCw),
+            icon: const Icon(Ionicons.refreshOutline),
             onPressed: () => _loadDiscovery(page: 1),
           ),
         ],
@@ -420,8 +420,7 @@ class _RuleDiscoveryPageState extends State<RuleDiscoveryPage> {
                 turns: _isTabsExpanded ? 0.5 : 0.0,
                 duration: const Duration(milliseconds: 200),
                 curve: Curves.easeInOut,
-                child: Icon(
-                  LucideIcons.chevronDown,
+                child: Icon(Ionicons.chevronDownOutline,
                   size: 18,
                   color: _isTabsExpanded
                       ? AppColors.primary
@@ -539,7 +538,7 @@ class _RuleDiscoveryPageState extends State<RuleDiscoveryPage> {
                           ),
                           if (isSelected) ...[
                             const SizedBox(width: 4),
-                            const Icon(LucideIcons.check, size: 13, color: AppColors.primary),
+                            const Icon(Ionicons.checkmarkOutline, size: 13, color: AppColors.primary),
                           ],
                         ],
                       ),
@@ -567,7 +566,7 @@ class _RuleDiscoveryPageState extends State<RuleDiscoveryPage> {
     if (_error != null && _items.isEmpty) {
       return Center(
         child: EmptyState(
-          icon: LucideIcons.alertTriangle,
+          icon: Ionicons.warningOutline,
           title: '发现流加载失败',
           description: _error,
           actionText: '重新加载',
@@ -579,7 +578,7 @@ class _RuleDiscoveryPageState extends State<RuleDiscoveryPage> {
     if (_items.isEmpty) {
       return Center(
         child: EmptyState(
-          icon: LucideIcons.inbox,
+          icon: Ionicons.fileTrayOutline,
           title: '暂无发现内容',
           description: '当前规则未返回任何推荐项目',
           actionText: '刷新重试',
@@ -939,7 +938,7 @@ class _RuleDiscoveryPageState extends State<RuleDiscoveryPage> {
                           ),
                         ),
                       ),
-                      const Icon(LucideIcons.playCircle, size: 16, color: AppColors.primary),
+                      const Icon(Ionicons.playCircleOutline, size: 16, color: AppColors.primary),
                     ],
                   ),
                 ],
@@ -1026,7 +1025,7 @@ class _RuleDiscoveryPageState extends State<RuleDiscoveryPage> {
                   ),
                 ),
               ),
-              const Icon(LucideIcons.chevronRight, size: 18, color: Colors.grey),
+              const Icon(Ionicons.chevronForwardOutline, size: 18, color: Colors.grey),
             ],
           ),
     );
@@ -1047,3 +1046,6 @@ class _RuleDiscoveryPageState extends State<RuleDiscoveryPage> {
     );
   }
 }
+
+/// 规则目录分类与资源发现统一语义别名
+typedef RuleDiscoveryPage = RuleCatalogPage;

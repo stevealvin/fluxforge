@@ -1,14 +1,14 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:ionicons/ionicons.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../models/rule.dart';
 import '../../services/di.dart';
 import '../../services/rule_service.dart';
 import '../../widgets/app_card.dart';
-import '../../widgets/loading_indicator.dart';
+import '../../widgets/app_loading.dart';
 
 /// 客户端本地规则管理页面
 /// 支持响应式规则列表、状态启停、网络/JSON多源导入、快速跳转市场与发现测试
@@ -33,18 +33,18 @@ class _RulesPageState extends State<RulesPage> {
   IconData _getTypeIcon(String type) {
     switch (type.toLowerCase()) {
       case 'video':
-        return LucideIcons.film;
+        return Ionicons.filmOutline;
       case 'novel':
-        return LucideIcons.bookOpen;
+        return Ionicons.bookOutline;
       case 'picture':
       case 'comic':
       case 'image':
-        return LucideIcons.image;
+        return Ionicons.imageOutline;
       case 'audio':
-        return LucideIcons.headphones;
+        return Ionicons.headsetOutline;
       case 'crawler':
       default:
-        return LucideIcons.globe;
+        return Ionicons.globeOutline;
     }
   }
 
@@ -149,7 +149,7 @@ class _RulesPageState extends State<RulesPage> {
                             Navigator.pop(sheetContext);
                             context.push('/market');
                           },
-                          icon: const Icon(LucideIcons.store, size: 16),
+                          icon: const Icon(Ionicons.storefrontOutline, size: 16),
                           label: const Text('规则市场', style: TextStyle(fontSize: 13)),
                         ),
                       ],
@@ -161,12 +161,12 @@ class _RulesPageState extends State<RulesPage> {
                         ButtonSegment(
                           value: 0,
                           label: Text('网络导入'),
-                          icon: Icon(LucideIcons.link, size: 16),
+                          icon: Icon(Ionicons.linkOutline, size: 16),
                         ),
                         ButtonSegment(
                           value: 1,
                           label: Text('粘贴 JSON'),
-                          icon: Icon(LucideIcons.clipboard, size: 16),
+                          icon: Icon(Ionicons.clipboardOutline, size: 16),
                         ),
                       ],
                       selected: {activeTab},
@@ -184,7 +184,7 @@ class _RulesPageState extends State<RulesPage> {
                         decoration: InputDecoration(
                           hintText: '请输入规则订阅或 JSON 地址 (https://...)',
                           hintStyle: TextStyle(fontSize: 13, color: Colors.grey.withValues(alpha: 0.8)),
-                          prefixIcon: const Icon(LucideIcons.globe, size: 18),
+                          prefixIcon: const Icon(Ionicons.globeOutline, size: 18),
                           filled: true,
                           fillColor: isDark ? const Color(0xFF1E2D27) : const Color(0xFFF3F4F6),
                           border: OutlineInputBorder(
@@ -378,7 +378,7 @@ class _RulesPageState extends State<RulesPage> {
 
                 // 选项 1: 规则流式测试与调试 (对齐开源阅读)
                 ListTile(
-                  leading: const Icon(LucideIcons.flaskConical, color: AppColors.primary, size: 20),
+                  leading: const Icon(Ionicons.flaskOutline, color: AppColors.primary, size: 20),
                   title: const Text('规则调试与测试 (Debug & Test)', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
                   subtitle: const Text('多阶段流水线自动化测试 (发现/搜索/详情/直链解析)', style: TextStyle(fontSize: 11)),
                   onTap: () {
@@ -389,7 +389,7 @@ class _RulesPageState extends State<RulesPage> {
 
                 // 选项 2: 进入分类发现浏览
                 ListTile(
-                  leading: const Icon(LucideIcons.compass, size: 20),
+                  leading: const Icon(Ionicons.compassOutline, size: 20),
                   title: const Text('分类发现浏览', style: TextStyle(fontSize: 14)),
                   onTap: () {
                     Navigator.pop(sheetCtx);
@@ -400,7 +400,7 @@ class _RulesPageState extends State<RulesPage> {
                 // 选项 3: 复制源站基址
                 if (rule.baseUrl.isNotEmpty)
                   ListTile(
-                    leading: const Icon(LucideIcons.copy, size: 20),
+                    leading: const Icon(Ionicons.copyOutline, size: 20),
                     title: const Text('复制源站地址', style: TextStyle(fontSize: 14)),
                     subtitle: Text(rule.baseUrl, style: const TextStyle(fontSize: 11), maxLines: 1, overflow: TextOverflow.ellipsis),
                     onTap: () {
@@ -414,7 +414,7 @@ class _RulesPageState extends State<RulesPage> {
 
                 // 选项 4: 删除规则
                 ListTile(
-                  leading: const Icon(LucideIcons.trash2, color: Colors.redAccent, size: 20),
+                  leading: const Icon(Ionicons.trashOutline, color: Colors.redAccent, size: 20),
                   title: const Text('删除此规则', style: TextStyle(fontSize: 14, color: Colors.redAccent)),
                   onTap: () {
                     Navigator.pop(sheetCtx);
@@ -506,8 +506,7 @@ class _RulesPageState extends State<RulesPage> {
                   border: Border.all(color: typeColor.withValues(alpha: 0.2), width: 0.8),
                 ),
                 child: Center(
-                  child: Icon(
-                    _getTypeIcon(rule.type),
+                  child: Icon(_getTypeIcon(rule.type),
                     color: typeColor,
                     size: 18,
                   ),
@@ -654,8 +653,7 @@ class _RulesPageState extends State<RulesPage> {
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(
-                          LucideIcons.globe,
+                        Icon(Ionicons.globeOutline,
                           size: 12,
                           color: hasUrl
                               ? (isDark ? const Color(0xFF34D399) : const Color(0xFF059669))
@@ -677,8 +675,7 @@ class _RulesPageState extends State<RulesPage> {
                         ),
                         if (hasUrl) ...[
                           const SizedBox(width: 2),
-                          Icon(
-                            LucideIcons.arrowUpRight,
+                          Icon(Ionicons.openOutline,
                             size: 11,
                             color: isDark ? const Color(0xFF34D399) : const Color(0xFF059669),
                           ),
@@ -701,8 +698,7 @@ class _RulesPageState extends State<RulesPage> {
                   },
                   child: Padding(
                     padding: const EdgeInsets.all(4),
-                    child: Icon(
-                      LucideIcons.flaskConical,
+                    child: Icon(Ionicons.flaskOutline,
                       size: 14,
                       color: isDark ? AppColors.primaryLight : AppColors.primary,
                     ),
@@ -718,8 +714,7 @@ class _RulesPageState extends State<RulesPage> {
                 onTap: () => _confirmDeleteRule(context, rule),
                 child: Padding(
                   padding: const EdgeInsets.all(4),
-                  child: Icon(
-                    LucideIcons.trash2,
+                  child: Icon(Ionicons.trashOutline,
                     size: 14,
                     color: isDark ? Colors.redAccent.withValues(alpha: 0.85) : Colors.redAccent,
                   ),
@@ -747,7 +742,7 @@ class _RulesPageState extends State<RulesPage> {
                 color: const Color(0xFF10B981).withValues(alpha: 0.12),
                 shape: BoxShape.circle,
               ),
-              child: const Icon(LucideIcons.folderClosed, size: 40, color: Color(0xFF10B981)),
+              child: const Icon(Ionicons.folderOutline, size: 40, color: Color(0xFF10B981)),
             ),
             const SizedBox(height: 16),
             const Text(
@@ -772,7 +767,7 @@ class _RulesPageState extends State<RulesPage> {
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   ),
                   onPressed: () => context.push('/market'),
-                  icon: const Icon(LucideIcons.store, size: 16),
+                  icon: const Icon(Ionicons.storefrontOutline, size: 16),
                   label: const Text('前往规则市场'),
                 ),
                 const SizedBox(width: 12),
@@ -782,7 +777,7 @@ class _RulesPageState extends State<RulesPage> {
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   ),
                   onPressed: () => _showImportDialog(context),
-                  icon: const Icon(LucideIcons.plus, size: 16),
+                  icon: const Icon(Ionicons.addOutline, size: 16),
                   label: const Text('手动导入'),
                 ),
               ],
@@ -821,19 +816,19 @@ class _RulesPageState extends State<RulesPage> {
               }
               return IconButton(
                 tooltip: '一键测速巡检',
-                icon: const Icon(LucideIcons.gauge),
+                icon: const Icon(Ionicons.speedometerOutline),
                 onPressed: () => _ruleService.pingAllRules(),
               );
             },
           ),
           IconButton(
             tooltip: '规则市场',
-            icon: const Icon(LucideIcons.store),
+            icon: const Icon(Ionicons.storefrontOutline),
             onPressed: () => context.push('/market'),
           ),
           IconButton(
             tooltip: '导入规则',
-            icon: const Icon(LucideIcons.plus),
+            icon: const Icon(Ionicons.addOutline),
             onPressed: () => _showImportDialog(context),
           ),
         ],
@@ -890,8 +885,7 @@ class _RulesPageState extends State<RulesPage> {
                         prefixIconConstraints: const BoxConstraints(minWidth: 38, minHeight: 38),
                         prefixIcon: Padding(
                           padding: const EdgeInsets.only(left: 4),
-                          child: Icon(
-                            LucideIcons.search,
+                          child: Icon(Ionicons.searchOutline,
                             size: 16,
                             color: _searchQuery.isNotEmpty
                                 ? AppColors.primary
@@ -981,7 +975,7 @@ class _RulesPageState extends State<RulesPage> {
                         ),
                         child: Row(
                           children: [
-                            const Icon(LucideIcons.alertCircle, size: 16, color: Colors.redAccent),
+                            const Icon(Ionicons.alertCircleOutline, size: 16, color: Colors.redAccent),
                             const SizedBox(width: 8),
                             Expanded(
                               child: Text(
@@ -1042,8 +1036,7 @@ class _RulesPageState extends State<RulesPage> {
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(
-                            LucideIcons.packageOpen,
+                          Icon(Ionicons.cubeOutline,
                             size: 44,
                             color: isDark ? AppColors.darkTextTertiary : AppColors.lightTextTertiary,
                           ),
@@ -1069,7 +1062,7 @@ class _RulesPageState extends State<RulesPage> {
                               _searchController.clear();
                               setState(() => _searchQuery = '');
                             },
-                            icon: const Icon(LucideIcons.rotateCcw, size: 14),
+                            icon: const Icon(Ionicons.reloadOutline, size: 14),
                             label: const Text('重置搜索', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
                           ),
                         ],
