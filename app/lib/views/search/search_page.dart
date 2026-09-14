@@ -816,9 +816,12 @@ class _SearchPageState extends State<SearchPage> {
           const SizedBox(height: 8),
           Wrap(
             spacing: 8,
-            runSpacing: 8,
+            runSpacing: 4, // 缩小上下行间距，使历史标签排布更加紧凑
             children: _historyList.map((text) {
               return InputChip(
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap, // 紧凑点击热区，避免撑开多余上下空白
+                visualDensity: VisualDensity.compact,
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
                 avatar: const Icon(Ionicons.timeOutline, size: 13, color: AppColors.primary),
                 label: Text(
                   text,

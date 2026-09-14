@@ -98,10 +98,6 @@ class _MediaMetaHeaderState extends State<MediaMetaHeader> {
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(12),
           color: isDark ? AppColors.darkCard : AppColors.lightSurface,
-          border: Border.all(
-            color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
-            width: 0.8,
-          ),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.08),
@@ -153,7 +149,6 @@ class _MediaMetaHeaderState extends State<MediaMetaHeader> {
                 style: TextStyle(
                   fontSize: widget.showCover ? 18 : 20,
                   fontWeight: FontWeight.bold,
-                  color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
                   height: 1.3,
                 ),
                 maxLines: widget.showCover ? 2 : 3,
@@ -303,10 +298,9 @@ class _MediaMetaHeaderState extends State<MediaMetaHeader> {
             children: [
               Text(
                 '作品简介',
-                style: TextStyle(
+                style: const TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.bold,
-                  color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
                 ),
               ),
               const Spacer(),
@@ -328,9 +322,8 @@ class _MediaMetaHeaderState extends State<MediaMetaHeader> {
           const SizedBox(height: 6),
           Text(
             desc,
-            style: TextStyle(
+            style: const TextStyle(
               fontSize: 12.5,
-              color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
               height: 1.5,
             ),
             maxLines: _isDescExpanded ? 100 : 3,

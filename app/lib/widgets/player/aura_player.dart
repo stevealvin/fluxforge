@@ -1156,16 +1156,17 @@ class AuraPlayerState extends State<AuraPlayer>
                 _startControlsTimer();
               },
               child: SizedBox(
-                width: 56,
-                height: 56,
+                width: 44,
+                height: 44,
                 child: Center(
-                  child: Icon(isPlaying ? Ionicons.pauseOutline : Ionicons.playOutline,
+                  child: Icon(
+                    isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
                     color: Colors.white,
-                    size: 48,
+                    size: 34, // 适度缩小居中图标尺寸，避免遮挡视频画面
                     shadows: const [
                       Shadow(
                         color: Colors.black87,
-                        blurRadius: 12,
+                        blurRadius: 10,
                         offset: Offset(0, 2),
                       ),
                     ],
@@ -1579,10 +1580,11 @@ class AuraPlayerState extends State<AuraPlayer>
   /// 播放 / 暂停按钮 (全屏下图标左边缘与进度条左边缘严格像素级对齐，防跳变播放状态判定)
   Widget _buildPlayPauseButton({bool compact = false}) {
     final isPlaying = _effectiveIsPlaying;
-    // 采用 Lucide 600 加粗圆角变体 (round cap & join)，线条更饱满圆润
-    final icon = Icon(isPlaying ? Ionicons.pauseOutline : Ionicons.playOutline,
+    // 采用现代流媒体标准圆润实心矢量图标，提升复杂画面背景下的辨识度与触觉质感
+    final icon = Icon(
+      isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
       color: Colors.white,
-      size: compact ? 20 : 22,
+      size: compact ? 22 : 24,
     );
 
     // 全屏模式下内容靠左紧贴，消除外围边距错位
@@ -1661,9 +1663,11 @@ class AuraPlayerState extends State<AuraPlayer>
 
   /// 全屏 / 退出全屏按钮 (全屏下图标右边缘与进度条右边缘严格像素级对齐)
   Widget _buildFullscreenButton({bool compact = false}) {
-    final icon = Icon(_isFullScreen ? Ionicons.contractOutline : Ionicons.expandOutline,
+    // 采用现代流媒体标准圆角全屏切换图标，四角圆润规整，视觉平衡感更强
+    final icon = Icon(
+      _isFullScreen ? Icons.fullscreen_exit_rounded : Icons.fullscreen_rounded,
       color: Colors.white,
-      size: compact ? 20 : 22,
+      size: compact ? 22 : 24,
     );
 
     // 全屏模式下内容靠右紧贴，消除外围边距错位

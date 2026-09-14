@@ -365,41 +365,111 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
     }
   }
 
-  /// 依据视口和字号切片计算当前章节分页
-  void _recalculatePages() {
-    final currentContent = _chapters[_currentChapterIndex].content;
-    if (currentContent.isEmpty) {
-      setState(() {
-        _pageSlices = [];
-        _currentPageIndex = 0;
-      });
-      return;
-    }
+  double _lastRenderWidth = 0;
+  double _lastRenderHeight = 0;
 
-    // 根据字号粗略计算每页字符承载量 (约 450 ~ 750 字)
-    final charsPerPage = ((600 * (18.0 / _fontSize))).round().clamp(200, 1500);
+  /// 使用 Flutter 原生 TextPainter 结合二分查找进行亚像素级精准文本分页
+  /// 
+  /// 每一页的高度严格适配可用物理空间，绝不超出屏幕发生垂直溢出，也不会浪费下半屏空间；
+  /// 并在截断点附近智能寻找段落换行符，实现最自然的段落自然断句体验。
+  List<String> _computeTextPages({
+    required String text,
+    required double maxWidth,
+    required double maxHeight,
+    required TextStyle textStyle,
+  }) {
+    if (text.isEmpty) return [''];
+    if (maxWidth <= 0 || maxHeight <= 0) return [text];
 
-    final List<String> slices = [];
+    final List<String> pages = [];
+    final textPainter = TextPainter(
+      textDirection: TextDirection.ltr,
+    );
+
     int start = 0;
-    while (start < currentContent.length) {
-      int end = (start + charsPerPage).clamp(0, currentContent.length);
-      // 避免在段落中断开
-      if (end < currentContent.length) {
-        final newlineIndex = currentContent.indexOf('\n', end - 30);
-        if (newlineIndex != -1 && newlineIndex <= end + 40) {
+    final totalLen = text.length;
+
+    while (start < totalLen) {
+      final remain = totalLen - start;
+      if (remain <= 0) break;
+
+      // 使用二分查找寻找当前物理视口高度下能容纳的最大字符长度
+      int low = 1;
+      int high = remain;
+      int bestLen = 1;
+
+      while (low <= high) {
+        final mid = (low + high) ~/ 2;
+        final candidate = text.substring(start, start + mid);
+        textPainter.text = TextSpan(text: candidate, style: textStyle);
+        textPainter.layout(maxWidth: maxWidth);
+
+        if (textPainter.height <= maxHeight) {
+          bestLen = mid;
+          low = mid + 1; // 尝试容纳更多字符
+        } else {
+          high = mid - 1; // 高度超出当前视口，缩小字符区间
+        }
+      }
+
+      int end = start + bestLen;
+
+      // 智能段落自然吸附：若非全书末尾且在截断点前 35 字符内发现换行符，优先在此换行处自然断页
+      if (end < totalLen) {
+        final newlineIndex = text.lastIndexOf('\n', end);
+        if (newlineIndex != -1 && newlineIndex > start && (end - newlineIndex) <= 35) {
           end = newlineIndex + 1;
         }
       }
-      slices.add(currentContent.substring(start, end));
+
+      final pageText = text.substring(start, end);
+      if (pageText.isNotEmpty) {
+        pages.add(pageText);
+      }
       start = end;
     }
 
-    if (slices.isEmpty) slices.add(currentContent);
+    if (pages.isEmpty) pages.add(text);
+    return pages;
+  }
 
-    setState(() {
-      _pageSlices = slices;
-      _currentPageIndex = _currentPageIndex.clamp(0, _pageSlices.length - 1);
-    });
+  /// 依据真实视口物理宽高与 TextPainter 精确计算当前章节分页
+  void _recalculatePages({double? width, double? height}) {
+    final currentContent = _chapters[_currentChapterIndex].content;
+    if (currentContent.isEmpty) {
+      _pageSlices = [];
+      _currentPageIndex = 0;
+      return;
+    }
+
+    final targetWidth = width ?? _lastRenderWidth;
+    final targetHeight = height ?? _lastRenderHeight;
+
+    // 若尚未测量到真实视口尺寸，进行基础兜底
+    if (targetWidth <= 0 || targetHeight <= 0) {
+      _pageSlices = [currentContent];
+      _currentPageIndex = 0;
+      return;
+    }
+
+    _lastRenderWidth = targetWidth;
+    _lastRenderHeight = targetHeight;
+
+    final textStyle = TextStyle(
+      fontSize: _fontSize,
+      height: _lineHeight,
+      letterSpacing: 0.5,
+    );
+
+    final slices = _computeTextPages(
+      text: currentContent,
+      maxWidth: targetWidth,
+      maxHeight: targetHeight,
+      textStyle: textStyle,
+    );
+
+    _pageSlices = slices;
+    _currentPageIndex = _currentPageIndex.clamp(0, _pageSlices.length - 1);
   }
 
   /// 切换章节
@@ -552,29 +622,46 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
           ),
         ),
 
-        // 翻页主体 (采用 SelectableText，支持长按划词复制，单击穿透触发控制栏)
+        // 翻页主体 (采用 LayoutBuilder 动态感知真实物理视口，驱动 TextPainter 亚像素级精确分页)
         Expanded(
-          child: PageView.builder(
-            controller: _pageController,
-            itemCount: _pageSlices.length,
-            onPageChanged: (idx) {
-              setState(() {
-                _currentPageIndex = idx;
-              });
-            },
-            itemBuilder: (context, index) {
-              return Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-                child: SelectableText(
-                  _pageSlices[index],
-                  style: TextStyle(
-                    fontSize: _fontSize,
-                    height: _lineHeight,
-                    color: _readerTheme.text,
-                    letterSpacing: 0.5,
-                  ),
-                  onTap: _toggleControls,
-                ),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final renderWidth = (constraints.maxWidth - 40).clamp(100.0, 4000.0);
+              final renderHeight = (constraints.maxHeight - 16).clamp(100.0, 4000.0);
+
+              // 当物理视口尺寸发生变化（如初次渲染或横竖屏旋转）或尚未分页时，触发亚像素级精准重算
+              if ((_lastRenderWidth - renderWidth).abs() > 1.0 ||
+                  (_lastRenderHeight - renderHeight).abs() > 1.0 ||
+                  _pageSlices.isEmpty ||
+                  (_pageSlices.length == 1 && _pageSlices.first == chapter.content && chapter.content.length > 300)) {
+                _recalculatePages(width: renderWidth, height: renderHeight);
+              }
+
+              return PageView.builder(
+                controller: _pageController,
+                itemCount: _pageSlices.length,
+                onPageChanged: (idx) {
+                  setState(() {
+                    _currentPageIndex = idx;
+                  });
+                },
+                itemBuilder: (context, index) {
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                    child: SelectableText(
+                      _pageSlices[index],
+                      // 翻页模式下严格禁用垂直方向滚动物理特性，杜绝上下滑动导致翻页手势冲突
+                      scrollPhysics: const NeverScrollableScrollPhysics(),
+                      style: TextStyle(
+                        fontSize: _fontSize,
+                        height: _lineHeight,
+                        color: _readerTheme.text,
+                        letterSpacing: 0.5,
+                      ),
+                      onTap: _toggleControls,
+                    ),
+                  );
+                },
               );
             },
           ),
@@ -1024,7 +1111,6 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
                   ],
                 ),
               ),
-              const Divider(height: 1),
               Expanded(
                 child: ListView.builder(
                   itemCount: _chapters.length,

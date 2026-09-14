@@ -200,9 +200,8 @@ class _NovelDetailViewState extends State<NovelDetailView> {
                       Expanded(
                         child: Text(
                           ch.title,
-                          style: TextStyle(
+                          style: const TextStyle(
                             fontSize: 13,
-                            color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
                           ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,

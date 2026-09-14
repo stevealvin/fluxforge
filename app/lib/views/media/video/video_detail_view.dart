@@ -824,10 +824,6 @@ class _VideoDetailViewState extends State<VideoDetailView> {
                 decoration: BoxDecoration(
                   color: isDark ? AppColors.darkCard : AppColors.lightSurface,
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(
-                    color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
-                    width: 0.8,
-                  ),
                 ),
                 clipBehavior: Clip.antiAlias,
                 child: AspectRatio(

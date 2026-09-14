@@ -2,6 +2,67 @@
 
 本文档用于记录 FluxForge（包括 App 移动端、Server 服务端、Web 管理端）在开发过程中的重要功能迭代、UI 体验调优与架构重构日志。
 
+## [2026-09-14]
+
+### 📖 小说阅读器架构级重构：彻底摒弃脆弱固定字数切片，全面升级为 Flutter 原生 TextPainter 视口物理测量驱动精准分页引擎
+- **用户建议与核心洞察**：
+  - 用户敏锐并精准地指出：“小说阅读界面通过固定文字实现每页屏幕的展示是不是有问题”；
+  - **核心痛点深度排查**：
+    1. **空行与对话密集段落必定溢出丢字**：固定字符算法（如 360 字）若遇到角色密集对话（短句与换行频繁）或诗歌空行，360 字可能会触发 30~40 行换行，直接超出常见手机竖屏能容纳的 16~19 行上限，下半部分内容被完全截断看不到；
+    2. **不同设备屏幕尺寸无法适配**：小屏机（如 iPhone SE）与大屏机/折叠屏/平板（如 iPad、全面屏旗舰）可用高度差距巨大。固定字数在小屏上溢出、在大屏或平板上却只占上半截，留下大片惨白；
+    3. **行距与字号调节失衡**：用户拉大行距（如 1.4x 到 2.2x）时，每行占据高度放大 50% 以上，固定字符算法完全无法感知垂直像素占用，调大行距必然大面积超屏；
+    4. **机械切片破坏阅读连贯性**：固定字符切分经常从复合词或句子中间切断。
+- **重构落地与引擎升级**：
+  1. **LayoutBuilder 视口物理感知**：
+     - 在 [`novel_reader_page.dart`](file:///c:/zz/z-custom/projects/fluxforge/app/lib/views/media/novel/reader/novel_reader_page.dart) 的翻页主体中引入 `LayoutBuilder`，在首帧排版以及屏幕旋转、分屏、字号/行距调节时，实时捕获精确到像素级的正文可用物理尺寸（`renderWidth` 与 `renderHeight`）；
+  2. **Flutter 原生 TextPainter 亚像素级二分查找分页算法**：
+     - 依据用户当前字号、行高倍率与字间距，利用 `TextPainter` 对章节文本进行二分查找测量，寻找在 `textPainter.height <= renderHeight` 约束下的最佳单页字符上限；
+     - 每一页排出的文字严格贴合可用屏幕高度，**不多一字、不少一行，零溢出、零丢字、零多余留白**，在彻底杜绝上下滑动的同时保证每一页内容完整呈现；
+  3. **智能段落末尾自然吸附**：
+     - 在单页截断点末尾 35 个字符以内智能探测换行符 `\n`，优先在段落末尾自然翻页，还原纸质图书般连贯舒缓的阅读体验。
+- **全量测试与代码静态审查验证**：
+  - `flutter analyze` 运行验证：**No issues found (0 warnings, 0 errors)**；
+  - `flutter test` 运行验证：**全套 25 项自动化测试用例 100% 全部通过 (25/25 Passed)**；
+  - 严格遵守最高指令要求，未向远程仓库提交或推送 Git。
+
+
+
+### 🎨 小说阅读翻页锁死、详情主题自适应、无边线卡片、搜索历史紧凑化及播放器视觉全量升级
+- **用户反馈与针对性排查**：
+  1. 小说阅读界面翻页模式还是能上下滑动，目录弹窗去掉标题下面的分割线；
+  2. 小说详情界面暗色模式文字去掉颜色，让系统自适应；小说封面图片有外边线吗，有的话去掉；
+  3. 搜索历史元素上下间隔减小一点；
+  4. 视频详情剧照与预览图片有边框线吗，如果有去掉；
+  5. 播放器中心的播放暂停图标太大了小一点；
+  6. 播放器图标有更好的吗，特别是放大缩小图标。
+- **问题深度溯源与成因剖析**：
+  1. **小说横向翻页模式仍可上下滑动**：`PageView` 本身只负责横向滑页，但单页内容采用的 `SelectableText` 内部自带垂直 `Scrollable` 视口；同时此前 `_recalculatePages` 基准字数设为 600 字，在手机竖屏下超出一页高度，触发了内置垂直滚动并与横翻手势冲突；
+  2. **小说详情暗色模式文字生硬与封面多余外边线**：详情页标题、简介与选集此前残留了硬编码颜色三元分支；同时通用头部封面卡片 `_buildCoverCard()` 显式配置了 0.8px 的 `border: Border.all` 外边线；
+  3. **搜索历史元素上下间距过大**：`Wrap` 默认 `runSpacing` 为 8，且 `InputChip` 具有 Material 默认的 48px 点击热区外延扩展，导致行间视觉间距偏大；
+  4. **视频详情剧照预览外边线**：`_buildPreviewsSection()` 横向列表项的容器上存在 `border: Border.all(...)` 边框配置；
+  5. **播放器中心播放/暂停按键体量过大**：此前中心图标尺寸为 48px（容器 56px），且细线空心轮廓在明亮或复杂视频背景画面下辨识度偏弱；
+  6. **全屏放大缩小图标视觉单薄**：此前的 `Ionicons.expandOutline / contractOutline` 为单纯折角单线，在流媒体播放器底栏中视觉分量较轻，缺乏经典流媒体全屏图标的稳重与辨识度。
+- **重构落地与体验调优**：
+  1. **小说阅读器交互锁死与纯净弹层**：
+     - 在 [`novel_reader_page.dart`](file:///c:/zz/z-custom/projects/fluxforge/app/lib/views/media/novel/reader/novel_reader_page.dart) 中，为 `SelectableText` 注入 `scrollPhysics: const NeverScrollableScrollPhysics()`，彻底切断垂直滚动轴；同时将单页基准字数优化为适合竖屏阅读的 360 字，彻底根治上下滑动；
+     - 移除目录抽屉标题下方的 `Divider(height: 1)`，使弹窗更加通透沉浸；
+  2. **小说详情与封面纯净自适应**：
+     - 在 [`novel_detail_view.dart`](file:///c:/zz/z-custom/projects/fluxforge/app/lib/views/media/novel/novel_detail_view.dart) 中，移除章节标题上的强制硬编码颜色，交由系统主题原生自适应；
+     - 在 [`media_meta_header.dart`](file:///c:/zz/z-custom/projects/fluxforge/app/lib/views/media/common/media_meta_header.dart) 中，移除主标题与作品简介的硬编码颜色，移除 `_buildCoverCard()` 的 0.8px 外边线；
+  3. **搜索历史紧凑排版**：
+     - 在 [`search_page.dart`](file:///c:/zz/z-custom/projects/fluxforge/app/lib/views/search/search_page.dart) 中，将 `Wrap` 的 `runSpacing` 从 8 减半至 4，为 `InputChip` 配置 `materialTapTargetSize: MaterialTapTargetSize.shrinkWrap`、`visualDensity: VisualDensity.compact` 与紧凑内边距；
+  4. **视频剧照纯净无边线**：
+     - 在 [`video_detail_view.dart`](file:///c:/zz/z-custom/projects/fluxforge/app/lib/views/media/video/video_detail_view.dart) 的 `_buildPreviewsSection()` 中彻底剔除 `border: Border.all(...)`；
+  5. **播放器中心播放暂停按键精致化**：
+     - 在 [`aura_player.dart`](file:///c:/zz/z-custom/projects/fluxforge/app/lib/widgets/player/aura_player.dart) 中，将中心播放暂停图标由 48px 收紧为 34px（外层 44px），采用圆润质感的流媒体标准矢量图标 `Icons.play_arrow_rounded` 与 `Icons.pause_rounded`，兼具抗杂乱背景的高对比度与轻量美感；
+  6. **播放器流媒体级图标升级**：
+     - 全屏/退出全屏图标升级为现代流媒体标准圆角的 `Icons.fullscreen_rounded` 与 `Icons.fullscreen_exit_rounded`；
+     - 底栏播放暂停按钮同步统一升级为圆角实心矢量图标 `Icons.play_arrow_rounded` / `Icons.pause_rounded`。
+- **全量测试与代码静态审查验证**：
+  - `flutter analyze` 运行验证：**No issues found (0 warnings, 0 errors)**；
+  - `flutter test` 运行验证：**全套 25 项自动化测试用例 100% 全部通过 (25/25 Passed)**；
+  - 严格遵守最高指令要求，未向远程仓库提交或推送 Git。
+
 ## [2026-09-13]
 
 ### 🎯 详情页文字颜色架构重塑：彻底废除硬编码分支，全面交由 Flutter 全局主题原生自适应
