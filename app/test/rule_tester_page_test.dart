@@ -107,9 +107,9 @@ void main() {
       await tester.tap(find.text('开始测试'));
       await tester.pump();
 
-      // 允许流水线异步执行
+      // 允许流水线异步执行并推进时间帧
       await tester.pump(const Duration(milliseconds: 300));
-      await tester.pumpAndSettle();
+      await tester.pump(const Duration(milliseconds: 500));
 
       // 在无 FFI C Bridge 的测试环境下，沙箱抛出平台级 DLL 加载异常被优雅捕获，UI 绝不崩溃
       expect(find.byType(RuleTesterPage), findsOneWidget);

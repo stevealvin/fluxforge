@@ -1,9 +1,12 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:cookie_jar/cookie_jar.dart';
+import 'package:dio/dio.dart';
+import 'package:dio_cookie_manager/dio_cookie_manager.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:quickjs_engine/quickjs_engine.dart';
-import 'package:dio/dio.dart';
 import '../core/utils/app_logger.dart';
 import '../models/rule.dart';
 import 'app_service.dart';
@@ -29,6 +32,30 @@ class RuleEngine {
       maxRedirects: 5,
     ),
   );
+
+  /// 规则沙箱网络持久化 Cookie 容器 (自动维护 Set-Cookie 与请求头携带)
+  static CookieJar? _cookieJar;
+
+  /// 获取当前 CookieJar 实例 (若未进行磁盘初始化，降级使用内存 CookieJar 保证零异常)
+  static CookieJar get cookieJar {
+    if (_cookieJar == null) {
+      _cookieJar = CookieJar();
+      _attachCookieManager(_cookieJar!);
+    }
+    return _cookieJar!;
+  }
+
+  /// 挂载 CookieManager 拦截器到 _nativeDio (防重复挂载)
+  static void _attachCookieManager(CookieJar jar) {
+    if (!_nativeDio.interceptors.any((i) => i is CookieManager)) {
+      _nativeDio.interceptors.add(CookieManager(jar));
+    }
+  }
+
+  /// 清空规则沙箱及原生网络请求存储的所有 Cookie 缓存
+  static Future<void> clearCookies() async {
+    await _cookieJar?.deleteAll();
+  }
 
   /// 缓存初始化 Future，避免并发调用时重复执行初始化流程
   static Future<void>? _initFuture;
@@ -66,6 +93,24 @@ class RuleEngine {
       final defaultTimeout = defaultTimeoutSeconds;
       final defaultUa = currentUserAgent;
       final encodedUa = jsonEncode(defaultUa);
+
+      // 0. 初始化规则网络持久化 Cookie 存储（按应用文档目录持久化保存，保证应用重启后登录态与会话不丢失）
+      try {
+        final docDir = await getApplicationDocumentsDirectory();
+        final persistJar = PersistCookieJar(
+          storage: FileStorage('${docDir.path}/.cookies'),
+        );
+        _cookieJar = persistJar;
+        // 替换为持久化拦截器
+        _nativeDio.interceptors.removeWhere((i) => i is CookieManager);
+        _nativeDio.interceptors.add(CookieManager(persistJar));
+      } catch (e) {
+        // 单元测试或无原生文件权限环境安全降级为内存 CookieJar
+        if (_cookieJar == null) {
+          _cookieJar = CookieJar();
+          _attachCookieManager(_cookieJar!);
+        }
+      }
 
       // 1. 基础全局环境注入
       _jsRuntime.evaluate('''
@@ -361,6 +406,9 @@ class RuleEngine {
       if (!headers.keys.any((k) => k.toLowerCase() == 'user-agent')) {
         headers['User-Agent'] = currentUserAgent;
       }
+
+      // 确保 Cookie 拦截器就绪
+      _attachCookieManager(cookieJar);
 
       final dynamic reqData = req['data'];
       final int timeoutMs = (req['timeout'] is num)

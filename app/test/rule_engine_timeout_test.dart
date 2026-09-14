@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxforge/core/network/api_client.dart';
 import 'package:fluxforge/services/rule_engine.dart';
@@ -48,4 +49,31 @@ void main() {
       expect(client.dio.options.sendTimeout, equals(const Duration(seconds: 60)));
     });
   });
+
+  group('CookieJar & CookieManager Tests', () {
+    test('RuleEngine provides active CookieJar and handles cookie lifecycle', () async {
+      final jar = RuleEngine.cookieJar;
+      expect(jar, isNotNull);
+
+      final uri = Uri.parse('https://example.com/api/test');
+
+      // 模拟存储 Cookie
+      await jar.saveFromResponse(uri, [
+        Cookie('session_id', 'test_cookie_value_123'),
+        Cookie('auth_token', 'xyz987'),
+      ]);
+
+      // 验证根据目标 URI 加载 Cookie
+      final cookies = await jar.loadForRequest(uri);
+      expect(cookies.length, equals(2));
+      expect(cookies.any((c) => c.name == 'session_id' && c.value == 'test_cookie_value_123'), isTrue);
+      expect(cookies.any((c) => c.name == 'auth_token' && c.value == 'xyz987'), isTrue);
+
+      // 验证一键清空所有 Cookie 缓存
+      await RuleEngine.clearCookies();
+      final clearedCookies = await jar.loadForRequest(uri);
+      expect(clearedCookies.isEmpty, isTrue);
+    });
+  });
 }
+

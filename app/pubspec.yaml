@@ -20,8 +20,10 @@ dependencies:
   go_router: ^18.0.1
   # js引擎 QuickJS-NG (全平台统一引擎，支持现代 ES2020+)
   quickjs_engine: ^0.1.5
-  # 网络
+  # 网络与 Cookie 自动持久化管理
   dio: ^5.11.1
+  dio_cookie_manager: ^3.5.0
+  cookie_jar: ^4.0.9
   # webview
   webview_flutter: ^4.14.1
   webview_flutter_android: ^4.14.1

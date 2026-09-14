@@ -816,33 +816,58 @@ class _SearchPageState extends State<SearchPage> {
           const SizedBox(height: 8),
           Wrap(
             spacing: 8,
-            runSpacing: 4, // 缩小上下行间距，使历史标签排布更加紧凑
+            runSpacing: 8,
             children: _historyList.map((text) {
-              return InputChip(
-                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap, // 紧凑点击热区，避免撑开多余上下空白
-                visualDensity: VisualDensity.compact,
-                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                avatar: const Icon(Ionicons.timeOutline, size: 13, color: AppColors.primary),
-                label: Text(
-                  text,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
+              return Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(14),
+                  onTap: () {
+                    _controller.text = text;
+                    _performSearch(text);
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.fromLTRB(10, 4, 6, 4),
+                    decoration: BoxDecoration(
+                      color: isDark ? AppColors.darkCard : AppColors.lightSurface,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
+                        width: 0.8,
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 160),
+                          child: Text(
+                            text,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: () => _removeHistoryItem(text),
+                          child: Padding(
+                            padding: const EdgeInsets.all(2),
+                            child: Icon(
+                              Icons.close_rounded,
+                              size: 13,
+                              color: isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-                backgroundColor: isDark ? AppColors.darkCard : AppColors.lightSurface,
-                side: BorderSide(
-                  color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
-                  width: 0.8,
-                ),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                deleteIcon: const Icon(Icons.close_rounded, size: 14),
-                deleteIconColor: isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted,
-                onPressed: () {
-                  _controller.text = text;
-                  _performSearch(text);
-                },
-                onDeleted: () => _removeHistoryItem(text),
               );
             }).toList(),
           ),
