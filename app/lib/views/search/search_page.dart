@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:material_ui/material_ui.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:ionicons/ionicons.dart';
 
@@ -854,7 +855,10 @@ class _SearchPageState extends State<SearchPage> {
                         const SizedBox(width: 4),
                         GestureDetector(
                           behavior: HitTestBehavior.opaque,
-                          onTap: () => _removeHistoryItem(text),
+                          onTap: () {
+                            HapticFeedback.selectionClick();
+                            _removeHistoryItem(text);
+                          },
                           child: Padding(
                             padding: const EdgeInsets.all(2),
                             child: Icon(

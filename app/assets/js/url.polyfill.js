@@ -495,6 +495,15 @@
     }
   };
 
+  // 注入 Symbol.toStringTag 与 toJSON 契约，使 Axios 等库能够精准识别 URLSearchParams 并自动完成表单序列化
+  if (typeof Symbol !== 'undefined' && Symbol.toStringTag) {
+    URLPolyfill.prototype[Symbol.toStringTag] = 'URL';
+    URLSearchParamsPolyfill.prototype[Symbol.toStringTag] = 'URLSearchParams';
+  }
+  URLSearchParamsPolyfill.prototype.toJSON = function() {
+    return this.toString();
+  };
+
   if (typeof global.URL === "undefined") global.URL = URLPolyfill;
   global.URLPolyfill = URLPolyfill;
   if (typeof global.URLSearchParams === "undefined") global.URLSearchParams = URLSearchParamsPolyfill;

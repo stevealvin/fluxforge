@@ -52,9 +52,9 @@ class RuleEngine {
     }
   }
 
-  /// 清空规则沙箱及原生网络请求存储的所有 Cookie 缓存
+  /// 清空规则沙箱及原生网络请求存储的所有 Cookie 缓存 (使用 getter 保证未初始化时也能准确定位并清空)
   static Future<void> clearCookies() async {
-    await _cookieJar?.deleteAll();
+    await cookieJar.deleteAll();
   }
 
   /// 缓存初始化 Future，避免并发调用时重复执行初始化流程
@@ -356,6 +356,7 @@ class RuleEngine {
                 headers: config.headers || {},
                 data: config.data,
                 timeout: config.timeout,
+                maxRedirects: config.maxRedirects,
                 responseType: config.responseType || 'json'
               };
 
@@ -415,18 +416,61 @@ class RuleEngine {
           ? (req['timeout'] as num).toInt()
           : (defaultTimeoutSeconds * 1000);
 
-      final response = await _nativeDio.request<String>(
-        urlStr,
-        data: reqData,
-        options: Options(
-          method: method,
-          headers: headers,
-          responseType: ResponseType.plain,
-          validateStatus: (_) => true, // 允许所有状态码通过，交由 Axios 的 validateStatus 裁决
-          sendTimeout: Duration(milliseconds: timeoutMs),
-          receiveTimeout: Duration(milliseconds: timeoutMs),
-        ),
-      );
+      // 读取重定向策略（默认最多跟随 5 次，若显式传 0 则禁用自动重定向，原样返回 3xx 状态码供规则自处理）
+      final maxRedirects = (req['maxRedirects'] is num) ? (req['maxRedirects'] as num).toInt() : 5;
+
+      Response<String> response;
+      String currentUrl = urlStr;
+      String currentMethod = method;
+      dynamic currentData = reqData;
+      int redirectCount = 0;
+
+      while (true) {
+        response = await _nativeDio.request<String>(
+          currentUrl,
+          data: currentData,
+          options: Options(
+            method: currentMethod,
+            headers: headers,
+            responseType: ResponseType.plain,
+            validateStatus: (_) => true, // 允许所有状态码通过，交由 Axios 的 validateStatus 裁决
+            sendTimeout: Duration(milliseconds: timeoutMs),
+            receiveTimeout: Duration(milliseconds: timeoutMs),
+          ),
+        );
+
+        final statusCode = response.statusCode ?? 200;
+        final location = response.headers.value('location');
+
+        // 针对 POST/GET 遇到 301/302/303/307/308 重定向，自动根据 HTTP 标准进行跟随
+        // 彻底解决 Dart HttpClient 对 POST 302 默认不跟随导致的小说/站点搜索抛出 302 异常
+        if (maxRedirects > 0 &&
+            redirectCount < maxRedirects &&
+            location != null &&
+            location.trim().isNotEmpty &&
+            (statusCode == 301 || statusCode == 302 || statusCode == 303 || statusCode == 307 || statusCode == 308)) {
+          redirectCount++;
+          try {
+            currentUrl = Uri.parse(currentUrl).resolve(location.trim()).toString();
+          } catch (_) {
+            currentUrl = location.trim();
+          }
+
+          // RFC 7231 / 浏览器行为：301, 302, 303 遇到 POST 时标准行为转为 GET 并清空请求体
+          if (statusCode == 301 || statusCode == 302 || statusCode == 303) {
+            currentMethod = 'GET';
+            currentData = null;
+            headers.removeWhere((k, _) {
+              final lk = k.toLowerCase();
+              return lk == 'content-type' || lk == 'content-length';
+            });
+          }
+          debugPrint('[RuleEngine/NativeHttp] 重定向 ($statusCode) -> $currentUrl (第 $redirectCount 次)');
+          continue;
+        }
+
+        break;
+      }
 
       final rawData = response.data ?? '';
       dynamic finalData = rawData;
@@ -653,7 +697,30 @@ class RuleEngine {
             data: (result === undefined) ? null : result
           });
         } catch (err) {
-          var errMessage = (err && (err.stack || err.message)) ? String(err.stack || err.message) : String(err);
+          var errMessage = '';
+          if (err) {
+            var msg = err.message || String(err);
+            var details = [];
+            if (err.isAxiosError) {
+              if (err.response) {
+                details.push('HTTP ' + err.response.status + (err.response.statusText ? ' ' + err.response.statusText : ''));
+              }
+              if (err.config && err.config.url) {
+                details.push('URL: ' + err.config.url);
+              }
+            }
+            if (details.length > 0) {
+              msg += ' (' + details.join(', ') + ')';
+            }
+            // QuickJS-NG 的 stack 不包含 message，因此将 message 与 stack 完整拼接，避免被堆栈覆盖
+            // 使用 String.fromCharCode(10) 生成换行，彻底杜绝 Dart 多行字符串将 \n 求值为物理换行导致的 JS SyntaxError
+            if (err.stack) {
+              msg += String.fromCharCode(10) + String(err.stack);
+            }
+            errMessage = msg;
+          } else {
+            errMessage = '未知执行错误';
+          }
           try {
             console.error('[RuleEngine] 动作 [' + '$action' + '] 执行失败: ' + errMessage);
           } catch (_) {}

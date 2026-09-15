@@ -2,6 +2,58 @@
 
 本文档用于记录 FluxForge（包括 App 移动端、Server 服务端、Web 管理端）在开发过程中的重要功能迭代、UI 体验调优与架构重构日志。
 
+## [2026-09-15]
+
+### 🌐 规则沙箱 POST 302 重定向智能跟随、QuickJS 错误堆栈反吞噬与 URLSearchParams 契约补齐
+- **用户问题与异常现象**：
+  - 用户在规则中编写表单 POST 搜索代码：
+    ```javascript
+    const searchUrl = `${baseUrl}/search.html`;
+    const params = new URLSearchParams();
+    params.append('searchtype', 'all');
+    params.append('searchkey', keyword);
+    let headers = { 'Content-Type': 'application/x-www-form-urlencoded', 'Cookie': 'path=/' };
+    let res = await axios.post(searchUrl, params.toString(), { headers });
+    ```
+  - App 端执行搜索动作时抛出异常：`搜索动作执行异常：Exception： at <anonymous> (<eval>:27:70) at <eval> (<eval>:1:11)`，用户询问 Dio 能否正确请求以及具体成因。
+- **底层根因深度剖析**：
+  1. **QuickJS 堆栈吞噬错误信息（报错不可读核心根因）**：
+     - 在沙箱执行生命周期的 catch 块中，此前逻辑为 `var errMessage = (err && (err.stack || err.message)) ? String(err.stack || err.message) : String(err);`；
+     - 在 Node.js/V8 中 `err.stack` 会自动包含 `err.message`，但在 **QuickJS-NG** 引擎中，`err.stack` 仅包含纯调用栈文本（即 `at <anonymous> (<eval>:27:70)...`）；
+     - 由于逻辑优先取了 `err.stack`，导致真实的异常原因（如 Axios 的 HTTP 302/403 状态码或网络错误）被完全丢弃，对外仅能看到两行无意义堆栈；
+  2. **Dart HttpClient 默认拒绝 POST 重定向导致 302 抛错**：
+     - 小说站（如杰奇CMS、帝国CMS）在收到 POST `/search.html` 请求后，标准行为是返回 **HTTP 302 Found** 并通过 `Location` 重定向至搜索结果页；
+     - 浏览器和 Node.js Axios 会自动将 POST 302 转为 GET 请求跳转至结果页；而 Dart `HttpClient`（Dio 底层）默认不对 POST 进行重定向跟随，直接返回 302；
+     - JS 端沙箱适配器默认 `validateStatus` 判定 302 为非 2xx 异常，立即触发 `reject(new Error('Request failed with status code 302'))`，引发搜索异常中断；
+  3. **URLSearchParams 原型 Symbol.toStringTag 缺失**：
+     - 内置 `url.polyfill.js` 未定义 `Symbol.toStringTag = 'URLSearchParams'` 与 `toJSON`，若用户直接写 `axios.post(url, params)`，Axios 会误判其为普通对象并序列化为空 JSON `"{}"`。
+- **架构升级与优化落地**：
+  1. **原生请求层智能跟随 HTTP 重定向（RFC 7231 / 浏览器行为对齐）**：
+     - 在 [`RuleEngine._handleHttpRequest`](file:///c:/zz/z-custom/projects/fluxforge/app/lib/services/rule_engine.dart) 中增加循环重定向处理器，默认最多跟随 5 次（若规则显式配置 `maxRedirects: 0` 则原样透传）；
+     - 当收到 301/302/303 状态码且带 `Location` 头时，自动将请求方法转为 GET、清理多余表单请求头，并使用 `Uri.resolve` 解析相对路径，与浏览器和 Node.js 行为 100% 对齐；
+  2. **沙箱错误捕获与日志诊断增强及 Dart 多行字符串转义缺陷修复**：
+     - 重构 JS 沙箱 catch 块：全面提取 `err.message`、Axios 状态码（`HTTP 302 / 403`）、请求目标 URL，并与 QuickJS `err.stack` 进行清晰拼接；
+     - **排查修复 Dart 编译期换行转义导致 JS SyntaxError 缺陷**：在 Dart 的非 raw 多行字符串中，`'\n'` 会在 Dart 编译期被直接求值为物理换行符 `\x0A`，导致生成的 JS 脚本中单引号字符串未闭合而跨行，引发 `SyntaxError: unexpected end of string at <eval>:155:27`。通过改用 `String.fromCharCode(10)` 生成换行，彻底根除跨平台语言字符串模板的转义陷阱；
+  3. **完善 URLSearchParamsPolyfill 规范**：
+     - 在 [`url.polyfill.js`](file:///c:/zz/z-custom/projects/fluxforge/app/assets/js/url.polyfill.js) 原型上注入 `[Symbol.toStringTag] = 'URLSearchParams'` 和 `toJSON`，使规则中直接传 `params` 即可被 Axios 原生自动转换为 `application/x-www-form-urlencoded`。
+- **测试与代码质量验证**：
+  - `flutter analyze` 运行验证：**No issues found (0 warnings, 0 errors)**；
+  - `flutter test` 运行验证：**全套 26 项自动化测试用例 100% 全部通过 (26/26 Passed)**；
+  - 严格遵守最高指令要求，未向远程仓库提交或推送 Git。
+- **用户更新与技术演进**：
+  1. **网络层深度集成 CookieJar 与 DioCookieManager**：
+     - 在 [`RuleEngine`](file:///c:/zz/z-custom/projects/fluxforge/app/lib/services/rule_engine.dart) 中接入 `cookie_jar: ^4.0.9` 与 `dio_cookie_manager: ^3.5.0`，在 `_initInternal()` 时自动将 Cookie 持久化到 App 文档目录下的 `.cookies`；
+     - 原生沙箱 Dio 请求统一挂载 `CookieManager` 拦截器，解决规则爬虫跨请求会话维持、反爬校验与登录态丢失难题；在非原生环境或无权限环境优雅降级为内存 `CookieJar`；
+     - 导出 `cookieJar` getter 与 `clearCookies()` 静态接口，并在 [`test/rule_engine_timeout_test.dart`](file:///c:/zz/z-custom/projects/fluxforge/app/test/rule_engine_timeout_test.dart) 中完成生命周期与存取清理单测覆盖；
+  2. **搜索历史标签体验重构**：
+     - 在 [`search_page.dart`](file:///c:/zz/z-custom/projects/fluxforge/app/lib/views/search/search_page.dart) 中彻底摒弃原 `InputChip`，改用更轻量灵活的 `Material + InkWell + Container` 自定义圆角胶囊（圆角 14px）；
+     - 引入 `ConstrainedBox(maxWidth: 160)` 与 `TextOverflow.ellipsis`，对超长搜索历史词进行优雅的单行省略截断，杜绝单标签撑满全行破坏网格排版；
+     - 删除小叉采用 `GestureDetector(behavior: HitTestBehavior.opaque)` 严密阻断冒泡，杜绝误触搜索。
+- **全量测试与代码静态审查验证**：
+  - `flutter analyze` 运行验证：**No issues found (0 warnings, 0 errors)**；
+  - `flutter test` 运行验证：**全套 26 项自动化测试用例 100% 全部通过 (26/26 Passed)**；
+  - 严格遵守最高指令要求，未向远程仓库提交或推送 Git。
+
 ## [2026-09-14]
 
 ### 📖 小说阅读器架构级重构：彻底摒弃脆弱固定字数切片，全面升级为 Flutter 原生 TextPainter 视口物理测量驱动精准分页引擎
