@@ -266,6 +266,26 @@ export default defineRule({
     expect(runnableJs.contains("async detail({ url, item })"), isTrue);
   });
 
+  test('RuleEngine handles standalone defineRule with top-level comments and constants cleanly without syntax corruption', () {
+    const rawJs = '''
+// 这是一个包含顶部注释和常量的规则
+const API_BASE = 'https://example.com';
+const TIMEOUT = 5000;
+
+defineRule({
+  async discovery({ page = 1 }) {
+    return { items: [] };
+  }
+});
+''';
+    final runnableJs = RuleEngine.transformToRunnableJs(rawJs);
+    // 验证绝不生成非法的 module.exports = const ... 或 module.exports = // ...
+    expect(runnableJs.contains('module.exports = const'), isFalse);
+    expect(runnableJs.contains('module.exports = //'), isFalse);
+    expect(runnableJs.contains('const API_BASE'), isTrue);
+    expect(runnableJs.contains('defineRule({'), isTrue);
+  });
+
   testWidgets('AuraPlayer widget builds with expected clipBehavior and structure', (WidgetTester tester) async {
     await tester.pumpWidget(
       const MaterialApp(

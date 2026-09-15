@@ -116,8 +116,16 @@ class RuleEngine {
       _jsRuntime.evaluate('''
         var window = global = globalThis;
         var ua = $encodedUa;
-        // 关键沙箱环境支持：注入 defineRule 规则声明包裹器
-        var defineRule = function(r) { return r; };
+        var module = { exports: {} };
+        var exports = module.exports;
+        // 关键沙箱环境支持：注入 defineRule 规则声明包裹器，自动挂载到当前模块导出中
+        var defineRule = function(r) {
+          if (r && typeof r === 'object') {
+            if (globalThis.module) globalThis.module.exports = r;
+            globalThis._fluxLastDefinedRule = r;
+          }
+          return r;
+        };
         var require = function(name) {
           if (name === 'axios') return axios;
           if (name === 'cheerio') return cheerio;
@@ -547,11 +555,16 @@ class RuleEngine {
     );
     clean = clean.replaceAll(importRegex, '').trim();
 
-    // 2. 将 export default 规范化替换为 module.exports
+    // 2. 将 export default 规范化替换为 module.exports =
     if (clean.contains('export default')) {
       clean = clean.replaceAll(RegExp(r'export\s+default\s+'), 'module.exports = ');
     } else if (!clean.contains('module.exports') && !clean.contains('exports.')) {
-      clean = 'module.exports = $clean';
+      // 仅当整段代码是一个纯对象字面量（以 { 开头并以 } 结尾）时才包裹 module.exports = (...)
+      // 严禁将含有 const / let / var / function 或以注释开头的代码前硬拼 module.exports =，避免破坏 JS 语法导致 SyntaxError
+      final trimmed = clean.trim();
+      if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+        clean = 'module.exports = ($clean)';
+      }
     }
 
     return clean;
@@ -598,8 +611,6 @@ class RuleEngine {
     final stopwatch = Stopwatch()..start();
 
     final int timeoutSec = timeoutSeconds ?? defaultTimeoutSeconds;
-    final String currentUa = currentUserAgent;
-    final encodedUa = jsonEncode(currentUa);
 
     final effectiveParams = Map<String, dynamic>.from(params ?? {});
     final currentBaseUrl = baseUrl ?? effectiveParams['baseUrl']?.toString() ?? '';
@@ -617,68 +628,28 @@ class RuleEngine {
     final encodedBaseUrl = jsonEncode(currentBaseUrl);
     final encodedParams = jsonEncode(effectiveParams);
 
-    // 采用标准沙箱闭包容器，内部安全捕获任何异常并毫秒级透传，杜绝 QuickJS 挂起假死
+    // 采用极简沙箱闭包容器（彻底移除重复声明的 50+ 行冗余脚手架代码，实现规则行号贴合）
     final script = '''
       (async () => {
         try {
           var module = { exports: {} };
           var exports = module.exports;
           var baseUrl = $encodedBaseUrl;
-          var ua = $encodedUa;
-          var defineRule = function(r) { return r; };
 
           if (typeof axios !== 'undefined' && axios.defaults) {
-            if (axios.defaults.headers) {
-              axios.defaults.headers.common['User-Agent'] = ua;
-            }
             axios.defaults.timeout = ${timeoutSec * 1000};
           }
 
-          // 关键注入：沙箱闭包作用域优先 console 代理，确保规则内所有 console.log 100% 实时回传 AppLogger
-          function _fluxFormatArg(arg) {
-            if (arg === null) return 'null';
-            if (arg === undefined) return 'undefined';
-            if (typeof arg === 'string') return arg;
-            if (typeof arg === 'number' || typeof arg === 'boolean') return String(arg);
-            if (arg instanceof Error) return (arg.stack || arg.message || String(arg));
-            try {
-              return JSON.stringify(arg);
-            } catch (e) {
-              return String(arg);
-            }
-          }
-
-          function _fluxSendLog(level, args) {
-            try {
-              var parts = [];
-              for (var i = 0; i < args.length; i++) {
-                parts.push(_fluxFormatArg(args[i]));
-              }
-              var text = parts.join(' ');
-              if (typeof sendMessage === 'function') {
-                sendMessage('FluxConsoleLog', JSON.stringify([level, text]));
-              }
-            } catch (e) {}
-          }
-
-          var console = {
-            log: function() { _fluxSendLog('INFO', arguments); },
-            info: function() { _fluxSendLog('INFO', arguments); },
-            warn: function() { _fluxSendLog('WARN', arguments); },
-            error: function() { _fluxSendLog('ERROR', arguments); },
-            debug: function() { _fluxSendLog('DEBUG', arguments); }
-          };
-
-          // 注入转译后的标准规则模块
+          // 注入转译后的规则模块
           $transformedJs;
 
-          var rule = module.exports || exports;
+          var rule = module.exports || exports || globalThis._fluxLastDefinedRule;
           if (rule && rule.default) {
             rule = rule.default;
           }
 
           if (!rule || typeof rule !== 'object') {
-            throw new Error('规则必须导出 defineRule({ ... }) 定义的对象');
+            throw new Error('规则未导出有效对象，请使用 defineRule({ ... }) 或 export default');
           }
 
           var action = '$action';
@@ -737,12 +708,38 @@ class RuleEngine {
 
       if (jsResult.isError) {
         final errText = jsResult.rawResult?.toString() ?? 'JavaScript 语法解析/执行错误';
-        debugPrint('-----------------沙箱语法/运行时错误-----------------');
+        
+        // 智能定位语法错误具体代码行与列号，输出精确代码切片
+        final match = RegExp(r'<eval>:(\d+)(?::(\d+))?').firstMatch(errText);
+        String diagnosticSnippet = '';
+        if (match != null) {
+          final lineNum = int.tryParse(match.group(1) ?? '') ?? 0;
+          final colNum = int.tryParse(match.group(2) ?? '') ?? 0;
+          if (lineNum > 0) {
+            final scriptLines = script.split('\n');
+            final start = (lineNum - 3).clamp(0, scriptLines.length);
+            final end = (lineNum + 2).clamp(0, scriptLines.length);
+            final buffer = StringBuffer('\n-------- 语法错误定位 (第 $lineNum 行第 $colNum 列) --------\n');
+            for (int i = start; i < end; i++) {
+              final isTarget = (i + 1 == lineNum);
+              final prefix = isTarget ? '> ' : '  ';
+              final lineStr = '${i + 1}'.padLeft(4);
+              buffer.writeln('$prefix$lineStr | ${scriptLines[i]}');
+              if (isTarget && colNum > 0) {
+                buffer.writeln('       | ${' ' * (colNum - 1)}^');
+              }
+            }
+            buffer.write('----------------------------------------------------');
+            diagnosticSnippet = buffer.toString();
+          }
+        }
+
+        debugPrint('-----------------沙箱语法/运行时错误-----------------$diagnosticSnippet');
         debugPrint(errText);
         AppLogger.addLog(
           level: 'ERROR',
           tag: 'Rule: $effectiveRuleName',
-          message: '[$action] 语法/运行时错误: $errText',
+          message: '[$action] 语法/运行时错误: $errText$diagnosticSnippet',
         );
         throw Exception(errText);
       }
