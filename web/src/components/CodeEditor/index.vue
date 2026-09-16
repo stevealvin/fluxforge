@@ -218,3 +218,13 @@ defineExpose({
   height: 100%;
 }
 </style>
+
+<style>
+/* 🌟 Monaco Editor 搜索框 (Find Widget) 悬浮提示防闪烁补丁 (Monaco 内置样式 / 已知 Bug #5208)
+ * .workbench-hover-container 为 Monaco 内核 HoverWidget 的内置 DOM 容器类名
+ * 屏蔽该 UI 按钮浮层提示，彻底根除鼠标悬停在搜索框关闭按钮 "x" (Close) 等操作按钮上的死循环闪烁与无法点击问题 */
+.workbench-hover-container,
+.monaco-hover.workbench-hover {
+  display: none !important;
+}
+</style>

@@ -113,9 +113,16 @@ export const addGlobalSandboxTypes = (monaco: typeof import('monaco-editor')) =>
         playUrl?: string;
         /** 小说正文内容 (若为小说源) */
         content?: string;
-        /** 子资源列表 (视频选集、小说章节、图集大图等全类型统一字段) */
+        /**
+         * 子资源列表 (视频选集、小说章节、图集大图等全类型统一字段)
+         * 默认出口：单一选集列表、单一章节目录，以及同一线路下的多清晰度变体 (720p/1080p) 全部平铺在此
+         */
         items?: Array<{ title?: string; url: string } | string>;
-        /** 选集/分集线路列表 */
+        /**
+         * 多线路 / 多卷分组 (可选升级位，分组数必须大于 1)
+         * 仅在存在多套互斥资源列表时使用：线路一/线路二、小说多卷、漫画单行本与番外篇；
+         * 单一列表请直接使用 items，严禁包裹 groups: [{ name: '默认', items: [...] }]
+         */
         groups?: EpisodeGroup[];
         /** 剧照 / 截图 / 插图预览图流 */
         previews?: string[];

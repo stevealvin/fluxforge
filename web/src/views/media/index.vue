@@ -403,7 +403,7 @@ onMounted(() => {
           </div>
         </div>
 
-        <!-- 加载更多按钮 -->
+        <!-- 加载更多按钮与触底指示 -->
         <div v-if="hasMore" class="flex justify-center pt-4">
           <n-button
             secondary
@@ -413,6 +413,9 @@ onMounted(() => {
           >
             <span>{{ executing ? '正在加载下一页...' : '加载更多内容' }}</span>
           </n-button>
+        </div>
+        <div v-else-if="items.length > 0" class="flex justify-center pt-6 pb-2">
+          <span class="text-xs text-stone-400 dark:text-stone-500 tracking-wider">— 已加载全部内容 —</span>
         </div>
       </div>
     </div>

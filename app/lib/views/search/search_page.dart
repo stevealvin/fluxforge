@@ -21,6 +21,8 @@ class _RuleSearchStatus {
   bool hasError = false;
   String? errorMessage;
   int count = 0;
+  /// 标记该规则源是否还有下一页数据，严禁无更多时无休止上滑加载
+  bool hasMore = true;
 
   _RuleSearchStatus({
     required this.rule,
@@ -179,9 +181,20 @@ class _SearchPageState extends State<SearchPage> {
     super.dispose();
   }
 
+  /// 判断当前筛选模式下是否还有更多页数据可供加载 (单源模式看单源，全源模式看是否存在任意有更多的源)
+  bool get _hasMoreCurrent {
+    if (_selectedRuleFilter != null) {
+      final key = _getRuleKey(_selectedRuleFilter);
+      return _ruleStatusMap[key]?.hasMore ?? false;
+    }
+    // 全网并发模式：只要有任意一个规则源仍有更多数据，即允许继续分页
+    return _ruleStatusMap.values.any((s) => s.hasMore);
+  }
+
   void _onScroll() {
     if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 200) {
-      if (!_loading && !_loadingMore && !_showHistory && _allResults.isNotEmpty) {
+      // 核心硬性守卫：当 _hasMoreCurrent 为 false 时，彻底禁止触发上滑加载，防止无限空轮询
+      if (!_loading && !_loadingMore && !_showHistory && _allResults.isNotEmpty && _hasMoreCurrent) {
         _loadMoreResults();
       }
     }
@@ -323,6 +336,11 @@ class _SearchPageState extends State<SearchPage> {
           }
         }
 
+        // 严格遵循规则引擎契约：提取规则返回的 hasMore 状态（若未显式提供，以当前条目非空作为启发式兜底）
+        final bool ruleHasMore = (raw is Map && raw.containsKey('hasMore'))
+            ? (raw['hasMore'] == true)
+            : items.isNotEmpty;
+
         // 单源只要搜到数据，即刻流式更新到界面，用户无需等待全部源跑完即可立刻浏览！
         if (mounted && _searchEpoch == thisEpoch) {
           setState(() {
@@ -331,6 +349,7 @@ class _SearchPageState extends State<SearchPage> {
             if (status != null) {
               status.isSearching = false;
               status.count = parsed.length;
+              status.hasMore = ruleHasMore;
             }
           });
         }
@@ -343,6 +362,8 @@ class _SearchPageState extends State<SearchPage> {
               status.isSearching = false;
               status.hasError = true;
               status.errorMessage = e.toString();
+              // 出错源直接封禁分页加载，避免无限重试报错
+              status.hasMore = false;
             }
           });
         }
@@ -373,12 +394,22 @@ class _SearchPageState extends State<SearchPage> {
 
   /// 加载下一页数据
   Future<void> _loadMoreResults() async {
-    if (_loadingMore || _currentQuery.isEmpty) return;
+    // 若正在加载、关键词为空或当前筛选范围已无更多数据，直接拦截，严禁发起无谓请求
+    if (_loadingMore || _currentQuery.isEmpty || !_hasMoreCurrent) return;
 
     final thisEpoch = _searchEpoch;
     final targetRules = _selectedRuleFilter != null
         ? [_selectedRuleFilter!]
         : _getEligibleRules();
+
+    // 关键过滤：仅对尚未用尽分页数据的规则源发起下一页请求
+    final eligibleRules = targetRules.where((r) {
+      final key = _getRuleKey(r);
+      final status = _ruleStatusMap[key];
+      return status != null && status.hasMore;
+    }).toList();
+
+    if (eligibleRules.isEmpty) return;
 
     setState(() {
       _loadingMore = true;
@@ -388,7 +419,7 @@ class _SearchPageState extends State<SearchPage> {
     await Future<void>.delayed(const Duration(milliseconds: 30));
     if (!mounted) return;
 
-    for (final rule in targetRules) {
+    for (final rule in eligibleRules) {
       if (!mounted || _searchEpoch != thisEpoch) break;
       final key = _getRuleKey(rule);
       final nextPage = (_rulePageMap[key] ?? 1) + 1;
@@ -403,6 +434,11 @@ class _SearchPageState extends State<SearchPage> {
             ? raw
             : (raw is Map && raw['items'] is List ? raw['items'] as List : const []);
 
+        // 提取该规则本页返回的 hasMore 标识（未指定时，以是否返回了条目智能兜底：空列表则判定彻底无更多）
+        final bool ruleHasMore = (raw is Map && raw.containsKey('hasMore'))
+            ? (raw['hasMore'] == true)
+            : items.isNotEmpty;
+
         final List<_NormalizedSearchResult> parsed = [];
         for (final item in items) {
           if (item is Map) {
@@ -410,18 +446,30 @@ class _SearchPageState extends State<SearchPage> {
           }
         }
 
-        if (mounted && _searchEpoch == thisEpoch && parsed.isNotEmpty) {
+        if (mounted && _searchEpoch == thisEpoch) {
           setState(() {
-            _allResults.addAll(parsed);
-            _rulePageMap[key] = nextPage;
+            if (parsed.isNotEmpty) {
+              _allResults.addAll(parsed);
+              _rulePageMap[key] = nextPage;
+            }
             final status = _ruleStatusMap[key];
             if (status != null) {
               status.count += parsed.length;
+              status.hasMore = ruleHasMore;
             }
           });
         }
       } catch (e) {
         debugPrint('【搜索分页】源 [${rule.name}] 第 $nextPage 页加载失败: $e');
+        if (mounted && _searchEpoch == thisEpoch) {
+          setState(() {
+            final status = _ruleStatusMap[key];
+            if (status != null) {
+              // 分页异常时标记此源结束，防止因单源异常死循环触发上滑
+              status.hasMore = false;
+            }
+          });
+        }
       }
     }
 
@@ -1029,33 +1077,18 @@ class _SearchPageState extends State<SearchPage> {
   /// 紧凑卡片式列表视图
   Widget _buildListView(List<_NormalizedSearchResult> results, bool isDark) {
     final showBottomLoader = _loading || _loadingMore;
+    final showNoMore = !showBottomLoader && !_hasMoreCurrent && results.isNotEmpty;
+    final hasFooter = showBottomLoader || showNoMore;
 
     return ListView.separated(
       controller: _scrollController,
+      physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.fromLTRB(12, 10, 12, 24),
-      itemCount: results.length + (showBottomLoader ? 1 : 0),
+      itemCount: results.length + (hasFooter ? 1 : 0),
       separatorBuilder: (_, _) => const SizedBox(height: 10),
       itemBuilder: (context, index) {
         if (index == results.length) {
-          return Padding(
-            padding: const EdgeInsets.symmetric(vertical: 16),
-            child: Center(
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const LoadingIndicator.compact(size: 14, strokeWidth: 1.8),
-                  const SizedBox(width: 8),
-                  Text(
-                    _loading ? '正在流式检索其余规则源...' : '加载更多中...',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          );
+          return _buildSearchFooter(isDark, showBottomLoader);
         }
 
         final item = results[index];
@@ -1069,50 +1102,87 @@ class _SearchPageState extends State<SearchPage> {
     return t == 'video' || t == 'tv' || t == 'movie' || t == 'anime' || t == 'short' || t.isEmpty;
   }
 
-  /// 双列瀑布流海报网格视图
+  /// 双列瀑布流海报网格视图（升级为 CustomScrollView + SliverGrid + 通栏居中 Footer）
   Widget _buildGridView(List<_NormalizedSearchResult> results, bool isDark) {
     final isMostlyVideo = widget.targetRule != null
         ? _isVideoRule(widget.targetRule!)
         : (results.isEmpty || results.where((r) => _isVideoRule(r.rule)).length >= results.length / 2);
     final showBottomLoader = _loading || _loadingMore;
+    final showNoMore = !showBottomLoader && !_hasMoreCurrent && results.isNotEmpty;
+    final hasFooter = showBottomLoader || showNoMore;
 
-    return GridView.builder(
+    return CustomScrollView(
       controller: _scrollController,
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 24),
-      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        childAspectRatio: isMostlyVideo ? 1.12 : 0.65,
-        crossAxisSpacing: 10,
-        mainAxisSpacing: 10,
-      ),
-      itemCount: results.length + (showBottomLoader ? 1 : 0),
-      itemBuilder: (context, index) {
-        if (index == results.length) {
-          return Center(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const LoadingIndicator.compact(size: 14, strokeWidth: 1.8),
-                  const SizedBox(width: 6),
-                  Text(
-                    _loading ? '检索中...' : '加载中...',
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted,
-                    ),
-                  ),
-                ],
-              ),
+      physics: const AlwaysScrollableScrollPhysics(),
+      slivers: [
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+          sliver: SliverGrid(
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2,
+              childAspectRatio: isMostlyVideo ? 1.12 : 0.65,
+              crossAxisSpacing: 10,
+              mainAxisSpacing: 10,
             ),
-          );
-        }
+            delegate: SliverChildBuilderDelegate(
+              (context, index) {
+                final item = results[index];
+                final isVideo = _isVideoRule(item.rule);
+                return isVideo ? _buildVideoGridCard(item, isDark) : _buildGridCard(item, isDark);
+              },
+              childCount: results.length,
+            ),
+          ),
+        ),
+        if (hasFooter)
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.only(bottom: 24),
+              child: _buildSearchFooter(isDark, showBottomLoader),
+            ),
+          ),
+      ],
+    );
+  }
 
-        final item = results[index];
-        final isVideo = _isVideoRule(item.rule);
-        return isVideo ? _buildVideoGridCard(item, isDark) : _buildGridCard(item, isDark);
-      },
+  /// 统一的搜索结果底部状态组件（加载中菊花 / 无更多数据通栏提示）
+  Widget _buildSearchFooter(bool isDark, bool isLoading) {
+    if (isLoading) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        child: Center(
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const LoadingIndicator.compact(size: 14, strokeWidth: 1.8),
+              const SizedBox(width: 8),
+              Text(
+                _loading ? '正在流式检索其余规则源...' : '加载更多中...',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 18),
+      child: Center(
+        child: Text(
+          '— 已加载全部搜索结果 —',
+          style: TextStyle(
+            fontSize: 12,
+            color: isDark
+                ? AppColors.darkTextMuted.withValues(alpha: 0.7)
+                : AppColors.lightTextMuted.withValues(alpha: 0.7),
+            letterSpacing: 0.5,
+          ),
+        ),
+      ),
     );
   }
 

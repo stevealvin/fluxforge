@@ -162,8 +162,12 @@ class _RuleCatalogPageState extends State<RuleCatalogPage> {
           }
         }
 
-        // 3. 读取 hasMore
-        fetchedHasMore = result['hasMore'] == true;
+        // 3. 读取 hasMore（显式指定优先；未指定时若返回空数据则直接判无更多）
+        if (result.containsKey('hasMore')) {
+          fetchedHasMore = result['hasMore'] == true;
+        } else {
+          fetchedHasMore = fetchedItems.isNotEmpty;
+        }
       } else if (result is List) {
         // 纯数组直接作为 items 处理
         for (final e in result) {
@@ -171,6 +175,7 @@ class _RuleCatalogPageState extends State<RuleCatalogPage> {
             fetchedItems.add(_MediaItem.fromMap(e));
           }
         }
+        fetchedHasMore = fetchedItems.isNotEmpty;
       }
 
       if (mounted) {
@@ -197,6 +202,8 @@ class _RuleCatalogPageState extends State<RuleCatalogPage> {
       if (mounted) {
         setState(() {
           _error = '发现内容加载失败: $e';
+          // 发生错误时停止后续上拉，避免死循环触发重试
+          _hasMore = false;
         });
       }
     } finally {
@@ -209,8 +216,9 @@ class _RuleCatalogPageState extends State<RuleCatalogPage> {
     }
   }
 
-  /// 触底加载更多
+  /// 触底加载更多（严格双重守卫：若 _hasMore 为 false 则立即拦截）
   Future<void> _loadMore() async {
+    if (!_hasMore || _loadingMore || _loading) return;
     await _loadDiscovery(page: _currentPage + 1, isLoadMore: true);
   }
 
@@ -599,38 +607,54 @@ class _RuleCatalogPageState extends State<RuleCatalogPage> {
     return t == 'video' || t == 'tv' || t == 'movie' || t == 'anime' || t == 'short' || t.isEmpty;
   }
 
-  /// 网格海报视图
+  /// 网格海报视图（采用 CustomScrollView + SliverGrid + SliverToBoxAdapter 通栏 Footer）
   Widget _buildGridView(bool isDark) {
     final isVideo = _isVideoRule;
-    return GridView.builder(
+    final showFooter = _loadingMore || (!_hasMore && _items.isNotEmpty);
+
+    return CustomScrollView(
       controller: _scrollController,
       physics: const AlwaysScrollableScrollPhysics(),
-      padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
-      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        childAspectRatio: isVideo ? 1.12 : 0.72,
-        crossAxisSpacing: 10,
-        mainAxisSpacing: 10,
-      ),
-      itemCount: _items.length + (_loadingMore || _hasMore ? 1 : 0),
-      itemBuilder: (context, index) {
-        if (index == _items.length) {
-          return _buildLoadingMoreFooter();
-        }
-        final item = _items[index];
-        return isVideo ? _buildVideoGridCard(item, isDark) : _buildPortraitGridCard(item);
-      },
+      slivers: [
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+          sliver: SliverGrid(
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2,
+              childAspectRatio: isVideo ? 1.12 : 0.72,
+              crossAxisSpacing: 10,
+              mainAxisSpacing: 10,
+            ),
+            delegate: SliverChildBuilderDelegate(
+              (context, index) {
+                final item = _items[index];
+                return isVideo ? _buildVideoGridCard(item, isDark) : _buildPortraitGridCard(item);
+              },
+              childCount: _items.length,
+            ),
+          ),
+        ),
+        if (showFooter)
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.only(bottom: 24),
+              child: _buildLoadingMoreFooter(),
+            ),
+          ),
+      ],
     );
   }
 
   /// 列表紧凑视图
   Widget _buildListView(bool isDark) {
     final isVideo = _isVideoRule;
+    final showFooter = _loadingMore || (!_hasMore && _items.isNotEmpty);
+
     return ListView.separated(
       controller: _scrollController,
       physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
-      itemCount: _items.length + (_loadingMore || _hasMore ? 1 : 0),
+      itemCount: _items.length + (showFooter ? 1 : 0),
       separatorBuilder: (_, _) => const SizedBox(height: 10),
       itemBuilder: (context, index) {
         if (index == _items.length) {
@@ -1033,17 +1057,35 @@ class _RuleCatalogPageState extends State<RuleCatalogPage> {
 
   /// 底部加载状态指示
   Widget _buildLoadingMoreFooter() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 16),
-      child: Center(
-        child: _loadingMore
-            ? const LoadingIndicator.compact(size: 20)
-            : const Text(
-                '没有更多内容了',
-                style: TextStyle(fontSize: 12, color: Colors.grey),
-              ),
-      ),
-    );
+    if (_loadingMore) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 16),
+        child: Center(
+          child: LoadingIndicator.compact(size: 20),
+        ),
+      );
+    }
+
+    if (!_hasMore && _items.isNotEmpty) {
+      final isDark = Theme.of(context).brightness == Brightness.dark;
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        child: Center(
+          child: Text(
+            '— 没有更多内容了 —',
+            style: TextStyle(
+              fontSize: 12,
+              color: isDark
+                  ? AppColors.darkTextMuted.withValues(alpha: 0.7)
+                  : AppColors.lightTextMuted.withValues(alpha: 0.7),
+              letterSpacing: 0.5,
+            ),
+          ),
+        ),
+      );
+    }
+
+    return const SizedBox.shrink();
   }
 }
 

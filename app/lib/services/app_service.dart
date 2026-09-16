@@ -230,7 +230,10 @@ class AppService {
   }
 
   /// 计算临时缓存占用大小 (MB)
-  Future<double> getCacheSizeInMB() async {
+  ///
+  /// 返回 `null` 表示当前无法统计（例如平台临时目录不可访问），
+  /// 调用方应展示「--」而非伪造一个虚假容量值误导用户。
+  Future<double?> getCacheSizeInMB() async {
     try {
       final tempDir = await getTemporaryDirectory();
       int totalBytes = 0;
@@ -242,8 +245,9 @@ class AppService {
         }
       }
       return totalBytes / (1024 * 1024);
-    } catch (_) {
-      return 12.8; // 默认基础安全显示值
+    } catch (e) {
+      debugPrint('[AppService] 统计缓存占用失败: $e');
+      return null;
     }
   }
 

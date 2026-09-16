@@ -96,7 +96,7 @@ class RuleEngine {
 
       // 0. 初始化规则网络持久化 Cookie 存储（按应用文档目录持久化保存，保证应用重启后登录态与会话不丢失）
       try {
-        final docDir = await getApplicationDocumentsDirectory();
+        final docDir = await getApplicationDocumentsDirectory().timeout(const Duration(milliseconds: 500));
         final persistJar = PersistCookieJar(
           storage: FileStorage('${docDir.path}/.cookies'),
         );
@@ -141,9 +141,103 @@ class RuleEngine {
       // 连续加载会长时间占用主线程导致 UI 掉帧，因此每个库之间主动让出一次事件循环。
       await _loadJSFile('assets/js/url.polyfill.js');
       await Future<void>.delayed(Duration.zero);
+      
+      // 加载并确保 axios 提升至全局单例 (防止 UMD 判定 CommonJS 环境仅赋值 module.exports 导致全局找不到 axios)
       await _loadJSFile('assets/js/axios.min.js');
+      _jsRuntime.evaluate('''
+        if (typeof axios === 'undefined' && typeof module !== 'undefined' && module.exports) {
+          globalThis.axios = axios = module.exports.default || module.exports;
+        }
+        // 重置 module 供后续模块或规则安全使用
+        globalThis.module = { exports: {} };
+        globalThis.exports = globalThis.module.exports;
+      ''');
       await Future<void>.delayed(Duration.zero);
+
+      // 加载并确保 cheerio 提升至全局单例
       await _loadJSFile('assets/js/cheerio.js');
+      _jsRuntime.evaluate('''
+        if (typeof cheerio === 'undefined' && typeof module !== 'undefined' && module.exports) {
+          globalThis.cheerio = cheerio = module.exports.default || module.exports || globalThis.cheerio;
+        }
+        globalThis.module = { exports: {} };
+        globalThis.exports = globalThis.module.exports;
+      ''');
+      await Future<void>.delayed(Duration.zero);
+
+      // 加载并确保 CryptoJS 提升至全局单例，并注册 Node.js 原生 crypto 模块桥接垫片
+      await _loadJSFile('assets/js/crypto-js.min.js');
+      _jsRuntime.evaluate('''
+        if (typeof CryptoJS === 'undefined' && typeof module !== 'undefined' && module.exports) {
+          globalThis.CryptoJS = CryptoJS = module.exports.default || module.exports;
+        }
+        globalThis.module = { exports: {} };
+        globalThis.exports = globalThis.module.exports;
+
+        // 注册 Node.js 原生 crypto 模块轻量桥接垫片，提供 createHash / createHmac / randomBytes
+        if (typeof globalThis.crypto === 'undefined' || !globalThis.crypto.createHash) {
+          var _C = globalThis.CryptoJS;
+          globalThis.crypto = {
+            createHash: function(algo) {
+              var name = String(algo || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+              var buffer = '';
+              return {
+                update: function(data) {
+                  buffer += (data === undefined || data === null) ? '' : String(data);
+                  return this;
+                },
+                digest: function(enc) {
+                  var res;
+                  if (name === 'md5') res = _C.MD5(buffer);
+                  else if (name === 'sha1') res = _C.SHA1(buffer);
+                  else if (name === 'sha256') res = _C.SHA256(buffer);
+                  else if (name === 'sha512') res = _C.SHA512(buffer);
+                  else if (name === 'sha224') res = _C.SHA224(buffer);
+                  else if (name === 'sha384') res = _C.SHA384(buffer);
+                  else if (name === 'sha3') res = _C.SHA3(buffer);
+                  else if (name === 'ripemd160') res = _C.RIPEMD160(buffer);
+                  else res = _C.MD5(buffer);
+
+                  if (enc === 'base64') return res.toString(_C.enc.Base64);
+                  if (enc === 'latin1' || enc === 'binary') return res.toString(_C.enc.Latin1);
+                  return res.toString(_C.enc.Hex);
+                }
+              };
+            },
+            createHmac: function(algo, key) {
+              var name = String(algo || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+              var k = (key === undefined || key === null) ? '' : String(key);
+              var buffer = '';
+              return {
+                update: function(data) {
+                  buffer += (data === undefined || data === null) ? '' : String(data);
+                  return this;
+                },
+                digest: function(enc) {
+                  var res;
+                  if (name === 'sha256') res = _C.HmacSHA256(buffer, k);
+                  else if (name === 'md5') res = _C.HmacMD5(buffer, k);
+                  else if (name === 'sha1') res = _C.HmacSHA1(buffer, k);
+                  else if (name === 'sha512') res = _C.HmacSHA512(buffer, k);
+                  else res = _C.HmacSHA256(buffer, k);
+
+                  if (enc === 'base64') return res.toString(_C.enc.Base64);
+                  return res.toString(_C.enc.Hex);
+                }
+              };
+            },
+            randomBytes: function(size) {
+              var words = _C.lib.WordArray.random(size || 16);
+              return {
+                toString: function(enc) {
+                  if (enc === 'base64') return words.toString(_C.enc.Base64);
+                  return words.toString(_C.enc.Hex);
+                }
+              };
+            }
+          };
+        }
+      ''');
       await Future<void>.delayed(Duration.zero);
 
       _jsRuntime.evaluate('''
@@ -162,7 +256,7 @@ class RuleEngine {
       AppLogger.addLog(
         level: 'INFO',
         tag: 'Rule Sandbox',
-        message: 'QuickJS-NG 沙箱内核初始化就绪 (Node.js 兼容层/Axios/Cheerio/Dio原生通道已加载)',
+        message: 'QuickJS-NG 沙箱内核初始化就绪 (Node.js 兼容层/Crypto/Axios/Cheerio/Dio原生通道已加载)',
       );
     } catch (e, stack) {
       debugPrint('RuleEngine init error: $e');
@@ -567,6 +661,11 @@ class RuleEngine {
       }
     }
 
+    // 3. 确保末尾有分号，避免代码结尾与后续闭包语句粘连引发 SyntaxError: expecting ';'
+    if (!clean.endsWith(';') && !clean.endsWith('}')) {
+      clean = '$clean;';
+    }
+
     return clean;
   }
 
@@ -628,22 +727,33 @@ class RuleEngine {
     final encodedBaseUrl = jsonEncode(currentBaseUrl);
     final encodedParams = jsonEncode(effectiveParams);
 
-    // 采用极简沙箱闭包容器（彻底移除重复声明的 50+ 行冗余脚手架代码，实现规则行号贴合）
+    // 全局上下文设置（挂载至 globalThis，允许规则内部自由访问 baseUrl，同时规避与规则内顶部 const/let baseUrl 发生作用域声明冲突）
+    _jsRuntime.evaluate('globalThis.baseUrl = $encodedBaseUrl;');
+
+    // 采用极致精简沙箱闭包容器（去除所有非必要内联代码，头部仅 8 行，彻底消灭转义陷阱与 expecting ; 错误）
     final script = '''
       (async () => {
         try {
           var module = { exports: {} };
           var exports = module.exports;
-          var baseUrl = $encodedBaseUrl;
-
-          if (typeof axios !== 'undefined' && axios.defaults) {
-            axios.defaults.timeout = ${timeoutSec * 1000};
-          }
+          var defineRule = function(r) {
+            if (r && typeof r === 'object') module.exports = r;
+            return r;
+          };
+          var axios = globalThis.axios;
+          var cheerio = globalThis.cheerio;
+          var crypto = globalThis.crypto;
+          var CryptoJS = globalThis.CryptoJS;
+          var require = function(n) { return (n === 'crypto' ? globalThis.crypto : (n === 'crypto-js' ? globalThis.CryptoJS : (n === 'axios' ? globalThis.axios : (n === 'cheerio' ? globalThis.cheerio : {})))); };
 
           // 注入转译后的规则模块
-          $transformedJs;
+          $transformedJs
 
-          var rule = module.exports || exports || globalThis._fluxLastDefinedRule;
+          // 严格检查 module.exports 与 exports 是否存在非空属性，规避 JS 中空对象 {} 为 truthy 导致的短路误判
+          var rule = (module.exports && Object.keys(module.exports).length > 0)
+            ? module.exports
+            : ((exports && Object.keys(exports).length > 0) ? exports : null);
+
           if (rule && rule.default) {
             rule = rule.default;
           }
@@ -652,52 +762,21 @@ class RuleEngine {
             throw new Error('规则未导出有效对象，请使用 defineRule({ ... }) 或 export default');
           }
 
-          var action = '$action';
-          var fn = rule[action];
-
+          var fn = rule['$action'];
           if (typeof fn !== 'function') {
-            throw new Error('规则对象中未定义生命周期方法 [' + action + ']');
+            throw new Error('规则对象中未定义生命周期方法 [$action]');
           }
 
-          var params = $encodedParams;
-          // 严格按照标准模板契约执行生命周期方法：fn({ ...params })
-          var result = await fn.call(rule, params);
+          var result = await fn.call(rule, $encodedParams);
 
           return JSON.stringify({
             success: true,
             data: (result === undefined) ? null : result
           });
         } catch (err) {
-          var errMessage = '';
-          if (err) {
-            var msg = err.message || String(err);
-            var details = [];
-            if (err.isAxiosError) {
-              if (err.response) {
-                details.push('HTTP ' + err.response.status + (err.response.statusText ? ' ' + err.response.statusText : ''));
-              }
-              if (err.config && err.config.url) {
-                details.push('URL: ' + err.config.url);
-              }
-            }
-            if (details.length > 0) {
-              msg += ' (' + details.join(', ') + ')';
-            }
-            // QuickJS-NG 的 stack 不包含 message，因此将 message 与 stack 完整拼接，避免被堆栈覆盖
-            // 使用 String.fromCharCode(10) 生成换行，彻底杜绝 Dart 多行字符串将 \n 求值为物理换行导致的 JS SyntaxError
-            if (err.stack) {
-              msg += String.fromCharCode(10) + String(err.stack);
-            }
-            errMessage = msg;
-          } else {
-            errMessage = '未知执行错误';
-          }
-          try {
-            console.error('[RuleEngine] 动作 [' + '$action' + '] 执行失败: ' + errMessage);
-          } catch (_) {}
           return JSON.stringify({
             success: false,
-            error: errMessage
+            error: String(err && (err.message || err))
           });
         }
       })()
@@ -719,7 +798,16 @@ class RuleEngine {
             final scriptLines = script.split('\n');
             final start = (lineNum - 3).clamp(0, scriptLines.length);
             final end = (lineNum + 2).clamp(0, scriptLines.length);
-            final buffer = StringBuffer('\n-------- 语法错误定位 (第 $lineNum 行第 $colNum 列) --------\n');
+
+            // 计算规则代码在闭包内的起始行偏移，换算真实源码行号
+            final headerLineCount = 11; // 极简闭包顶部仅 11 行
+            String sourceLineHint = '';
+            if (lineNum > headerLineCount) {
+              final relativeLine = lineNum - headerLineCount;
+              sourceLineHint = ' -> 约规则源码第 $relativeLine 行';
+            }
+
+            final buffer = StringBuffer('\n-------- 语法错误定位 (沙箱第 $lineNum 行第 $colNum 列$sourceLineHint) --------\n');
             for (int i = start; i < end; i++) {
               final isTarget = (i + 1 == lineNum);
               final prefix = isTarget ? '> ' : '  ';

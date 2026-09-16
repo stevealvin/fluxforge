@@ -5,6 +5,8 @@ import 'package:extended_image/extended_image.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../models/rule.dart';
+import '../../../services/di.dart';
+import '../../../services/play_history_service.dart';
 import '../../../widgets/app_card.dart';
 import '../common/media_meta_header.dart';
 import '../common/media_related_grid.dart';
@@ -38,6 +40,42 @@ class _ComicDetailViewState extends State<ComicDetailView> {
   int _selectedGroupIndex = 0;
   bool _isReversed = false;
 
+  /// 当前图集/漫画的唯一消费标识 (优先详情页 URL，兜底标题)
+  String get _mediaId {
+    if (widget.data.url.isNotEmpty) return widget.data.url;
+    if (widget.fallbackTitle.isNotEmpty) return widget.fallbackTitle;
+    return widget.data.title;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _registerPlayRecord();
+  }
+
+  /// 登记 / 更新当前漫画的消费记录 (保留既有阅读进度)
+  void _registerPlayRecord() {
+    if (_mediaId.isEmpty) return;
+    final existing = playHistoryService.getById(_mediaId);
+    final groups = widget.data.comicGroups;
+    final total = groups.isNotEmpty
+        ? groups.first.items.length
+        : widget.data.imageList.length;
+    playHistoryService.upsert(
+      PlayRecord(
+        id: _mediaId,
+        title: widget.data.title.isNotEmpty ? widget.data.title : widget.fallbackTitle,
+        cover: widget.data.cover.isNotEmpty ? widget.data.cover : widget.fallbackCover,
+        mediaType: 'comic',
+        ruleId: widget.rule?.id?.toString() ?? '',
+        episodeName: existing?.episodeName ?? '',
+        episodeIndex: existing?.episodeIndex ?? 0,
+        totalEpisodes: total,
+        updatedAt: DateTime.now(),
+      ),
+    );
+  }
+
   void _openReader({int initialIndex = 0}) {
     HapticFeedback.lightImpact();
 
@@ -59,6 +97,21 @@ class _ComicDetailViewState extends State<ComicDetailView> {
     }
 
     final readerTitle = widget.data.title.isNotEmpty ? widget.data.title : widget.fallbackTitle;
+
+    // 记录本次阅读的章节位置（供「我的」页继续观看/阅读展示进度）
+    final activeItems = (groups.isNotEmpty && _selectedGroupIndex < groups.length)
+        ? groups[_selectedGroupIndex].items
+        : const <MediaEpisode>[];
+    final chapterTitle = (activeItems.isNotEmpty && initialIndex < activeItems.length)
+        ? activeItems[initialIndex].title
+        : readerTitle;
+    playHistoryService.updateProgress(
+      id: _mediaId,
+      episodeName: chapterTitle,
+      episodeIndex: initialIndex,
+      totalEpisodes: activeItems.isNotEmpty ? activeItems.length : widget.data.imageList.length,
+      forceNotify: true,
+    );
 
     Navigator.of(context).push(
       MaterialPageRoute(

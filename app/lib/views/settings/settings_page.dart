@@ -1,5 +1,4 @@
 import 'package:material_ui/material_ui.dart';
-import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:ionicons/ionicons.dart';
 
@@ -12,8 +11,9 @@ import '../../engines/adblock_engine.dart';
 
 /// 全局偏好与系统设置中心 (SettingsPage)
 /// 
-/// 涵盖播放视听偏好、阅读与图集偏好、规则沙箱网络、数据备份与深度维护、
-/// 主题系统及关于诊断共六大现代圆角卡片
+/// 定位为「纯参数配置中心」，涵盖播放视听偏好、阅读与图集偏好、
+/// 规则沙箱网络、外观主题及关于诊断共五大现代圆角卡片；
+/// 数据资产（备份还原 / 缓存治理 / 历史管理）统一收敛至「我的」页，避免职责重叠。
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
 
@@ -22,21 +22,10 @@ class SettingsPage extends StatefulWidget {
 }
 
 class _SettingsPageState extends State<SettingsPage> {
-  double _cacheSizeMB = 0.0;
-  bool _isCleaning = false;
-
   @override
   void initState() {
     super.initState();
-    _fetchCacheSize();
     AdBlockEngine.instance.initialize();
-  }
-
-  Future<void> _fetchCacheSize() async {
-    final size = await appService.getCacheSizeInMB();
-    if (mounted) {
-      setState(() => _cacheSizeMB = size);
-    }
   }
 
   String _getThemeModeLabel(ThemeMode mode, bool isDark) {
@@ -257,165 +246,6 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
 
-  /// 弹出数据备份导出与导入操作面板
-  void _showBackupSheet(BuildContext context, bool isDark) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: isDark ? AppColors.darkSurface : AppColors.lightSurface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (ctx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Padding(
-                padding: EdgeInsets.only(left: 8, bottom: 12),
-                child: Text(
-                  '数据全量备份与还原',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                ),
-              ),
-              ListTile(
-                leading: const Icon(Ionicons.cloudUploadOutline, color: AppColors.primary),
-                title: const Text('一键导出备份数据包'),
-                subtitle: const Text('将规则库、收藏与搜索历史打包为 JSON 并分享/保存至本地', style: TextStyle(fontSize: 11)),
-                onTap: () async {
-                  Navigator.pop(ctx);
-                  try {
-                    await backupService.exportBackup();
-                  } catch (e) {
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('导出备份失败: $e')),
-                      );
-                    }
-                  }
-                },
-              ),
-              ListTile(
-                leading: const Icon(Ionicons.cloudDownloadOutline, color: Colors.amber),
-                title: const Text('从 JSON 文本/剪贴板恢复'),
-                subtitle: const Text('解析备份 JSON，支持「合并追加」或「全量覆盖」', style: TextStyle(fontSize: 11)),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _showImportRestoreDialog(context, isDark);
-                },
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  /// 弹出输入/粘贴 JSON 恢复弹窗
-  void _showImportRestoreDialog(BuildContext context, bool isDark) {
-    final controller = TextEditingController();
-    bool mergeMode = true;
-
-    showDialog(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: const Text('恢复备份数据'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                '请粘贴导出的 FluxForge 备份 JSON 文本内容：',
-                style: TextStyle(fontSize: 12, color: Colors.grey),
-              ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: controller,
-                maxLines: 4,
-                style: const TextStyle(fontSize: 11, fontFamily: 'monospace'),
-                decoration: InputDecoration(
-                  hintText: '{\n  "app": "FluxForge",\n  "data": { ... }\n}',
-                  border: const OutlineInputBorder(),
-                  suffixIcon: IconButton(
-                    icon: const Icon(Ionicons.clipboardOutline, size: 16),
-                    tooltip: '粘贴剪贴板',
-                    onPressed: () async {
-                      final data = await Clipboard.getData('text/plain');
-                      if (data?.text != null) {
-                        setDialogState(() {
-                          controller.text = data!.text!;
-                        });
-                      }
-                    },
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Checkbox(
-                    value: mergeMode,
-                    activeColor: AppColors.primary,
-                    onChanged: (val) {
-                      setDialogState(() {
-                        mergeMode = val ?? true;
-                      });
-                    },
-                  ),
-                  GestureDetector(
-                    onTap: () => setDialogState(() => mergeMode = !mergeMode),
-                    child: Text(
-                      mergeMode ? '合并导入 (保留现有，追加新增)' : '完全覆盖 (清空现有，以备份为准)',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: mergeMode ? AppColors.primary : Colors.redAccent,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('取消'),
-            ),
-            FilledButton(
-              style: FilledButton.styleFrom(backgroundColor: AppColors.primary),
-              onPressed: () async {
-                final jsonStr = controller.text.trim();
-                if (jsonStr.isEmpty) return;
-
-                final result = await backupService.restoreBackup(
-                  jsonStr: jsonStr,
-                  merge: mergeMode,
-                );
-
-                if (context.mounted) {
-                  Navigator.pop(ctx);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(
-                        result.success
-                            ? '${result.message}：规则+${result.rulesImported}，收藏+${result.favoritesImported}'
-                            : result.message,
-                      ),
-                    ),
-                  );
-                }
-              },
-              child: const Text('执行恢复'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -449,15 +279,11 @@ class _SettingsPageState extends State<SettingsPage> {
               _buildSandboxNetworkCard(isDark, settings),
               const SizedBox(height: 16),
 
-              // 4. 数据存储与备份还原卡片 (联动 BackupService)
-              _buildStorageMaintenanceCard(isDark),
-              const SizedBox(height: 16),
-
-              // 5. 外观与主题系统卡片
+              // 4. 外观与主题系统卡片
               _buildThemeCard(isDark, settings),
               const SizedBox(height: 16),
 
-              // 6. 关于与系统诊断卡片
+              // 5. 关于与系统诊断卡片
               _buildAboutDiagnosisCard(isDark),
               const SizedBox(height: 24),
 
@@ -794,81 +620,7 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 
-  /// 4. 数据存储与精准深度清理卡片
-  Widget _buildStorageMaintenanceCard(bool isDark) {
-    return AppCard(
-      padding: EdgeInsets.zero,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-            child: Text(
-              '数据存储与深度维护',
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.bold,
-                color: isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted,
-              ),
-            ),
-          ),
-          ListTile(
-            leading: const Icon(Ionicons.hardwareChipOutline, color: Colors.purpleAccent, size: 20),
-            title: const Text('数据全量备份与还原', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-            subtitle: Text(
-              '规则库 (${ruleService.rules.length}条) · 收藏 (${favoriteService.favorites.length}项)',
-              style: const TextStyle(fontSize: 11),
-            ),
-            trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 14),
-            onTap: () => _showBackupSheet(context, isDark),
-          ),
-          Divider(height: 1, indent: 56, color: isDark ? AppColors.darkBorder : AppColors.lightBorder),
-          ListTile(
-            leading: const Icon(Ionicons.trashOutline, color: Colors.amber, size: 20),
-            title: const Text('清理临时与网络图片缓存', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-            subtitle: Text(
-              '占用空间：${_cacheSizeMB.toStringAsFixed(1)} MB',
-              style: const TextStyle(fontSize: 11),
-            ),
-            trailing: _isCleaning
-                ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                : TextButton(
-                    onPressed: () async {
-                      setState(() => _isCleaning = true);
-                      await appService.clearCache();
-                      await _fetchCacheSize();
-                      if (!mounted) return;
-                      setState(() => _isCleaning = false);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('已清理临时文件缓存')),
-                      );
-                    },
-                    child: const Text('清理', style: TextStyle(fontSize: 12, color: AppColors.primary)),
-                  ),
-          ),
-          Divider(height: 1, indent: 56, color: isDark ? AppColors.darkBorder : AppColors.lightBorder),
-          ListTile(
-            leading: const Icon(Ionicons.refreshOutline, color: Colors.grey, size: 20),
-            title: const Text('清空搜索历史记录', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-            subtitle: Text('共 ${historyService.searchHistory.length} 条记录', style: const TextStyle(fontSize: 11)),
-            trailing: TextButton(
-              onPressed: () async {
-                await historyService.clearHistory();
-                if (!mounted) return;
-                setState(() {});
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('已清空搜索历史')),
-                );
-              },
-              child: const Text('清空', style: TextStyle(fontSize: 12, color: Colors.redAccent)),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// 5. 主题与外观风格卡片
+  /// 4. 外观与主题系统卡片
   Widget _buildThemeCard(bool isDark, AppSettings settings) {
     return AppCard(
       padding: EdgeInsets.zero,
@@ -898,7 +650,7 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 
-  /// 6. 关于与系统诊断卡片
+  /// 5. 关于与系统诊断卡片
   Widget _buildAboutDiagnosisCard(bool isDark) {
     return AppCard(
       padding: EdgeInsets.zero,

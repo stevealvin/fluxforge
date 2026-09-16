@@ -282,10 +282,10 @@ class AppSettings {
    - 自定义全局 User-Agent 输入弹窗；
    - 内置浏览器广告拦截增强开关 (AdBlockEngine)；
    - 启动时自动同步规则更新开关；
-4. **数据存储与精准深度清理卡片**：
-   - 细分显示占用容量：网络图片缓存容量 (如 `36.8 MB`)、搜索历史条数、播放进度条目；
-   - 支持单项精准「清理」与全量一键复位；
-   - 本地数据全量一键导出与导入还原入口 (无缝联动第 6 章模块)；
+4. **数据存储与精准深度清理卡片（已按职责边界迁移）**：
+   - 数据资产类入口（备份还原、缓存治理、历史管理）统一收敛至「我的」页，设置页仅保留纯参数配置，避免两页功能重叠；
+   - 相关实现见第 9、10 章及 `app/lib/views/profile/profile_page.dart`；
+   - 界面文案约束：缓存容量不可统计时展示「正在统计...」，严禁伪造容量数值；
 5. **主题与外观风格卡片**：
    - 系统主题选择 (跟随系统 / 纯净星暮白 / 曜夜极光翡翠)；
    - Material 3 动态色彩风格切换 (表现力 Expressive / 鲜艳 Vibrant / 柔和 TonalSpot)；
@@ -293,3 +293,67 @@ class AppSettings {
    - App 版本号、构建编号及 Flutter 运行底座信息；
    - QuickJS 沙箱实时运行日志抽屉 (支持一键复制/清空报错堆栈)；
    - 跨端规则契约白皮书与开源许可证入口。
+
+---
+
+## 9. 统一消费历史与断点续播实现规格
+
+### 9.1 模块定位与涉及文件
+- **服务**：`app/lib/services/play_history_service.dart`（新增，GetIt 单例，通过 `di.dart` 的 `playHistoryService` 访问）；
+- **接入点**：`views/media/video/video_detail_view.dart`（视频）、`views/media/novel/novel_detail_view.dart` 与 `reader/novel_reader_page.dart`（小说）、`views/media/comic/comic_detail_view.dart`（漫画）；
+- **展示入口**：「我的」页「继续观看」横滑流，以及历史管理中心页 `views/history/history_center_page.dart`。
+
+### 9.2 数据结构契约 (PlayRecord)
+```dart
+class PlayRecord {
+  final String id;             // 媒体唯一标识（优先详情页 URL，兜底标题）
+  final String title;
+  final String cover;
+  final String mediaType;      // video / novel / comic
+  final String ruleId;
+  final String episodeName;    // 如「第12集」「第3章」
+  final int episodeIndex;      // 集数/章节索引（从 0 开始）
+  final int totalEpisodes;     // 总集数/章节数（未知为 0）
+  final int positionSeconds;   // 视频播放进度（秒），小说/漫画恒为 0
+  final int durationSeconds;   // 视频总时长（秒）
+  final DateTime updatedAt;
+}
+```
+
+### 9.3 写入策略与性能约束
+- `updateProgress` 属于高频接口（播放器 `onProgress` 约每 500ms 回调一次）：**内存即时更新 + 磁盘 5 秒节流落盘**，并且仅在节流窗口到达或显式 `forceNotify` 时通知 UI，避免「我的」页在播放期间疯狂重绘；
+- 离开播放页时调用 `flush()` 强制落盘；记录容量上限 200 条，超出自动淘汰最旧记录；
+- 未在详情页登记过的媒体调用 `updateProgress` 时直接忽略，杜绝产生幽灵记录。
+
+### 9.4 断点续播策略映射 (ResumeBehavior)
+| 设置值 | 行为 |
+| :--- | :--- |
+| `auto` | 播放器初始化完成后静默 seek 至断点位置（`AuraPlayer.autoResume = true`） |
+| `prompt` | 仅弹出「上次看到 XX:XX [继续]」胶囊，由用户确认后跳转 |
+| `disabled` | 详情页传 `Duration.zero`，始终从头播放 |
+
+- 仅当历史记录中的集数与当前播放集数一致时复用播放进度，杜绝跨集错误续播；
+- 剩余时长不足 10 秒视为已看完，下次进入自动从头播放。
+
+### 9.5 备份契约扩展
+备份 JSON 的 `data` 节点新增 `playHistory` 数组（与 `rules` / `favorites` / `history` 并列）；
+旧版本备份文件缺失该字段时自动跳过该分支，保证完全向后兼容。
+
+---
+
+## 10. 「我的」页信息架构规范
+
+「我的」页定位为**个人资产仪表盘**，固定五大语义区，严禁随意增减重复入口：
+
+1. **身份 Hero**：昵称（可编辑）、沙箱运行状态、主题三态快捷切换、设置唯一入口；
+2. **继续观看**：跨媒体消费记录横滑卡片流（空态引导至搜索 / 发现）；
+3. **我的资产**：追更收藏 / 观看历史 / 我的规则 / 搜索足迹 四张资产卡（2×2 网格）；
+4. **数据与同步**：数据备份与还原、规则订阅市场、临时与网络缓存治理；
+5. **系统与关于**：系统偏好设置、沙箱与系统日志、广告拦截规则、关于面板。
+
+强制约束：
+- 设置入口在「我的」页只允许出现 **1 次**（Hero 右上角齿轮）；
+- 「清理缓存」与「清空历史」必须是**两个独立动作**，且均需二次确认弹窗；
+- 「搜索足迹」与「观看历史」统一由历史管理中心页承载，资产卡点击不得跳转到搜索页；
+- 「我的规则」资产卡点击应切换至底部导航「规则」Tab（通过 `ProfilePage.onSwitchTab` 回调）；
+- 所有颜色与卡片样式必须复用 `AppColors` / `AppCard` / `SettingTile` / `SettingSection`，禁止硬编码色值。

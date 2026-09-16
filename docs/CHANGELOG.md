@@ -2,6 +2,154 @@
 
 本文档用于记录 FluxForge（包括 App 移动端、Server 服务端、Web 管理端）在开发过程中的重要功能迭代、UI 体验调优与架构重构日志。
 
+## [2026-09-16]
+
+### 🧭 规则生成契约引导强化：items 默认出口与 groups 多线路判别铁律
+
+- **问题根源定位**：
+  - AI 生成的详情规则普遍把子资源无脑包裹成 `groups: [{ name: '默认', items: [...] }]`，导致单一选集列表 / 单一清晰度变体场景也凭空多出一层无意义结构；
+  - 而 `groups` 在契约中本为「多播放线路 / 分卷多线路」的可选升级位，`items` 才是大一统默认出口（`RULE_SPECIFICATION.md` 6.1）；
+  - 根因并非结构设计，而是 AI 提示词的两处表述冲突：字段清单遗漏了 `groups` 说明，而「映射到 detail」一条却把 `groups` 写成了默认产出结构；
+- **提示词修正（`web/src/stores/aiSettings.ts`）**：
+  1. 「核心返回值契约」补齐 `groups` 字段定义，并新增**【items 与 groups 的选择铁律（严禁无脑包裹）】**：
+     - 默认一律使用扁平 `items`：单一选集列表、单一章节目录、以及同一线路下的多清晰度/多版本变体（720p、1080p、高清、标清）全部平铺，版本名写入条目 `title`；
+     - 严禁虚构单分组包裹，`groups: [{ name: '默认', items: [...] }]` 判定为错误写法，必须降级为扁平 `items`；
+     - 仅当同一作品存在**多套互斥资源列表**时才使用 `groups`（多播放线路、小说多卷、漫画单行本与番外篇），且分组数必须大于 1；
+  2. `detail` 方法契约补注 items/groups 选择约束；
+  3. 「映射到 detail」由「输出分组结构 groups」改为「子资源默认平铺输出到 items」；
+  4. 「契约优先与彻底去兼容化」原则新增「结构层次必须如实映射」条款；
+- **编辑器引导同步（`web/src/views/rules/edit.vue`）**：标准模板的 `groups` 示例由单条「默认线路」改为「线路一 / 线路二」两条互斥线路，并注明单清晰度变体严禁包裹；
+- **编辑器类型提示同步（`web/src/components/CodeEditor/util.ts`）**：`DetailResult.items` / `groups` 的 JSDoc 补充默认出口与多线路判别说明；
+- **质量验证**：`npx vue-tsc --noEmit` 通过（0 类型错误）；App 端现有 `groups` ↔ `items` 双兼容解析逻辑无需改动，存量规则完全向后兼容。
+
+### 🔐 规则沙箱内置 CryptoJS 加密全家桶、Node.js 原生 crypto 兼容垫片与离线集成
+- **用户需求与痛点**：
+  - 用户询问：“app内怎么装载 nodejs crypto 模块，有可以下载的 cdn 链接吗”，并要求“帮我一步到位”集成。
+- **底层架构原理与技术落地**：
+  1. **离线内置全功能 `crypto-js`**：
+     - 下载高可用完整打包的 `crypto-js.min.js` (60KB) 放置于 [`app/assets/js/crypto-js.min.js`](file:///c:/zz/z-custom/projects/fluxforge/app/assets/js/crypto-js.min.js)，利用 Flutter assets 机制实现离线随包分发，零网络依赖；
+     - 在 [`RuleEngine._doInit()`](file:///c:/zz/z-custom/projects/fluxforge/app/lib/services/rule_engine.dart) 中完成加载，提升至全局单例 `globalThis.CryptoJS`，并严格防范 UMD 模块覆盖；
+  2. **内置 Node.js 原生 `crypto` API 轻量级桥接垫片 (Polyfill)**：
+     - 提供 Node.js 风格的 `crypto.createHash(algo)`（支持 md5, sha1, sha256, sha512, sha3, ripemd160 等及 hex/base64 digest）；
+     - 提供 `crypto.createHmac(algo, key)`（支持 sha256, md5, sha1 等）；
+     - 提供 `crypto.randomBytes(size)`（支持 hex/base64 输出）；
+  3. **极致开发亲和与全语法兼容**：
+     - 规则内写 `import crypto from 'crypto'` 或 `import CryptoJS from 'crypto-js'` 时，转译器自动安全剥离并链接至沙箱单例；
+     - 执行闭包头部自动注入 `var crypto = globalThis.crypto; var CryptoJS = globalThis.CryptoJS;`；
+     - 注入微型 `require` 拦截器：当规则编写 CommonJS `const crypto = require('crypto')` 或 `require('crypto-js')` 时自动拦截并返回对应单例，无需修改规则即可直接跨端跑通；
+     - 包含 AES, DES, TripleDES, RC4, Base64 等高级对称加解密算法全面支持；
+  4. **超时容灾防御机制**：
+     - 在 `_doInit()` 中为 `getApplicationDocumentsDirectory()` 增加 500ms 超时限制，防止在无原生平台通道的单元测试或特殊嵌入环境下卡死挂起。
+- **质量验证**：
+  - `flutter analyze`：0 warnings, 0 errors；
+  - `flutter test`：全套 28 项自动化测试 100% 全部通过 (28/28 Passed)；
+  - 经纯 JS 环境与 Node.js 真实沙箱双向校验，MD5、SHA256、AES 加解密结果 100% 精确匹配。
+
+### 🎛️ App「我的」页资产仪表盘重构、跨媒体消费历史与断点续播全链路落地
+
+- **用户诉求与设计共识**：
+  - 用户希望先分析 App 端整体功能，再对「我的」页面进行重新设计与重构；
+  - 经全量代码调研（`views/` / `services/` / `widgets/` + `APP_DEV_SPEC` / `APP_ROADMAP`）后达成共识：把「我的」从**功能入口集合**升级为**个人资产仪表盘**，设置页则收敛为**纯参数配置中心**；
+- **现状诊断（重构前问题定位）**：
+  1. **定位重叠**：`ProfilePage` 与 `SettingsPage` 同时提供备份还原、清缓存、日志入口，数据资产职责边界模糊；
+  2. **结构平铺**：页面为「头卡 → 4 指标条 → 追更卡 → 4 菜单 → 页脚」单一平铺，无分组语义，设置入口重复 2 次、收藏入口 4 次；
+  3. **文案与语义缺陷**：`'追更追更状态'` 重复错字；「搜索足迹」跳转搜索页而非历史管理；「已载规则」跳转规则市场而非规则页；「临时缓存」指标点击会**静默连带清空搜索历史**；
+  4. **数据失真**：`AppService.getCacheSizeInMB` 异常时兜底返回硬编码假值 `12.8`，误导用户；
+  5. **代码重复**：「我的」页与设置页的备份面板 + 导入对话框约 150 行逐行重复；
+  6. **能力缺失（最关键）**：App 端仅有搜索历史，**不存在观看/阅读历史服务**；`ResumeBehavior` 设置项形同虚设（播放器从未接入 `initialPosition` / `onProgress`），P0 断点续播实际未落地；
+- **架构级落地与重构成果**：
+  1. **新增统一消费历史服务 [`PlayHistoryService`](file:///c:/zz/z-custom/projects/fluxforge/app/lib/services/play_history_service.dart)**：
+     - 定义跨媒体 `PlayRecord` 数据契约（媒体类型 / 集数章节 / 播放秒数 / 总时长 / 综合进度百分比）；
+     - **高频写入节流**：播放器 `onProgress` 约每 500ms 回调一次，内存即时更新、磁盘按 5 秒节流落盘，避免 IO 抖动与 UI 狂刷；
+     - 支持去重置顶、200 条容量上限、单条删除、一键清空与备份导入导出；
+  2. **断点续播全链路打通**：
+     - `AuraPlayer` 新增 `autoResume` 参数，完整落地 `ResumeBehavior` 的「直接跳转 / 提示询问 / 从头播放」三种策略；
+     - 视频详情页接入 `initialPosition` + `onProgress`，并在进入时自动恢复到上次观看的集数；
+     - 小说阅读器新增 `onChapterChanged` 回调，小说/漫画详情页接入章节级阅读进度记录，实现「继续阅读」精确续读；
+  3. **「我的」页按五大语义区重新设计**（`profile_page.dart` 编排 + 3 个子组件）：
+     - ① 身份 Hero（可编辑昵称、沙箱状态、主题三态 SegmentedButton、设置唯一入口）；
+     - ② 继续观看（跨媒体横滑卡片流，封面叠加进度条，一键续播）；
+     - ③ 我的资产（2×2 资产卡网格：追更收藏 / 观看历史 / 我的规则 / 搜索足迹，各卡独立监听服务并展示动态副信息）；
+     - ④ 数据与同步（备份还原 / 规则市场 / 缓存治理）；⑤ 系统与关于（偏好设置 / 沙箱日志 ERROR 徽标 / 广告拦截 / 关于面板）；
+     - 新增下拉刷新一体化动作（追更检测 + 缓存重算）；
+  4. **新增历史管理中心页 [`HistoryCenterPage`](file:///c:/zz/z-custom/projects/fluxforge/app/lib/views/history/history_center_page.dart)**：统一收纳观看/阅读历史（类型过滤、进度条、相对时间、单条删除、点击直达续播）与搜索足迹（标签流、单条删除、一键清空），并导出可复用的 `openPlayRecord` 跳转函数；
+  5. **公共组件抽取与去重**：
+     - 新增 [`backup_sheet.dart`](file:///c:/zz/z-custom/projects/fluxforge/app/lib/widgets/backup_sheet.dart)，消除两页约 150 行重复实现；
+     - 新增 [`setting_tile.dart`](file:///c:/zz/z-custom/projects/fluxforge/app/lib/widgets/setting_tile.dart)（SettingTile / SettingSectionTitle / SettingSection），统一菜单行与分组容器；
+     - 新增 [`media_utils.dart`](file:///c:/zz/z-custom/projects/fluxforge/app/lib/core/utils/media_utils.dart)，统一媒体类型图标与中文标签映射；
+  6. **职责边界收敛**：设置页移除「数据存储与深度维护」卡片，定位为纯参数配置中心；备份数据包结构扩展 `playHistory` 字段（向后兼容旧备份文件）；
+- **顺带修复清单**：
+  - 修复 `'追更追更状态'` 文案错字；
+  - `getCacheSizeInMB` 返回 `double?`，不可用时展示「正在统计...」而非伪造 `12.8M`；
+  - 「清理缓存」与「清空搜索历史」彻底解耦并增加二次确认弹窗；
+  - 「我的规则」资产卡点击改为切换至规则 Tab（新增 `onSwitchTab` 回调），修复原先误跳规则市场的语义错误；
+  - 移除无入口的 `/card_gallery` 死路由（组件文件保留供开发调试）；
+  - `EmptyState.icon` 由 `dynamic` 规范为 `IconData?`，移除重复的类型判断分支；
+  - 头像渐变与图标色统一改用 `AppColors` 令牌，消除硬编码十六进制色值；
+  - **彻底移除收藏页假数据**：删除 `FavoritesPage._seedSampleIfEmpty()` 预置的示例条目（`sample_video_1` / `sample_novel_1`），
+    收藏列表不再向用户资产中注入任何演示数据；
+  - 修正 `FavoriteService.checkUpdates` 的误导性注释（原「模拟或真实执行」易被误解为模拟数据，实际为真实的集数比对逻辑）；
+  - **移除日志页「写入模拟测试日志」调试入口**：删除 `LogsPage._injectDemoLogs()` 方法与空态按钮，
+    杜绝伪造日志混入真实日志流、抬高 ERROR 计数徽标，以及被 `AppLogger` 真实追加写入磁盘 `.logs` 文件。
+- **质量验证**：
+  - `flutter analyze`：**No issues found (0 warnings, 0 errors)**；
+  - `flutter test`：**全套 27 项自动化测试 100% 通过 (27/27 Passed)**（同步补充了消费历史服务的测试容器注册）；
+  - 严格遵守最高指令要求，未向远程仓库提交或推送 Git。
+
+### 🛡️ 全局分页 hasMore: false 拦截保护机制、上滑加载熔断与通栏居中 Footer 体验升级
+- **用户关切与需求**：
+  - 用户询问：“列表有分页的地方hasMore：false有设置不能继续上滑加载吗”。
+- **全项目代码排查与缺陷定位**：
+  1. **搜索页 (`SearchPage`) 严重缺失 `hasMore` 管理与上滑截断**：
+     - 此前 `SearchPage` 完全未持久化各规则源的 `hasMore` 返回值；
+     - 当规则源在 `search` 动作中返回 `{ items: [...], hasMore: false }` 时，系统直接丢弃了 `hasMore`；
+     - 导致只要用户滑到底部，`_onScroll` 无脑触发 `_loadMoreResults()`，页码无休止递增发起无效网络请求，浪费流量与沙箱算力；
+     - 且无任何“已加载全部”提示。
+  2. **规则发现目录页 (`RuleCatalogPage`) Footer 渲染逻辑错乱**：
+     - 代码虽在 `_onScroll` 中检测了 `_hasMore`，但在 UI 层面，`itemCount` 错误地判断了 `_loadingMore || _hasMore ? 1 : 0`；
+     - 导致当 `_hasMore: false`（真正无更多）时，底部的“没有更多内容了”文本**永远无法渲染**；反而当 `_hasMore: true` 且尚未触发加载时，提前给用户展示了“没有更多内容了”；
+     - 在 GridView 网格视图下，Footer 作为普通卡片被挤在左侧单列半宽（仅占 50%），UI 不居中。
+- **架构级修复与优化落地**：
+  1. **`SearchPage` 引入全生命周期 `hasMore` 状态熔断机制**：
+     - 在 `_RuleSearchStatus` 中新增 `bool hasMore = true;`；
+     - 在 `runRuleSearch` 与 `_loadMoreResults` 中严格解析沙箱返回的 `hasMore`，智能兼容显式指定与条目兜底；网络异常时直接熔断该源后续分页；
+     - 新增计算属性 `_hasMoreCurrent`：单源筛选模式下检测对应源状态，全源聚合模式下检测是否存在任意有效源拥有更多数据；
+     - 在 `_onScroll` 中加入 `&& _hasMoreCurrent` 硬性截断守卫，无更多时**彻底禁止触发任何上滑加载**；
+     - 在 `_loadMoreResults` 中仅对尚有更多数据的规则源发起下一页请求，跳过已结束的规则源。
+  2. **列表与网格视图通栏居中 Footer 体验升级**：
+     - `SearchPage` 与 `RuleCatalogPage` 网格视图全面升级为 `CustomScrollView` + `SliverGrid` + `SliverToBoxAdapter`，Footer 彻底横贯整行、优雅居中显示；
+     - 加载中显示平滑菊花与状态文本，全部加载完毕后清晰通栏展示“— 已加载全部搜索结果 —” / “— 没有更多内容了 —”；
+     - 修复 `RuleCatalogPage` 中 `_loadMore` 的前置守卫（`if (!_hasMore || _loadingMore || _loading) return;`）。
+  3. **Web 端 (`web/src/views/media/index.vue`) 对齐体验**：
+     - 在 `hasMore == false` 且数据非空时追加优雅的弱化居中提示“— 已加载全部内容 —”，实现多端行为高度一致。
+- **质量验证**：
+  - `flutter analyze`：0 warnings, 0 errors；
+  - `flutter test`：全套 27 项自动化测试全部通过 (27/27 Passed)。
+
+### ⚡ 规则沙箱轻量闭包瘦身、转译语法安全防护、错误切片高亮与局部 defineRule 隔离
+- **用户更新与技术演进**：
+  1. **转译器语法安全性加固（修复非 export default 规则 SyntaxError 缺陷）**：
+     - 在 [`RuleEngine.transformToRunnableJs`](file:///c:/zz/z-custom/projects/fluxforge/app/lib/services/rule_engine.dart) 中，彻底摒弃旧版无脑在非导出代码前硬拼 `module.exports = ` 的做法；
+     - 限制仅对纯对象字面量（以 `{` 开头并以 `}` 结尾）包裹 `module.exports = (...)`，杜绝在 `const`、`let`、`// 注释` 等语句前强行拼接导致的 `SyntaxError: unexpected token const`；
+  2. **沙箱闭包精简 50+ 行冗余脚手架代码**：
+     - 移除执行闭包中重复声明的 `console` 代理与参数序列化函数（复用 `_doInit` 全局单例通道），大幅精简闭包体积，使堆栈报错行号贴近规则源码；
+  3. **沙箱语法错误智能切片与真实行号映射**：
+     - 增加正则捕获 `<eval>:(\d+):(\d+)`，精准提取出错行号与列号，并在控制台/日志中生成代码切片与 `^` 定位符；
+     - 智能推导并展示 `-> 约规则源码第 X 行`，极大提升开发者调试体验；
+- **排查与深度优化**：
+  - **局部 `defineRule` 严格隔离与空对象判空**：
+    - 识别出若将 `defineRule` 挂载于 `globalThis` 并依赖 `module.exports || exports || ...` 会因为 `{}` 在 JS 中为 truthy 发生逻辑短路、且存在跨规则全局污染隐患；
+    - 在闭包内局部定义 `defineRule` 直接赋值给当前闭包私有的 `module.exports`，并使用 `Object.keys(module.exports).length > 0` 精确判空，兼顾纯 `defineRule`、`export default`、`module.exports` 三种写法的同时杜绝实例污染；
+  - **精简内置代码与消灭 `SyntaxError: expecting ';'` 语法陷阱**：
+    - **消灭闭包作用域冲突**：此前闭包内使用 `var baseUrl = ...`，若规则作者自身在顶部写了 `const baseUrl = ...`，JS 引擎会因同一 Lexical 作用域内重复声明抛出 `SyntaxError`。现改为在全局执行前动态挂载 `globalThis.baseUrl`，彻底允许规则自由遮蔽或直接引用，零冲突；
+    - **自动闭合分号防护**：在 `transformToRunnableJs` 中自动确保非大括号结尾的规则末尾补充分号，彻底杜绝转译代码与后续闭包逻辑粘连导致的 `expecting ';'`；
+    - **沙箱闭包极限瘦身至 28 行**：彻底移除闭包内长达 40+ 行脆弱且容易引发字符转义冲突的内联 catch 字符串拼接逻辑，错误捕获全部交给 Dart 层，闭包顶部脚手架缩短至仅 8 行；
+    - **精简 `url.polyfill.js` 非必要代码**：移除末尾 50+ 行未被使用的 `btoa` / `atob` 代码，使 Polyfill 更纯粹轻量。
+- **测试与代码质量验证**：
+  - `flutter analyze` 运行验证：**No issues found (0 warnings, 0 errors)**；
+  - `flutter test` 运行验证：**全套 27 项自动化测试用例 100% 全部通过 (27/27 Passed)**；
+  - 严格遵守最高指令要求，未向远程仓库提交或推送 Git。
+
 ## [2026-09-15]
 
 ### 🌐 规则沙箱 POST 302 重定向智能跟随、QuickJS 错误堆栈反吞噬与 URLSearchParams 契约补齐

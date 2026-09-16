@@ -5,6 +5,9 @@ import 'package:extended_image/extended_image.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../models/rule.dart';
+import '../../../services/app_service.dart';
+import '../../../services/di.dart';
+import '../../../services/play_history_service.dart';
 import '../../../widgets/app_card.dart';
 import '../../../widgets/player/aura_player.dart';
 import '../common/media_related_grid.dart';
@@ -61,10 +64,86 @@ class _VideoDetailViewState extends State<VideoDetailView> {
   bool _isDescExpanded = false;
   String? _activePlayUrl;
 
+  /// 当前媒体的唯一消费标识 (优先详情页 URL，兜底标题)
+  String get _mediaId {
+    if (widget.data.url.isNotEmpty) return widget.data.url;
+    if (widget.fallbackTitle.isNotEmpty) return widget.fallbackTitle;
+    return _displayTitle;
+  }
+
+  /// 当前集数标题 (用于消费记录与「继续观看」展示)
+  String get _currentEpisodeTitle {
+    final episodes = _currentGroupEpisodes;
+    if (episodes.isEmpty) return '';
+    final idx = _currentEpisodeIndex.clamp(0, episodes.length - 1);
+    return episodes[idx].title;
+  }
+
+  /// 计算本次播放的断点起播位置
+  Duration get _resumePosition {
+    // 1. 用户显式关闭续播 → 始终从头开始
+    if (appService.settings.resumeBehavior == ResumeBehavior.disabled) {
+      return Duration.zero;
+    }
+    final record = playHistoryService.getById(_mediaId);
+    if (record == null) return Duration.zero;
+    // 2. 非同一集不复用播放进度
+    if (record.episodeIndex != _currentEpisodeIndex) return Duration.zero;
+    if (record.positionSeconds <= 5) return Duration.zero;
+    // 3. 已接近片尾（剩余不足 10 秒）视为看完，从头播放
+    if (record.durationSeconds > 0 &&
+        record.positionSeconds >= record.durationSeconds - 10) {
+      return Duration.zero;
+    }
+    return Duration(seconds: record.positionSeconds);
+  }
+
+  /// 是否采用「直接跳转」静默续播策略
+  bool get _autoResume =>
+      appService.settings.resumeBehavior == ResumeBehavior.auto;
+
   @override
   void initState() {
     super.initState();
     _initInitialPlayState();
+    _registerPlayRecord();
+  }
+
+  @override
+  void dispose() {
+    // 离开播放页时强制落盘，确保「继续观看」进度不丢失
+    playHistoryService.flush();
+    super.dispose();
+  }
+
+  /// 登记 / 更新当前视频的消费记录 (保留既有播放进度)
+  void _registerPlayRecord() {
+    if (_mediaId.isEmpty) return;
+    final existing = playHistoryService.getById(_mediaId);
+    playHistoryService.upsert(
+      PlayRecord(
+        id: _mediaId,
+        title: _displayTitle,
+        cover: widget.data.cover.isNotEmpty ? widget.data.cover : widget.fallbackCover,
+        mediaType: 'video',
+        ruleId: widget.rule?.id?.toString() ?? '',
+        episodeName: _currentEpisodeTitle,
+        episodeIndex: _currentEpisodeIndex,
+        totalEpisodes: _currentGroupEpisodes.length,
+        positionSeconds: existing?.positionSeconds ?? 0,
+        durationSeconds: existing?.durationSeconds ?? 0,
+        updatedAt: DateTime.now(),
+      ),
+    );
+  }
+
+  /// 播放进度实时回调 (内存即时更新，磁盘按服务内节流策略落盘)
+  void _onPlayProgress(Duration position, Duration duration) {
+    playHistoryService.updateProgress(
+      id: _mediaId,
+      positionSeconds: position.inSeconds,
+      durationSeconds: duration.inSeconds,
+    );
   }
 
   @override
@@ -79,12 +158,23 @@ class _VideoDetailViewState extends State<VideoDetailView> {
   void _initInitialPlayState() {
     _selectedGroupIndex = 0;
     _currentEpisodeIndex = 0;
+
+    // 断点续播：若上次观看到第 N 集，进入详情页时自动定位回该集
+    final record = playHistoryService.getById(_mediaId);
+    final totalEpisodes = _currentGroupEpisodes.length;
+    if (record != null &&
+        record.episodeIndex > 0 &&
+        record.episodeIndex < totalEpisodes) {
+      _currentEpisodeIndex = record.episodeIndex;
+    }
+
     if (widget.data.playUrl != null && widget.data.playUrl!.isNotEmpty) {
       _activePlayUrl = widget.data.playUrl;
     } else {
       final currentList = _currentGroupEpisodes;
       if (currentList.isNotEmpty) {
-        _activePlayUrl = currentList.first.url;
+        final idx = _currentEpisodeIndex.clamp(0, currentList.length - 1);
+        _activePlayUrl = currentList[idx].url;
       }
     }
   }
@@ -106,6 +196,17 @@ class _VideoDetailViewState extends State<VideoDetailView> {
       _currentEpisodeIndex = index;
       _activePlayUrl = episodes[index].url;
     });
+
+    // 切换集数后同步消费记录（进度归零，避免跨集错误复用断点）
+    playHistoryService.updateProgress(
+      id: _mediaId,
+      episodeName: episodes[index].title,
+      episodeIndex: index,
+      totalEpisodes: episodes.length,
+      positionSeconds: 0,
+      durationSeconds: 0,
+      forceNotify: true,
+    );
   }
 
   String get _displayTitle {
@@ -142,6 +243,9 @@ class _VideoDetailViewState extends State<VideoDetailView> {
                     title: fullPlayerTitle,
                     coverUrl: widget.data.cover.isNotEmpty ? widget.data.cover : widget.fallbackCover,
                     httpHeaders: widget.data.customHeaders,
+                    initialPosition: _resumePosition,
+                    autoResume: _autoResume,
+                    onProgress: _onPlayProgress,
                     onEnded: () {
                       if (_currentEpisodeIndex < episodes.length - 1) {
                         _playEpisode(_currentEpisodeIndex + 1);

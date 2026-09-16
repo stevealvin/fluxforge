@@ -5,9 +5,9 @@ import 'models/rule.dart';
 import 'services/di.dart';
 import 'views/browser/adblock_rules_page.dart';
 import 'views/browser/browser_page.dart';
+import 'views/history/history_center_page.dart';
 import 'views/market/market_page.dart';
 import 'views/media/media_detail_page.dart';
-import 'views/dev/card_gallery_page.dart';
 import 'views/favorites/favorites_page.dart';
 import 'views/settings/logs_page.dart';
 import 'views/settings/settings_page.dart';
@@ -196,19 +196,19 @@ final GoRouter router = GoRouter(
           },
         ),
 
-        // 卡片设计系统视觉展廊
-        GoRoute(
-          path: 'card_gallery',
-          builder: (BuildContext context, GoRouterState state) {
-            return const CardGalleryPage();
-          },
-        ),
-
         // 我的收藏与智能追更
         GoRoute(
           path: 'favorites',
           builder: (BuildContext context, GoRouterState state) {
             return const FavoritesPage();
+          },
+        ),
+
+        // 历史管理中心 (观看/阅读历史 + 搜索足迹)
+        GoRoute(
+          path: 'history',
+          builder: (BuildContext context, GoRouterState state) {
+            return const HistoryCenterPage();
           },
         ),
 

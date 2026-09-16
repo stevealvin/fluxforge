@@ -188,34 +188,6 @@ class _LogsPageState extends State<LogsPage> {
     );
   }
 
-  /// 触发生成模拟测试日志 (方便未跑规则时快速验证 UI)
-  void _injectDemoLogs() {
-    AppLogger.addLog(
-      level: 'INFO',
-      tag: 'Rule: 极光示例源',
-      message: '开始解析目标页面: https://api.fluxforge.internal/demo',
-    );
-    AppLogger.addLog(
-      level: 'DEBUG',
-      tag: 'Rule: 极光示例源',
-      message: 'console.log => 抓取到 18 条章节数据, 耗时 42ms',
-    );
-    AppLogger.addLog(
-      level: 'WARN',
-      tag: 'Network',
-      message: '图片直链加载较慢 (超过 1500ms): https://img.example.com/cover.jpg',
-    );
-    AppLogger.addLog(
-      level: 'ERROR',
-      tag: 'Rule: 测试嗅探器',
-      message: 'TypeError: Cannot read property "length" of undefined in parse()',
-      error: 'QuickJS ReferenceError',
-    );
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('已写入 4 条示例测试日志')),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -668,18 +640,6 @@ class _LogsPageState extends State<LogsPage> {
                 color: isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted,
               ),
             ),
-            if (isTotalEmpty) ...[
-              const SizedBox(height: 20),
-              OutlinedButton.icon(
-                icon: const Icon(Ionicons.sparklesOutline, size: 16),
-                label: const Text('写入模拟测试日志'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: AppColors.primary,
-                  side: const BorderSide(color: AppColors.primary, width: 0.8),
-                ),
-                onPressed: _injectDemoLogs,
-              ),
-            ],
           ],
         ),
       ),

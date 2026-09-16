@@ -94,6 +94,7 @@ class NovelReaderPage extends StatefulWidget {
     this.chapters = const [],
     this.rule,
     this.customHeaders = const {},
+    this.onChapterChanged,
   });
 
   final String bookTitle;
@@ -101,6 +102,10 @@ class NovelReaderPage extends StatefulWidget {
   final List<NovelChapter> chapters;
   final Rule? rule;
   final Map<String, String> customHeaders;
+
+  /// 章节切换回调 (章节索引, 章节标题)
+  /// 供上层记录阅读进度，实现「继续阅读」章节级续读
+  final void Function(int index, String title)? onChapterChanged;
 
   @override
   State<NovelReaderPage> createState() => _NovelReaderPageState();
@@ -159,6 +164,14 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
 
     // 初始进入立即按需调度沙箱加载章节内容
     _loadChapterContent(_currentChapterIndex);
+
+    // 通知上层记录初始阅读章节
+    if (_chapters.isNotEmpty) {
+      widget.onChapterChanged?.call(
+        _currentChapterIndex,
+        _chapters[_currentChapterIndex].title,
+      );
+    }
   }
 
   @override
@@ -480,6 +493,9 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
       _currentPageIndex = 0;
       _recalculatePages();
     });
+
+    // 通知上层同步阅读进度
+    widget.onChapterChanged?.call(index, _chapters[index].title);
 
     // 触发异步加载目标章节
     _loadChapterContent(index);

@@ -82,6 +82,8 @@ void main() async {
   // 2. 统一注册核心基础设施与业务服务单例
   configureDependencies();
   await historyService.init();
+  // 预热加载跨媒体消费历史与断点续播进度
+  await playHistoryService.init();
 
   // 3. 预热初始化 QuickJS 脚本执行沙箱
   RuleEngine.init();

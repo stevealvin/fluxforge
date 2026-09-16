@@ -25,6 +25,7 @@ class AuraPlayer extends StatefulWidget {
     this.title = '',
     this.coverUrl,
     this.initialPosition = Duration.zero,
+    this.autoResume = false,
     this.onProgress,
     this.onEnded,
     this.onBack,
@@ -53,6 +54,12 @@ class AuraPlayer extends StatefulWidget {
 
   /// 起播跳转定位
   final Duration initialPosition;
+
+  /// 是否自动静默跳转至 [initialPosition]（对应断点续播「直接跳转」策略）
+  ///
+  /// - `false`（默认）：仅弹出「上次看到 XX:XX [继续]」胶囊，由用户确认后再跳转；
+  /// - `true`：初始化完成后直接 seek 到断点位置，仅保留提示胶囊告知用户。
+  final bool autoResume;
 
   /// 播放进度实时回调 (当前位置, 总时长)
   final void Function(Duration position, Duration duration)? onProgress;
@@ -317,6 +324,11 @@ class AuraPlayerState extends State<AuraPlayer>
       // 判断断点续播逻辑
       if (widget.initialPosition.inSeconds > 5 &&
           widget.initialPosition < _controller!.value.duration) {
+        // 「直接跳转」策略：静默 seek 到上次进度，交由用户自行决定是否回退
+        if (widget.autoResume) {
+          await _controller!.seekTo(widget.initialPosition);
+          if (!mounted) return;
+        }
         setState(() {
           _showResumeTip = true;
         });

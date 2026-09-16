@@ -54,10 +54,16 @@ class ShellPage extends HookWidget {
               onPageChanged: (index) {
                 selectedIndex.value = index;
               },
-              children: const [
-                DiscoverPage(),
-                RulesPage(),
-                ProfilePage(),
+              children: [
+                const DiscoverPage(),
+                const RulesPage(),
+                // 「我的」页需注入切页回调，以支持资产卡「我的规则」直达规则 Tab
+                ProfilePage(
+                  onSwitchTab: (index) {
+                    selectedIndex.value = index;
+                    pageController.jumpToPage(index);
+                  },
+                ),
               ],
             ),
           ],

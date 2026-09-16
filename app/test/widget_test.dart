@@ -12,6 +12,7 @@ import 'package:fluxforge/services/di.dart';
 import 'package:fluxforge/services/app_service.dart';
 import 'package:fluxforge/services/rule_service.dart';
 import 'package:fluxforge/services/history_service.dart';
+import 'package:fluxforge/services/play_history_service.dart';
 import 'package:fluxforge/services/rule_engine.dart';
 import 'package:fluxforge/widgets/player/aura_player.dart';
 import 'package:fluxforge/models/rule.dart';
@@ -286,6 +287,38 @@ defineRule({
     expect(runnableJs.contains('defineRule({'), isTrue);
   });
 
+  test('RuleEngine transformToRunnableJs cleanly handles import crypto / CryptoJS and preserves crypto execution statements', () {
+    const cryptoRuleCode = '''
+import axios from 'axios';
+import cheerio from 'cheerio';
+import crypto from 'crypto';
+import CryptoJS from 'crypto-js';
+
+export default defineRule({
+  async discovery() {
+    const md5Hex = crypto.createHash('md5').update('hello').digest('hex');
+    const hmacHex = crypto.createHmac('sha256', 'secret_key').update('hello').digest('hex');
+    const cjsMd5 = CryptoJS.MD5('hello').toString();
+    return {
+      md5: md5Hex,
+      hmac: hmacHex,
+      cjsMd5: cjsMd5
+    };
+  }
+});
+''';
+
+    final runnableJs = RuleEngine.transformToRunnableJs(cryptoRuleCode);
+    // 验证 import 语句均被干净剔除，不留语法残渣
+    expect(runnableJs.contains("import crypto from 'crypto'"), isFalse);
+    expect(runnableJs.contains("import CryptoJS from 'crypto-js'"), isFalse);
+    // 验证核心加密调用与生命周期方法被完整保留
+    expect(runnableJs.contains("crypto.createHash('md5')"), isTrue);
+    expect(runnableJs.contains("crypto.createHmac('sha256'"), isTrue);
+    expect(runnableJs.contains("CryptoJS.MD5('hello')"), isTrue);
+    expect(runnableJs.startsWith('module.exports = defineRule({'), isTrue);
+  });
+
   testWidgets('AuraPlayer widget builds with expected clipBehavior and structure', (WidgetTester tester) async {
     await tester.pumpWidget(
       const MaterialApp(
@@ -549,6 +582,11 @@ module.exports = {
   });
 
   testWidgets('MediaDetailPage top bar has no bottom border line and renders dark theme title cleanly', (WidgetTester tester) async {
+    // 媒体详情页涉及断点续播，需确保消费历史服务已在测试容器中注册
+    if (!getIt.isRegistered<PlayHistoryService>()) {
+      getIt.registerSingleton<PlayHistoryService>(PlayHistoryService());
+    }
+
     await tester.pumpWidget(
       MaterialApp(
         themeMode: ThemeMode.dark,

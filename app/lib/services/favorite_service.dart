@@ -175,7 +175,10 @@ class FavoriteService {
     await _saveFavorites(current);
   }
 
-  /// 模拟或真实执行智能追更检查
+  /// 执行智能追更检测
+  ///
+  /// 比对本地记录的观看集数（lastEpisode）与详情页下探到的最新集数（latestEpisode），
+  /// 不一致则点亮未读红点并返回更新的作品数量。
   Future<int> checkUpdates() async {
     if (favorites.isEmpty) return 0;
 

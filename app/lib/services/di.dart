@@ -4,6 +4,7 @@ import 'app_service.dart';
 import 'backup_service.dart';
 import 'favorite_service.dart';
 import 'history_service.dart';
+import 'play_history_service.dart';
 import 'rule_service.dart';
 
 /// 全局唯一服务定位器单例
@@ -16,6 +17,9 @@ HistoryService get historyService => getIt<HistoryService>();
 AppService get appService => getIt<AppService>();
 FavoriteService get favoriteService => getIt<FavoriteService>();
 BackupService get backupService => getIt<BackupService>();
+
+/// 统一媒体消费历史与断点续播服务
+PlayHistoryService get playHistoryService => getIt<PlayHistoryService>();
 
 /// 统一注册所有核心基础设施与业务服务
 void configureDependencies() {
@@ -56,11 +60,16 @@ void configureDependencies() {
     getIt.registerSingleton<FavoriteService>(FavoriteService());
   }
 
+  if (!getIt.isRegistered<PlayHistoryService>()) {
+    getIt.registerSingleton<PlayHistoryService>(PlayHistoryService());
+  }
+
   if (!getIt.isRegistered<BackupService>()) {
     getIt.registerSingleton<BackupService>(BackupService(
       ruleService: ruleService,
       favoriteService: favoriteService,
       historyService: historyService,
+      playHistoryService: playHistoryService,
     ));
   }
 }

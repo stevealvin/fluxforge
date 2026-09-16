@@ -525,7 +525,13 @@ export const useAiSettingsStore = defineStore('aiSettings', () => {
    - defineRule: 全局规则定义辅助函数
 3. 核心返回值契约（严格遵循标准属性名，所有链接统一为 url，严禁使用 key、href、path 或其他别名）：
    - MediaItem: { title: string, url: string, cover?: string, desc?: string, badge?: string }
-    - 子资源条目(全类型统一): items?: Array<{ title?: string, url: string } | string>
+    - 子资源条目(全类型统一, 默认出口): items?: Array<{ title?: string, url: string } | string>
+    - 多线路/多卷分组(可选升级位): groups?: Array<{ name: string, items: Array<{ title?: string, url: string } | string> }>
+      【items 与 groups 的选择铁律（严禁无脑包裹）】：
+      · 默认一律使用扁平 items：单一选集列表、单一章节目录，以及同一线路下的多清晰度/多版本变体（如 720p、1080p、高清、标清），全部平铺写入 items，清晰度或版本名写在各自条目的 title 里；
+      · 严禁为凑结构而虚构单分组包裹，例如 groups: [{ name: '默认', items: [...] }] 属于错误写法，必须降级为扁平 items；
+      · 仅当同一作品存在多套互斥的资源列表时才使用 groups：多播放线路（线路一/线路二，各自剧集集合不同）、小说多卷（第一卷/第二卷）、漫画单行本与番外篇；
+      · groups 的分组数量必须大于 1，仅返回一个分组即代表用法错误。
     - 视频/音频直链: playUrl?: string
     - 小说正文文本: content?: string
     - 剧照/截图预览图流: previews?: string[]
@@ -533,7 +539,8 @@ export const useAiSettingsStore = defineStore('aiSettings', () => {
 4. 四大生命周期方法契约：
     - async discovery({ tab, page = 1 }): tab 为当前选中页签的分类路径/标识（严格对应 tabs[i].url，纯分类路径，不含分页占位符；请求 URL 由函数内结合 tab 与 page 原生拼装）。返回 { tabs?: Array<{ title: string, url: string }>, items: MediaItem[], hasMore?: boolean } 或 MediaItem[]
     - async search({ keyword, page = 1 }): 返回 { items: MediaItem[], hasMore?: boolean } 或 MediaItem[]
-    - async detail({ url, item }): 返回 { title: string, cover?: string, desc?: string, tags?: string[], author?: string, playUrl?: string, content?: string, items?: Array<{ title?: string, url: string } | string>, groups?: [{ name: string, items: [{ title: string, url: string }] }], previews?: string[], related?: MediaItem[] }
+    - async detail({ url, item }): 返回 { title: string, cover?: string, desc?: string, tags?: string[], author?: string, playUrl?: string, content?: string, items?: Array<{ title?: string, url: string } | string>, groups?: Array<{ name: string, items: Array<{ title?: string, url: string } | string> }>, previews?: string[], related?: MediaItem[] }
+      · items 为子资源默认出口；groups 仅在"多套互斥资源列表"（多线路/多卷）场景使用，单分组包裹属错误写法；
     - async parse({ url, groupName }): 返回 { playUrl?: string, content?: string, headers?: Record<string, string> }
 
 【多模态输入自适应识别与处理引擎（核心泛化能力）】：
@@ -543,7 +550,7 @@ export const useAiSettingsStore = defineStore('aiSettings', () => {
    - 提取全局 baseUrl: 解析目标站点的 Host / 基础服务根域名；
    - 映射到 discovery: 将分类浏览、探索或首页规则转换为标准的分类列表与条目提取逻辑；
    - 映射到 search: 将搜索请求构造（支持 GET/POST、URL 占位符宏或参数结构）与搜索结果提取逻辑转为 search 实现；
-   - 映射到 detail: 将详情提取与目录/章节/剧集列表规则转为标准书籍/影视详情以及分组结构 groups: [{ name: '默认分组', items: [{ title, url }] }]；
+   - 映射到 detail: 将详情提取与目录/章节/剧集列表规则转为标准书籍/影视详情，子资源**默认平铺输出到 items**（严禁无脑包裹 groups 默认分组）；仅当源站本身存在多条并列且互斥的资源线路/分卷时，才改用 groups 承载多套列表；
    - 映射到 parse: 将正文内容或媒体直链解析逻辑转为 parse 实现（小说文本提取并保留段落排版/清洗净化返回 { content }，媒体播放直链提取返回 { playUrl }）；
    - 语法转写: 将外部 DSL 选择器（CSS 选择器、属性读取宏、文本节点提取、XPath、正则提取等）平滑转写为基于 Cheerio 与原生 JavaScript 的健壮语法。
 2. 数据样本驱动模式（HTML DOM 源码 / REST API JSON 响应）：
@@ -561,6 +568,7 @@ export const useAiSettingsStore = defineStore('aiSettings', () => {
 4. 契约优先与彻底去兼容化（严格禁止防御性代码与无意义字段猜测）：
    - 严禁在规则代码中编写多字段回退猜测（例如严禁编写 \`desc: el.desc || el.description || el.intro\`、\`url: el.url || el.href\`、\`items: data.items || data.list || data.data\` 等兼容判断）；
    - 所有属性必须严格按照契约标准命名并直出：描述统一为 \`desc\`（严禁 \`description\` 或 \`intro\`），子资源条目统一为 \`items\`（严禁 \`list/episodes/chapters/images\`），链接统一为 \`url\`（严禁 \`href/src/path/key\`），剧照预览为 \`previews\`，相关推荐为 \`related\`；
+   - 结构层次必须如实映射：子资源默认平铺为 \`items\`，严禁虚构无意义包裹结构（如 groups: [{ name: '默认分组', items: [...] }]）；只有源站确实并列存在多套互斥线路/分卷时才允许使用 \`groups\`，且分组数必须大于 1；
    - 提取逻辑必须简洁直白，直接定位真实有效数据，输出最纯净的标准规则代码。
 
 【强制输出要求】：

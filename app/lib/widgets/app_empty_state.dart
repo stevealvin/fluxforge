@@ -15,7 +15,7 @@ class EmptyState extends StatelessWidget {
   });
 
   /// 主图标
-  final dynamic icon;
+  final IconData? icon;
 
   /// 标题提示
   final String title;
@@ -52,11 +52,7 @@ class EmptyState extends StatelessWidget {
                     width: 0.8,
                   ),
                 ),
-                child: icon is IconData
-                    ? Icon(icon, size: 48, color: AppColors.primary)
-                    : (icon is IconData
-                        ? Icon(icon, size: 48, color: AppColors.primary)
-                        : (icon is Widget ? icon : const SizedBox.shrink())),
+                child: Icon(icon, size: 48, color: AppColors.primary),
               ),
             const SizedBox(height: 16),
             Text(

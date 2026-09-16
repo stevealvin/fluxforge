@@ -8,6 +8,7 @@ import 'package:share_plus/share_plus.dart';
 import '../models/rule.dart';
 import 'favorite_service.dart';
 import 'history_service.dart';
+import 'play_history_service.dart';
 import 'rule_service.dart';
 
 /// 备份恢复执行结果模型
@@ -17,6 +18,7 @@ class BackupRestoreResult {
   final int rulesImported;
   final int favoritesImported;
   final int historyImported;
+  final int playHistoryImported;
 
   const BackupRestoreResult({
     required this.success,
@@ -24,24 +26,28 @@ class BackupRestoreResult {
     this.rulesImported = 0,
     this.favoritesImported = 0,
     this.historyImported = 0,
+    this.playHistoryImported = 0,
   });
 }
 
 /// 本地全量数据一键备份与恢复服务 (BackupService)
 /// 
-/// 负责规则库、收藏夹及历史记录的标准化 JSON 打包导出与差异/覆盖还原
+/// 负责规则库、收藏夹、搜索历史、消费历史（观看/阅读进度）的标准化 JSON 打包导出与差异/覆盖还原
 class BackupService {
   final RuleService _ruleService;
   final FavoriteService _favoriteService;
   final HistoryService _historyService;
+  final PlayHistoryService _playHistoryService;
 
   BackupService({
     required RuleService ruleService,
     required FavoriteService favoriteService,
     required HistoryService historyService,
+    required PlayHistoryService playHistoryService,
   })  : _ruleService = ruleService,
         _favoriteService = favoriteService,
-        _historyService = historyService;
+        _historyService = historyService,
+        _playHistoryService = playHistoryService;
 
   /// 生成当前本地数据的全量标准化 JSON 字符串
   String generateBackupJson() {
@@ -54,6 +60,7 @@ class BackupService {
         'rules': _ruleService.rules.map((r) => r.toJson()).toList(),
         'favorites': _favoriteService.favorites.map((f) => f.toJson()).toList(),
         'history': _historyService.searchHistory,
+        'playHistory': _playHistoryService.records.map((p) => p.toJson()).toList(),
       },
     };
     return const JsonEncoder.withIndent('  ').convert(data);
@@ -185,12 +192,43 @@ class BackupService {
         }
       }
 
+      // 4. 恢复消费历史 (观看/阅读历史与断点续播进度)
+      int importedPlayHistory = 0;
+      if (data.containsKey('playHistory') && data['playHistory'] is List) {
+        final incomingRecords = (data['playHistory'] as List)
+            .whereType<Map>()
+            .map((e) => PlayRecord.fromJson(Map<String, dynamic>.from(e)))
+            .where((e) => e.id.isNotEmpty)
+            .toList();
+
+        if (merge) {
+          // 合并策略：同一媒体以备份中的最新记录为准，其余按时间倒序追加
+          final Map<String, PlayRecord> merged = {
+            for (final r in _playHistoryService.records) r.id: r,
+          };
+          for (final incoming in incomingRecords) {
+            final existing = merged[incoming.id];
+            if (existing == null || incoming.updatedAt.isAfter(existing.updatedAt)) {
+              merged[incoming.id] = incoming;
+            }
+            importedPlayHistory++;
+          }
+          final mergedList = merged.values.toList()
+            ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+          await _playHistoryService.setRecords(mergedList);
+        } else {
+          await _playHistoryService.setRecords(incomingRecords);
+          importedPlayHistory = incomingRecords.length;
+        }
+      }
+
       return BackupRestoreResult(
         success: true,
         message: merge ? '合并恢复成功' : '全量覆盖恢复成功',
         rulesImported: importedRules,
         favoritesImported: importedFavorites,
         historyImported: importedHistory,
+        playHistoryImported: importedPlayHistory,
       );
     } catch (e) {
       debugPrint('[BackupService] 恢复备份发生异常: $e');

@@ -94,9 +94,11 @@ const RULE_TEMPLATE = `export default defineRule({
       items: [
         { title: '第01集 / 第一章', url: '/resource-url' }
       ]
-      // 多线路/多卷可选支持:
+      // 【可选】仅当存在多套互斥资源列表时才使用 groups（多播放线路 / 小说多卷 / 漫画番外）:
+      // 单一选集列表，或同一线路下的多清晰度变体（720p/1080p）请一律平铺到上方 items，严禁包一层「默认分组」
       // groups: [
-      //   { name: '默认线路', items: [{ title: '第01集', url: '/play-url' }] }
+      //   { name: '线路一', items: [{ title: '第01集', url: '/play-url-1' }] },
+      //   { name: '线路二', items: [{ title: '第01集', url: '/play-url-2' }] }
       // ]
       // 其它直出与扩展字段（按需选择）:
       // playUrl: '',   // 视频播放直链
@@ -527,7 +529,7 @@ onUnmounted(() => {
           <template #icon>
             <Save class="w-3.5 h-3.5" />
           </template>
-          <span>保存</span>
+          <span>保存 (Ctrl+S)</span>
         </n-button>
       </div>
     </div>

@@ -4,6 +4,8 @@ import 'package:ionicons/ionicons.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../models/rule.dart';
+import '../../../services/di.dart';
+import '../../../services/play_history_service.dart';
 import '../../../widgets/app_card.dart';
 import '../common/media_meta_header.dart';
 import '../common/media_related_grid.dart';
@@ -36,6 +38,63 @@ class NovelDetailView extends StatefulWidget {
 class _NovelDetailViewState extends State<NovelDetailView> {
   bool _isReversed = false;
 
+  /// 当前书籍的唯一消费标识 (优先详情页 URL，兜底标题)
+  String get _mediaId {
+    if (widget.data.url.isNotEmpty) return widget.data.url;
+    if (widget.fallbackTitle.isNotEmpty) return widget.fallbackTitle;
+    return widget.data.title;
+  }
+
+  /// 是否存在可续读的历史章节进度
+  bool get _hasReadingProgress {
+    final record = playHistoryService.getById(_mediaId);
+    return record != null && record.episodeIndex > 0;
+  }
+
+  /// 上次读到的章节索引 (用于「继续阅读」章节级续读)
+  int get _resumeChapterIndex {
+    final total = widget.data.chapters.length;
+    if (total <= 0) return 0;
+    final idx = playHistoryService.getById(_mediaId)?.episodeIndex ?? 0;
+    return idx.clamp(0, total - 1);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _registerPlayRecord();
+  }
+
+  /// 登记 / 更新当前书籍的消费记录 (保留既有阅读进度)
+  void _registerPlayRecord() {
+    if (_mediaId.isEmpty) return;
+    final existing = playHistoryService.getById(_mediaId);
+    playHistoryService.upsert(
+      PlayRecord(
+        id: _mediaId,
+        title: widget.data.title.isNotEmpty ? widget.data.title : widget.fallbackTitle,
+        cover: widget.data.cover.isNotEmpty ? widget.data.cover : widget.fallbackCover,
+        mediaType: 'novel',
+        ruleId: widget.rule?.id?.toString() ?? '',
+        episodeName: existing?.episodeName ?? '',
+        episodeIndex: existing?.episodeIndex ?? 0,
+        totalEpisodes: widget.data.chapters.length,
+        updatedAt: DateTime.now(),
+      ),
+    );
+  }
+
+  /// 阅读器章节切换回调 → 同步阅读进度
+  void _onChapterChanged(int index, String title) {
+    playHistoryService.updateProgress(
+      id: _mediaId,
+      episodeName: title,
+      episodeIndex: index,
+      totalEpisodes: widget.data.chapters.length,
+      forceNotify: true,
+    );
+  }
+
   /// 打开纯净小说阅读引擎
   void _openReader({int initialIndex = 0}) {
     HapticFeedback.lightImpact();
@@ -60,14 +119,19 @@ class _NovelDetailViewState extends State<NovelDetailView> {
       readerChapters[0] = readerChapters[0].copyWith(content: widget.data.textContent);
     }
 
+    // 记录本次进入阅读器的起始章节，保证退出后的阅读进度可续读
+    final safeIndex = initialIndex.clamp(0, readerChapters.length - 1);
+    _onChapterChanged(safeIndex, readerChapters[safeIndex].title);
+
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => NovelReaderPage(
           bookTitle: widget.data.title.isNotEmpty ? widget.data.title : widget.fallbackTitle,
-          initialChapterIndex: initialIndex.clamp(0, readerChapters.length - 1),
+          initialChapterIndex: safeIndex,
           chapters: readerChapters,
           rule: widget.rule,
           customHeaders: widget.data.customHeaders,
+          onChapterChanged: _onChapterChanged,
         ),
       ),
     );
@@ -98,14 +162,18 @@ class _NovelDetailViewState extends State<NovelDetailView> {
             padding: const EdgeInsets.symmetric(vertical: 12),
             borderRadius: 12,
             color: AppColors.primary,
-            onTap: () => _openReader(initialIndex: 0),
+            onTap: () => _openReader(initialIndex: _resumeChapterIndex),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 const Icon(Ionicons.bookOutline, color: Colors.white, size: 18),
                 const SizedBox(width: 8),
                 Text(
-                  chapters.isNotEmpty ? '开始阅读 (共 ${chapters.length} 章)' : '立即畅读正文',
+                  chapters.isNotEmpty
+                      ? (_hasReadingProgress
+                          ? '继续阅读 (第 ${_resumeChapterIndex + 1} 章 / 共 ${chapters.length} 章)'
+                          : '开始阅读 (共 ${chapters.length} 章)')
+                      : '立即畅读正文',
                   style: const TextStyle(
                     color: Colors.white,
                     fontSize: 14,
@@ -224,7 +292,7 @@ class _NovelDetailViewState extends State<NovelDetailView> {
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
               child: Center(
                 child: TextButton.icon(
-                  onPressed: () => _openReader(initialIndex: 0),
+                  onPressed: () => _openReader(initialIndex: _resumeChapterIndex),
                   icon: const Icon(Ionicons.listOutline, size: 14, color: AppColors.primary),
                   label: Text(
                     '进入阅读器查看全部 ${chapters.length} 章节',

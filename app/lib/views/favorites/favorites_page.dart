@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:ionicons/ionicons.dart';
 
 import '../../core/theme/app_colors.dart';
+import '../../core/utils/media_utils.dart';
 import '../../services/di.dart';
 import '../../services/favorite_service.dart';
 import '../../widgets/app_card.dart';
@@ -21,42 +22,6 @@ class _FavoritesPageState extends State<FavoritesPage> {
   String _selectedFilter = 'all'; // 'all' | 'video' | 'novel' | 'picture'
   bool _isCheckingUpdates = false;
 
-  @override
-  void initState() {
-    super.initState();
-    _seedSampleIfEmpty();
-  }
-
-  /// 若首次使用且收藏为空，预置两条高质感示例条目，便于立即体验追更微胶囊红点机制
-  void _seedSampleIfEmpty() {
-    if (favoriteService.favorites.isEmpty) {
-      favoriteService.addFavorite(
-        FavoriteItem(
-          id: 'sample_video_1',
-          title: '凡人修仙传 重置版',
-          cover: 'https://images.unsplash.com/photo-1534447677768-be436bb09401?w=400&fit=crop&q=80',
-          mediaType: 'video',
-          lastEpisode: '第112集',
-          latestEpisode: '第113集',
-          hasUpdate: true,
-          updatedAt: DateTime.now(),
-        ),
-      );
-      favoriteService.addFavorite(
-        FavoriteItem(
-          id: 'sample_novel_1',
-          title: '三体 · 死神永生',
-          cover: 'https://images.unsplash.com/photo-1512820790803-83ca734da794?w=400&fit=crop&q=80',
-          mediaType: 'novel',
-          lastEpisode: '第32章',
-          latestEpisode: '第33章 阶梯计划',
-          hasUpdate: true,
-          updatedAt: DateTime.now(),
-        ),
-      );
-    }
-  }
-
   /// 执行智能追更检测
   Future<void> _checkUpdates() async {
     setState(() => _isCheckingUpdates = true);
@@ -70,24 +35,6 @@ class _FavoritesPageState extends State<FavoritesPage> {
           content: Text(count > 0 ? '检测到 $count 部作品有更新！' : '当前所有收藏均已是最新进度'),
         ),
       );
-    }
-  }
-
-  IconData _getTypeIcon(String mediaType) {
-    switch (mediaType.toLowerCase()) {
-      case 'video':
-      case 'tv':
-      case 'movie':
-        return Ionicons.filmOutline;
-      case 'novel':
-      case 'book':
-        return Ionicons.bookOutline;
-      case 'comic':
-      case 'picture':
-      case 'gallery':
-        return Ionicons.imageOutline;
-      default:
-        return Ionicons.bookmarkOutline;
     }
   }
 
@@ -234,11 +181,11 @@ class _FavoritesPageState extends State<FavoritesPage> {
                       item.cover,
                       fit: BoxFit.cover,
                       errorBuilder: (context, error, stackTrace) => Center(
-                        child: Icon(_getTypeIcon(item.mediaType), color: Colors.grey, size: 24),
+                        child: Icon(MediaDisplay.typeIcon(item.mediaType), color: Colors.grey, size: 24),
                       ),
                     )
                   : Center(
-                      child: Icon(_getTypeIcon(item.mediaType), color: Colors.grey, size: 24),
+                      child: Icon(MediaDisplay.typeIcon(item.mediaType), color: Colors.grey, size: 24),
                     ),
             ),
           ),
