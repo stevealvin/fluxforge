@@ -126,7 +126,7 @@ class _MediaDetailPageState extends State<MediaDetailPage> {
     List<MediaRelatedItem> parsedRelated = [];
 
     List<MediaGroup> videoGroups = [];
-    List<MediaEpisode> episodes = [];
+    List<MediaEpisode> items = [];
     List<String> imageList = [];
     List<MediaGroup> comicGroups = [];
     List<MediaEpisode> chapters = [];
@@ -136,10 +136,10 @@ class _MediaDetailPageState extends State<MediaDetailPage> {
     if (result is Map) {
       parsedTitle = result['title']?.toString() ?? widget.title;
       parsedCover = result['cover']?.toString() ?? widget.cover;
-      parsedDesc = result['desc']?.toString() ?? result['description']?.toString();
+      parsedDesc = result['desc']?.toString();
       parsedAuthor = result['author']?.toString();
-      parsedRating = result['rating']?.toString() ?? result['score']?.toString();
-      parsedUpdateTime = result['updateTime']?.toString() ?? result['updated']?.toString();
+      parsedRating = result['rating']?.toString();
+      parsedUpdateTime = result['updateTime']?.toString();
 
       if (result['tags'] is List) {
         parsedTags = (result['tags'] as List)
@@ -152,6 +152,16 @@ class _MediaDetailPageState extends State<MediaDetailPage> {
         parsedHeaders = (result['headers'] as Map).map(
           (k, v) => MapEntry(k.toString(), v.toString()),
         );
+      }
+
+      // 智能识别并注入默认防盗链 Referer：若规则未显式声明，默认回退注入详情页 URL 或规则 baseUrl
+      final hasReferer = parsedHeaders.keys.any((k) => k.toLowerCase() == 'referer');
+      if (!hasReferer) {
+        if (widget.url.isNotEmpty) {
+          parsedHeaders['Referer'] = widget.url;
+        } else if (_activeRule?.baseUrl.isNotEmpty ?? false) {
+          parsedHeaders['Referer'] = _activeRule!.baseUrl;
+        }
       }
 
       if (result['previews'] is List) {
@@ -185,13 +195,13 @@ class _MediaDetailPageState extends State<MediaDetailPage> {
           final it = rawItems[i];
           if (it is Map) {
             final ep = MediaEpisode.fromMap(Map<String, dynamic>.from(it), fallbackIndex: i + 1);
-            episodes.add(ep);
+            items.add(ep);
             chapters.add(ep);
           } else if (it is String) {
             final u = it.trim();
             if (u.isNotEmpty) {
               final ep = MediaEpisode(title: '第 ${i + 1} 话', url: u);
-              episodes.add(ep);
+              items.add(ep);
               chapters.add(ep);
               imageList.add(_normalizeUrl(u));
             }
@@ -199,15 +209,7 @@ class _MediaDetailPageState extends State<MediaDetailPage> {
         }
       }
 
-      if (result['images'] is List) {
-        for (final im in result['images']) {
-          if (im is String && im.trim().isNotEmpty) {
-            imageList.add(_normalizeUrl(im.trim()));
-          }
-        }
-      }
-
-      playUrl = result['playUrl']?.toString() ?? result['videoUrl']?.toString();
+      playUrl = result['playUrl']?.toString();
       textContent = result['content']?.toString();
     }
 
@@ -217,7 +219,7 @@ class _MediaDetailPageState extends State<MediaDetailPage> {
         determinedType = MediaType.comic;
       } else if (textContent != null && textContent.length > 80) {
         determinedType = MediaType.novel;
-      } else if (playUrl != null || episodes.isNotEmpty || videoGroups.isNotEmpty) {
+      } else if (playUrl != null || items.isNotEmpty || videoGroups.isNotEmpty) {
         determinedType = MediaType.video;
       } else {
         determinedType = MediaType.video;
@@ -235,9 +237,9 @@ class _MediaDetailPageState extends State<MediaDetailPage> {
       tags: parsedTags,
       customHeaders: parsedHeaders,
       mediaType: determinedType,
+      items: items,
       playUrl: playUrl,
       videoGroups: videoGroups,
-      episodes: episodes,
       imageList: imageList,
       comicGroups: comicGroups,
       textContent: textContent,
@@ -351,9 +353,11 @@ class _MediaDetailPageState extends State<MediaDetailPage> {
       return const Center(child: AppLoading(message: '正在调度沙箱解析媒体元数据...'));
     }
 
-    if (_error != null && _data.isEmpty) {
+    // 若沙箱解析发生异常，彻底清除默认数据兜底，直接展示错误详情与重试按钮
+    if (_error != null) {
       return Center(
         child: AppEmptyState(
+          icon: Ionicons.alertCircleOutline,
           title: '详情解析异常',
           description: _error!,
           actionText: '重试解析',
@@ -362,21 +366,14 @@ class _MediaDetailPageState extends State<MediaDetailPage> {
       );
     }
 
-    // 视频类型：顶部吸顶常驻播放器，下方独立滚动流 (保留自定义顶栏的同时，享受商业级吸顶视听体验)
+    // 视频类型：顶部吸顶常驻播放器，下方独立滚动流 (享受商业级吸顶视听体验)
     if (_data.mediaType == MediaType.video || _data.mediaType == MediaType.unknown) {
-      return Column(
-        children: [
-          if (_error != null) _buildErrorBanner(isDark),
-          Expanded(
-            child: VideoDetailView(
-              data: _data,
-              rule: _activeRule,
-              fallbackTitle: widget.title,
-              fallbackCover: widget.cover,
-              onRelatedItemTap: _handleRelatedItemTap,
-            ),
-          ),
-        ],
+      return VideoDetailView(
+        data: _data,
+        rule: _activeRule,
+        fallbackTitle: widget.title,
+        fallbackCover: widget.cover,
+        onRelatedItemTap: _handleRelatedItemTap,
       );
     }
 
@@ -408,48 +405,7 @@ class _MediaDetailPageState extends State<MediaDetailPage> {
     // 漫画与小说类型：整页自由长滑卷轴
     return SingleChildScrollView(
       physics: const BouncingScrollPhysics(),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (_error != null) _buildErrorBanner(isDark),
-          content,
-        ],
-      ),
-    );
-  }
-
-  /// 构建轻量异常告警横条
-  Widget _buildErrorBanner(bool isDark) {
-    return Container(
-      margin: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: Colors.amber.withValues(alpha: isDark ? 0.18 : 0.12),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.amber.withValues(alpha: 0.3)),
-      ),
-      child: Row(
-        children: [
-          const Icon(Icons.warning_amber_rounded, color: Colors.amber, size: 16),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              '沙箱解析异常，已自动为您呈现基础元数据',
-              style: TextStyle(
-                color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
-                fontSize: 11.5,
-              ),
-            ),
-          ),
-          GestureDetector(
-            onTap: _loadDetail,
-            child: const Text(
-              '重试',
-              style: TextStyle(color: AppColors.primary, fontSize: 11.5, fontWeight: FontWeight.bold),
-            ),
-          ),
-        ],
-      ),
+      child: content,
     );
   }
 }

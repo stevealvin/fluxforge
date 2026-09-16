@@ -387,44 +387,28 @@ class _RuleTesterPageState extends State<RuleTesterPage> {
 
           if (res is Map) {
             final title = res['title']?.toString() ?? candidateDetailItem?['title']?.toString() ?? '无标题';
-            final desc = res['desc']?.toString() ?? res['description']?.toString() ?? '';
-            final episodes = res['episodes'] is List ? (res['episodes'] as List) : [];
-            final chapters = res['chapters'] is List ? (res['chapters'] as List) : [];
-            final images = res['images'] is List ? (res['images'] as List) : [];
+            final desc = res['desc']?.toString() ?? '';
+            final items = res['items'] is List ? (res['items'] as List) : [];
 
             step.keyFields['详情标题'] = title;
             step.keyFields['简介字数'] = '${desc.length} 字';
 
-            if (episodes.isNotEmpty) {
-              step.keyFields['视频选集 (episodes)'] = '${episodes.length} 集';
-              final firstEp = episodes.first;
-              if (firstEp is Map) {
-                candidateChapterUrl = firstEp['url']?.toString();
-                step.keyFields['首集名称与链接'] = '${firstEp['name'] ?? firstEp['title'] ?? '第1集'} -> $candidateChapterUrl';
-              } else if (firstEp is String) {
-                candidateChapterUrl = firstEp;
-                step.keyFields['首集链接'] = firstEp;
+            if (items.isNotEmpty) {
+              step.keyFields['资源条目 (items)'] = '${items.length} 项';
+              final firstItem = items.first;
+              if (firstItem is Map) {
+                candidateChapterUrl = firstItem['url']?.toString();
+                step.keyFields['首项名称与链接'] = '${firstItem['title'] ?? firstItem['name'] ?? '第1项'} -> $candidateChapterUrl';
+              } else if (firstItem is String) {
+                candidateChapterUrl = firstItem;
+                step.keyFields['首项链接'] = firstItem;
               }
-            } else if (chapters.isNotEmpty) {
-              step.keyFields['小说章节 (chapters)'] = '${chapters.length} 章';
-              final firstCh = chapters.first;
-              if (firstCh is Map) {
-                candidateChapterUrl = firstCh['url']?.toString();
-                step.keyFields['首章名称与链接'] = '${firstCh['name'] ?? firstCh['title'] ?? '第1章'} -> $candidateChapterUrl';
-              } else if (firstCh is String) {
-                candidateChapterUrl = firstCh;
-                step.keyFields['首章链接'] = firstCh;
-              }
-            } else if (images.isNotEmpty) {
-              step.keyFields['图集图片 (images)'] = '${images.length} 张';
-              candidateChapterUrl = images.first.toString();
-            } else if (res['url'] != null) {
-              candidateChapterUrl = res['url'].toString();
-              step.keyFields['详情内嵌播放直链'] = candidateChapterUrl;
+            } else if (res['playUrl'] != null) {
+              candidateChapterUrl = res['playUrl'].toString();
+              step.keyFields['详情直出播放链接'] = candidateChapterUrl;
             }
 
-            final totalCount = episodes.length + chapters.length + images.length;
-            step.summary = '详情解析成功: 《$title》，解析到 $totalCount 个选集/章节/资源条目';
+            step.summary = '详情解析成功: 《$title》，解析到 ${items.length} 个资源条目';
             step.status = RuleTestStepStatus.success;
           } else {
             step.summary = '详情动作未返回预期的 Map 对象结构';

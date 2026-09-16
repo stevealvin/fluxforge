@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui';
+import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:ionicons/ionicons.dart';
@@ -231,7 +232,9 @@ class AuraPlayerState extends State<AuraPlayer>
   @override
   void didUpdateWidget(covariant AuraPlayer oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.controller == null && oldWidget.playUrl != widget.playUrl) {
+    if (widget.controller == null &&
+        (oldWidget.playUrl != widget.playUrl ||
+            !mapEquals(oldWidget.httpHeaders, widget.httpHeaders))) {
       _initializePlayer();
     }
   }
@@ -543,10 +546,7 @@ class AuraPlayerState extends State<AuraPlayer>
         // 8. 断点续播提醒气泡
         if (_showResumeTip) _buildResumeTip(),
 
-        // 9. 小屏专属居中大播放/暂停按键 (带平滑缩放与淡入淡出动效)
-        _buildCenterPlayButton(),
-
-        // 10. 现代毛玻璃 UI 控制栏 (顶栏、底栏) — 常驻渲染，由内部动画驱动显隐
+        // 9. 现代毛玻璃 UI 控制栏 (顶栏、底栏) — 常驻渲染，由内部动画驱动显隐
         if (_isInitialized) _buildControlOverlays(),
 
         // 11. 浮动锁屏按钮 (仅全屏模式出现、加宽左边距、支持单锁显隐)
@@ -1131,67 +1131,6 @@ class AuraPlayerState extends State<AuraPlayer>
     );
   }
 
-  /// 居中大播放/暂停按键 (无底色、无边线纯净悬浮形态，圆润极简 LucideIcons，带微立体投影与弹性缩放动效)
-  Widget _buildCenterPlayButton() {
-    if (!_isInitialized || _hasError) {
-      return const SizedBox.shrink();
-    }
-
-    // 采用防跳变综合播放判定：拖拽/寻道缓冲期间保持意向，绝不误显暂停按键
-    final isPlaying = _effectiveIsPlaying;
-
-    // 全屏模式下播放中保持画面干净；仅在暂停状态 (且呼出控制栏时) 呈现纯净大播放按键
-    if (_isFullScreen && isPlaying) {
-      return const SizedBox.shrink();
-    }
-
-    return Center(
-      child: IgnorePointer(
-        ignoring: !_showControls,
-        child: AnimatedOpacity(
-          opacity: _showControls ? 1.0 : 0.0,
-          duration: const Duration(milliseconds: 220),
-          curve: Curves.easeOut,
-          child: AnimatedScale(
-            scale: _showControls ? 1.0 : 0.72,
-            duration: const Duration(milliseconds: 240),
-            curve: Curves.easeOutBack,
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: () {
-                HapticFeedback.lightImpact();
-                if (isPlaying) {
-                  _controller?.pause();
-                } else {
-                  _controller?.play();
-                }
-                _startControlsTimer();
-              },
-              child: SizedBox(
-                width: 44,
-                height: 44,
-                child: Center(
-                  child: Icon(
-                    isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                    color: Colors.white,
-                    size: 34, // 适度缩小居中图标尺寸，避免遮挡视频画面
-                    shadows: const [
-                      Shadow(
-                        color: Colors.black87,
-                        blurRadius: 10,
-                        offset: Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
   /// 小屏控制条隐藏时的常驻微型极光进度条 (高度 2px，纯净观影且随时掌握播放进度)
   Widget _buildBottomMiniProgress() {
     if (_isFullScreen || !_isInitialized || _hasError) {
@@ -1589,14 +1528,14 @@ class AuraPlayerState extends State<AuraPlayer>
   );
   }
 
-  /// 播放 / 暂停按钮 (全屏下图标左边缘与进度条左边缘严格像素级对齐，防跳变播放状态判定)
+  /// 播放 / 暂停按钮 (全屏下图标左边缘与进度条左边缘严格像素级对齐，适度加大尺寸提升触控体验)
   Widget _buildPlayPauseButton({bool compact = false}) {
     final isPlaying = _effectiveIsPlaying;
-    // 采用现代流媒体标准圆润实心矢量图标，提升复杂画面背景下的辨识度与触觉质感
+    // 采用现代流媒体标准圆润实心矢量图标，适度调大图标尺寸 (紧凑模式 25，常规/全屏 28)
     final icon = Icon(
       isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
       color: Colors.white,
-      size: compact ? 22 : 24,
+      size: compact ? 25 : 28,
     );
 
     // 全屏模式下内容靠左紧贴，消除外围边距错位
@@ -1604,6 +1543,7 @@ class AuraPlayerState extends State<AuraPlayer>
       return GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: () {
+          HapticFeedback.lightImpact();
           if (isPlaying) {
             _controller?.pause();
           } else {
@@ -1612,8 +1552,8 @@ class AuraPlayerState extends State<AuraPlayer>
           _startControlsTimer();
         },
         child: Container(
-          width: 38,
-          height: 38,
+          width: 42,
+          height: 42,
           alignment: Alignment.centerLeft,
           child: icon,
         ),
@@ -1624,10 +1564,11 @@ class AuraPlayerState extends State<AuraPlayer>
       icon: icon,
       padding: EdgeInsets.zero,
       constraints: BoxConstraints.tightFor(
-        width: compact ? 32 : 38,
-        height: compact ? 32 : 38,
+        width: compact ? 34 : 42,
+        height: compact ? 34 : 42,
       ),
       onPressed: () {
+        HapticFeedback.lightImpact();
         if (isPlaying) {
           _controller?.pause();
         } else {

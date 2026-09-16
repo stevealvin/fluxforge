@@ -134,10 +134,12 @@ class MediaDetailData {
   // 识别出的媒介业务类型
   final MediaType mediaType;
 
+  // 核心子资源条目 (契约全链路统一标准: 视频选集、小说章节、漫画图集等)
+  final List<MediaEpisode> items;
+
   // 视频业务特有数据
   final String? playUrl;
   final List<MediaGroup> videoGroups;
-  final List<MediaEpisode> episodes;
 
   // 漫画/图集业务特有数据
   final List<String> imageList;
@@ -162,9 +164,9 @@ class MediaDetailData {
     this.tags = const [],
     this.customHeaders = const {},
     this.mediaType = MediaType.unknown,
+    this.items = const [],
     this.playUrl,
     this.videoGroups = const [],
-    this.episodes = const [],
     this.imageList = const [],
     this.comicGroups = const [],
     this.textContent,
@@ -187,9 +189,9 @@ class MediaDetailData {
     List<String>? tags,
     Map<String, String>? customHeaders,
     MediaType? mediaType,
+    List<MediaEpisode>? items,
     String? playUrl,
     List<MediaGroup>? videoGroups,
-    List<MediaEpisode>? episodes,
     List<String>? imageList,
     List<MediaGroup>? comicGroups,
     String? textContent,
@@ -208,9 +210,9 @@ class MediaDetailData {
       tags: tags ?? this.tags,
       customHeaders: customHeaders ?? this.customHeaders,
       mediaType: mediaType ?? this.mediaType,
+      items: items ?? this.items,
       playUrl: playUrl ?? this.playUrl,
       videoGroups: videoGroups ?? this.videoGroups,
-      episodes: episodes ?? this.episodes,
       imageList: imageList ?? this.imageList,
       comicGroups: comicGroups ?? this.comicGroups,
       textContent: textContent ?? this.textContent,

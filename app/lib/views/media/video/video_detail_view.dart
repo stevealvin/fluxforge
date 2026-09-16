@@ -102,6 +102,36 @@ class _VideoDetailViewState extends State<VideoDetailView> {
   bool get _autoResume =>
       appService.settings.resumeBehavior == ResumeBehavior.auto;
 
+  /// 获取当前播放视频生效的完整请求头 (深度整合规则全局 headers、单集独占 headers 与智能 Referer 兜底)
+  Map<String, String> get _activeHeaders {
+    final headers = Map<String, String>.from(widget.data.customHeaders);
+    final episodes = _currentGroupEpisodes;
+    if (episodes.isNotEmpty &&
+        _currentEpisodeIndex >= 0 &&
+        _currentEpisodeIndex < episodes.length) {
+      final ep = episodes[_currentEpisodeIndex];
+      final epHeaders = ep.extra['headers'];
+      if (epHeaders is Map) {
+        epHeaders.forEach((k, v) {
+          if (k != null && v != null) {
+            headers[k.toString()] = v.toString();
+          }
+        });
+      }
+    }
+
+    // 防盗链保护：若规则未声明 Referer，智能注入详情页 URL 或规则 baseUrl
+    final hasReferer = headers.keys.any((k) => k.toLowerCase() == 'referer');
+    if (!hasReferer) {
+      if (widget.data.url.isNotEmpty) {
+        headers['Referer'] = widget.data.url;
+      } else if (widget.rule?.baseUrl.isNotEmpty ?? false) {
+        headers['Referer'] = widget.rule!.baseUrl;
+      }
+    }
+    return headers;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -150,7 +180,7 @@ class _VideoDetailViewState extends State<VideoDetailView> {
   void didUpdateWidget(covariant VideoDetailView oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.data.playUrl != widget.data.playUrl ||
-        oldWidget.data.episodes != widget.data.episodes) {
+        oldWidget.data.items != widget.data.items) {
       _initInitialPlayState();
     }
   }
@@ -185,7 +215,7 @@ class _VideoDetailViewState extends State<VideoDetailView> {
         _selectedGroupIndex < widget.data.videoGroups.length) {
       return widget.data.videoGroups[_selectedGroupIndex].items;
     }
-    return widget.data.episodes;
+    return widget.data.items;
   }
 
   void _playEpisode(int index) {
@@ -242,7 +272,7 @@ class _VideoDetailViewState extends State<VideoDetailView> {
                     playUrl: _activePlayUrl!,
                     title: fullPlayerTitle,
                     coverUrl: widget.data.cover.isNotEmpty ? widget.data.cover : widget.fallbackCover,
-                    httpHeaders: widget.data.customHeaders,
+                    httpHeaders: _activeHeaders,
                     initialPosition: _resumePosition,
                     autoResume: _autoResume,
                     onProgress: _onPlayProgress,

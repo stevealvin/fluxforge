@@ -45,7 +45,7 @@ void main() {
             return {
               title: '斗罗大陆：海神之光',
               desc: '唐三小舞成神之路',
-              episodes: [
+              items: [
                 { name: '第1集', url: '/play/1001-1' },
                 { name: '第2集', url: '/play/1001-2' }
               ]
