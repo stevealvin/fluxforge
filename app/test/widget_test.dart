@@ -487,7 +487,7 @@ module.exports = {
     expect(find.text('左右翻页'), findsOneWidget);
   });
 
-  testWidgets('NovelReaderPage renders chapter content, supports SelectionArea and copy action cleanly', (WidgetTester tester) async {
+  testWidgets('NovelReaderPage renders chapter content, supports SelectionArea and catalog drawer cleanly', (WidgetTester tester) async {
     final testChapters = [
       const NovelChapter(
         title: '第1章 宇宙闪烁',
@@ -522,15 +522,57 @@ module.exports = {
     await tester.tap(find.byKey(const ValueKey('reader_gesture_area')));
     await tester.pump(const Duration(milliseconds: 200));
 
-    // 验证控制栏出现复制按钮 (Ionicons.copyOutline)
-    expect(find.byIcon(Ionicons.copyOutline), findsWidgets);
+    // 验证控制栏出现章节目录按钮 (Ionicons.reorderFourOutline)
+    expect(find.byIcon(Ionicons.reorderFourOutline), findsWidgets);
 
-    // 4. 点击一键复制整章按钮并验证 SnackBar 提示正常弹出
-    await tester.tap(find.byIcon(Ionicons.copyOutline).first);
+    // 4. 点击目录按钮，验证左侧抽屉打开、章节列表渲染且缓存状态图标正常
+    await tester.tap(find.byIcon(Ionicons.reorderFourOutline).first);
     await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    // 目录应列出后续章节，且已就绪章节展示「已缓存」对勾图标
+    expect(find.text('第2章 科学边界'), findsWidgets);
+    expect(find.byIcon(Ionicons.checkmarkCircle), findsWidgets);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('NovelReaderPage renders empty state instead of sample chapters when no chapters provided', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: NovelReaderPage(bookTitle: '空章节测试'),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 200));
+
+    // 严禁渲染任何示例假章节，必须展示空态引导
+    expect(find.text('暂无章节内容'), findsOneWidget);
+    expect(find.textContaining('科学边界'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('NovelReaderPage tap zones turn pages on sides and toggle menu in center', (WidgetTester tester) async {
+    const chapters = [
+      NovelChapter(title: '第1章 起点', content: '第一章正文内容。'),
+      NovelChapter(title: '第2章 终点', content: '第二章正文内容。'),
+    ];
+
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: NovelReaderPage(bookTitle: '分区点击测试', chapters: chapters),
+      ),
+    );
     await tester.pump(const Duration(milliseconds: 300));
 
-    expect(find.textContaining('已复制《第1章 宇宙闪烁》'), findsOneWidget);
+    // 1. 点击右侧 1/3 区域：本章仅一页 → 应无缝续读下一章
+    await tester.tapAt(const Offset(700, 300));
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text('第2章 终点'), findsWidgets);
+
+    // 2. 点击中间 1/3 区域：应呼出控制栏（出现目录按钮）
+    await tester.tapAt(const Offset(400, 300));
+    await tester.pump(const Duration(milliseconds: 250));
+    expect(find.byIcon(Ionicons.reorderFourOutline), findsWidgets);
+
     expect(tester.takeException(), isNull);
   });
 
