@@ -573,6 +573,11 @@ module.exports = {
     await tester.pump(const Duration(milliseconds: 250));
     expect(find.byIcon(Ionicons.reorderFourOutline), findsWidgets);
 
+    // 3. 点击左侧 1/3 区域：本章第一页 → 应无缝倒序回退到上一章
+    await tester.tapAt(const Offset(100, 300));
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text('第1章 起点'), findsWidgets);
+
     expect(tester.takeException(), isNull);
   });
 

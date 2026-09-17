@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:ionicons/ionicons.dart';
@@ -144,8 +145,11 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
   /// 正在后台预取中的章节索引集合（防止同一章重复发起请求）
   final Set<int> _prefetching = {};
 
-  /// 横向模式防抖标记：正在执行章末自动续章
+  /// 横向模式防抖标记：正在执行章末/章首自动续章
   bool _advancingChapter = false;
+
+  /// 切换章节时是否直接定位到最后一页（用于从下一章倒序回溯到上一章）
+  bool _openAtLastPage = false;
 
   /// 纵向连续阅读的章节序列（首个元素为进入纵向模式时的章节）
   final List<int> _verticalSequence = [];
@@ -176,14 +180,31 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
   /// 目录列表固定行高（固定行高才能用 initialScrollOffset 精确跳转到指定章节）
   static const double _catalogItemHeight = 56.0;
 
+  // ==================== 翻页桥接页与真实页面映射 ====================
+
+  /// 当前章节是否存在上一章
+  bool get _hasPrevChapter => _currentChapterIndex > 0;
+
+  /// 当前章节是否存在下一章
+  bool get _hasNextChapter => _currentChapterIndex < _chapters.length - 1;
+
+  /// 章首上一章衔接页占用页数（存在上一章时占用第 0 页）
+  int get _prevBridgeCount => _hasPrevChapter ? 1 : 0;
+
+  /// 章末下一章衔接页占用页数
+  int get _nextBridgeCount => _hasNextChapter ? 1 : 0;
+
+  /// PageView 包含衔接页的总页数
+  int get _totalPageCount => _prevBridgeCount + _pageSlices.length + _nextBridgeCount;
+
   @override
   void initState() {
     super.initState();
     _currentChapterIndex = widget.initialChapterIndex;
     _setupChapters();
     _loadUserPreferences();
-    _pageController = PageController(initialPage: _currentPageIndex);
     _recalculatePages();
+    _pageController = PageController(initialPage: _prevBridgeCount + _currentPageIndex);
 
     // 初始进入立即按需调度沙箱加载章节内容
     _loadChapterContent(_currentChapterIndex);
@@ -244,9 +265,14 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
         _isLoadingContent = false;
         _contentError = null;
         _recalculatePages();
+        if (_openAtLastPage) {
+          _currentPageIndex = _pageSlices.isNotEmpty ? _pageSlices.length - 1 : 0;
+          _openAtLastPage = false;
+        }
       });
-      // 命中缓存即代表阅读顺畅，立即静默预取后续章节
-      _maybePrefetchNext();
+      _syncPageController();
+      // 命中缓存即代表阅读顺畅，立即静默双向预取前后相邻章节
+      _maybePrefetchAdjacent();
       return;
     }
 
@@ -258,6 +284,11 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
       if (currentCh.content.isNotEmpty) {
         _contentCache[index] = currentCh.content;
         _recalculatePages();
+        if (_openAtLastPage) {
+          _currentPageIndex = _pageSlices.isNotEmpty ? _pageSlices.length - 1 : 0;
+          _openAtLastPage = false;
+        }
+        _syncPageController();
       }
       return;
     }
@@ -299,10 +330,15 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
           _isLoadingContent = false;
           _contentError = null;
           _recalculatePages();
+          if (_openAtLastPage) {
+            _currentPageIndex = _pageSlices.isNotEmpty ? _pageSlices.length - 1 : 0;
+            _openAtLastPage = false;
+          }
         });
+        _syncPageController();
       }
-      // 当前章加载就绪后，立即静默预取下一章（实现连续翻页零等待）
-      _maybePrefetchNext();
+      // 当前章加载就绪后，立即静默双向预取相邻章节（实现连续翻页零等待）
+      _maybePrefetchAdjacent();
     } catch (e) {
       if (mounted && _currentChapterIndex == index) {
         setState(() {
@@ -369,12 +405,34 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
     }
   }
 
-  /// 触发下一章预取（阅读推进到当前章后段或当前章加载完成时调用）
-  void _maybePrefetchNext() {
+  /// 触发相邻章节双向预取（向前/向后均提前预载，实现顺读与回溯零卡顿）
+  void _maybePrefetchAdjacent() {
+    // 优先预取下一章
     final next = _currentChapterIndex + 1;
-    if (next < _chapters.length) {
+    if (next < _chapters.length && !_contentCache.containsKey(next)) {
       _prefetchChapter(next);
     }
+    // 同步预取上一章
+    final prev = _currentChapterIndex - 1;
+    if (prev >= 0 && !_contentCache.containsKey(prev)) {
+      _prefetchChapter(prev);
+    }
+  }
+
+  /// 横向模式：滑入章首衔接页后自动回退到上一章最后一页（带防抖与轻微延迟）
+  void _autoAdvanceToPreviousChapter() {
+    if (_advancingChapter) return;
+    if (_currentChapterIndex <= 0) return;
+
+    _advancingChapter = true;
+    Future.delayed(const Duration(milliseconds: 260), () {
+      if (!mounted) {
+        _advancingChapter = false;
+        return;
+      }
+      _advancingChapter = false;
+      _switchChapter(_currentChapterIndex - 1, toLastPage: true);
+    });
   }
 
   /// 横向模式：滑入章末衔接页后自动续读下一章（带防抖与轻微延迟，避免误触）
@@ -636,9 +694,13 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
   void _goToPreviousPage() {
     HapticFeedback.selectionClick();
 
-    // 纵向长卷：向上滚动一屏
+    // 纵向长卷：向上滚动一屏；到顶时自动切回上一章
     if (_pageMode == PageTurnMode.verticalScroll) {
       if (!_scrollController.hasClients) return;
+      if (_scrollController.offset <= 10 && _currentChapterIndex > 0) {
+        _switchChapter(_currentChapterIndex - 1);
+        return;
+      }
       final viewport = _scrollController.position.viewportDimension;
       final target = (_scrollController.offset - viewport * 0.92)
           .clamp(0.0, _scrollController.position.maxScrollExtent);
@@ -650,8 +712,15 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
       return;
     }
 
-    // 横向翻页：本章内前一页
-    if (_pageSlices.isEmpty) return;
+    // 横向翻页：本章正文未就绪时若点击上一页直接切回上一章末尾
+    if (_pageSlices.isEmpty) {
+      if (_currentChapterIndex > 0) {
+        _switchChapter(_currentChapterIndex - 1, toLastPage: true);
+      }
+      return;
+    }
+
+    // 本章内往前翻一页
     if (_currentPageIndex > 0) {
       _pageController?.previousPage(
         duration: const Duration(milliseconds: 220),
@@ -660,7 +729,7 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
       return;
     }
 
-    // 已是本章第一页 → 进入上一章的最后一页
+    // 已是本章第一页 → 无缝回退至上一章最后一页
     if (_currentChapterIndex > 0) {
       _switchChapterToLastPage(_currentChapterIndex - 1);
     } else {
@@ -706,16 +775,7 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
 
   /// 切换到指定章节并直接定位到该章最后一页（用于「上一页」跨章回溯）
   void _switchChapterToLastPage(int index) {
-    _switchChapter(index);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || _pageSlices.isEmpty) return;
-      final lastPage = _pageSlices.length - 1;
-      setState(() => _currentPageIndex = lastPage);
-      final controller = _pageController;
-      if (controller != null && controller.hasClients) {
-        controller.jumpToPage(lastPage);
-      }
-    });
+    _switchChapter(index, toLastPage: true);
   }
 
   /// 阅读区三区点击热层：左 1/3 上一页、中 1/3 呼出菜单、右 1/3 下一页
@@ -977,16 +1037,29 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
     );
 
     _pageSlices = slices;
-    _currentPageIndex = _currentPageIndex.clamp(0, _pageSlices.length - 1);
+    if (_openAtLastPage && _pageSlices.isNotEmpty) {
+      _currentPageIndex = _pageSlices.length - 1;
+      _openAtLastPage = false;
+    } else {
+      _currentPageIndex = _currentPageIndex.clamp(0, math.max(0, _pageSlices.length - 1));
+    }
   }
 
-  /// 切换章节
-  void _switchChapter(int index) {
+  /// 切换章节 (toLastPage: 是否直接定位到该章最后一页，用于从下一章倒序回溯)
+  void _switchChapter(int index, {bool toLastPage = false}) {
     if (index < 0 || index >= _chapters.length) return;
+    _openAtLastPage = toLastPage;
+
     setState(() {
       _currentChapterIndex = index;
-      _currentPageIndex = 0;
       _recalculatePages();
+
+      if (toLastPage && _pageSlices.isNotEmpty) {
+        _currentPageIndex = _pageSlices.length - 1;
+        _openAtLastPage = false;
+      } else if (!toLastPage) {
+        _currentPageIndex = 0;
+      }
 
       // 纵向模式下以目标章重建连续阅读序列（避免残留旧章内容造成错位）
       if (_pageMode == PageTurnMode.verticalScroll) {
@@ -1005,10 +1078,22 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
     // 触发异步加载目标章节
     _loadChapterContent(index);
 
-    if (_pageMode == PageTurnMode.horizontal && _pageController != null) {
-      _pageController!.jumpToPage(0);
+    if (_pageMode == PageTurnMode.horizontal) {
+      _syncPageController();
     } else if (_pageMode == PageTurnMode.verticalScroll && _scrollController.hasClients) {
       _scrollController.jumpTo(0);
+    }
+  }
+
+  /// 准确定位 PageController 到当前真实切片页（包含上一章桥接页偏移）
+  void _syncPageController() {
+    final targetRaw = _prevBridgeCount + (_pageSlices.isNotEmpty ? _currentPageIndex.clamp(0, _pageSlices.length - 1) : 0);
+    final controller = _pageController;
+    if (controller != null && controller.hasClients) {
+      controller.jumpToPage(targetRaw);
+    } else {
+      _pageController?.dispose();
+      _pageController = PageController(initialPage: targetRaw);
     }
   }
 
@@ -1218,37 +1303,63 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
                 _recalculatePages(width: renderWidth, height: renderHeight);
               }
 
-              // 章末追加一页「下一章衔接页」，滑入后自动无缝续读下一章
-              final hasNextChapter = _currentChapterIndex < _chapters.length - 1;
-              final pageCount = _pageSlices.length + (hasNextChapter ? 1 : 0);
+              // 空正文保护：正文为空或尚未切片时展示轻量占位，避免 PageView 越界
+              if (_pageSlices.isEmpty) {
+                return Center(
+                  child: Text(
+                    '正文排版中...',
+                    style: TextStyle(fontSize: 12, color: _readerTheme.subText),
+                  ),
+                );
+              }
+
+              final prevCount = _prevBridgeCount;
+              final totalCount = _totalPageCount;
 
               return PageView.builder(
+                key: ValueKey('novel_pageview_${_currentChapterIndex}_$totalCount'),
                 controller: _pageController,
-                itemCount: pageCount,
+                itemCount: totalCount,
                 onPageChanged: (idx) {
-                  // 滑入章末衔接页：自动续读下一章
-                  if (hasNextChapter && idx >= _pageSlices.length) {
+                  // 滑入章首衔接页：自动回退上一章最后一页
+                  if (_hasPrevChapter && idx == 0) {
+                    _autoAdvanceToPreviousChapter();
+                    return;
+                  }
+                  // 滑入章末衔接页：自动续读下一章第一页
+                  if (_hasNextChapter && idx >= prevCount + _pageSlices.length) {
                     _autoAdvanceToNextChapter();
                     return;
                   }
+                  // 正常切片正文页
+                  final sliceIdx = idx - prevCount;
                   setState(() {
-                    _currentPageIndex = idx;
+                    _currentPageIndex = sliceIdx.clamp(0, math.max(0, _pageSlices.length - 1));
                   });
-                  // 阅读推进到本章后段时提前静默预取下一章
-                  if (idx >= _pageSlices.length - 2) {
-                    _maybePrefetchNext();
+                  // 翻到两端附近时提前双向预取
+                  if (sliceIdx <= 1 || sliceIdx >= _pageSlices.length - 2) {
+                    _maybePrefetchAdjacent();
                   }
                 },
                 itemBuilder: (context, index) {
-                  // 章末衔接页
-                  if (index >= _pageSlices.length) {
+                  // 1. 章首上一章衔接页
+                  if (_hasPrevChapter && index == 0) {
+                    return _buildPreviousChapterBridge();
+                  }
+                  // 2. 章末下一章衔接页
+                  if (_hasNextChapter && index >= prevCount + _pageSlices.length) {
                     return _buildNextChapterBridge();
+                  }
+                  // 3. 正文内容页
+                  final sliceIdx = index - prevCount;
+                  if (sliceIdx < 0 || sliceIdx >= _pageSlices.length) {
+                    return const SizedBox.shrink();
                   }
                   return Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
                     // 单击手势统一由上层的三区点击热层接管（保留长按划词与拖动选择）
                     child: SelectableText(
-                      _pageSlices[index],
+                      _pageSlices[sliceIdx],
                       // 翻页模式下严格禁用垂直方向滚动物理特性，杜绝上下滑动导致翻页手势冲突
                       scrollPhysics: const NeverScrollableScrollPhysics(),
                       style: TextStyle(
@@ -1285,6 +1396,13 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
                       '已是最后一章 · ',
                       style: TextStyle(fontSize: 11, color: _readerTheme.subText),
                     ),
+                  if (_currentChapterIndex == 0 &&
+                      _pageSlices.isNotEmpty &&
+                      _currentPageIndex == 0)
+                    Text(
+                      '全书起始 · ',
+                      style: TextStyle(fontSize: 11, color: _readerTheme.subText),
+                    ),
                   Text(
                     _pageSlices.isNotEmpty ? '${_currentPageIndex + 1} / ${_pageSlices.length}' : '',
                     style: TextStyle(fontSize: 11, color: _readerTheme.subText),
@@ -1295,6 +1413,50 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
           ),
         ),
       ],
+    );
+  }
+
+  /// 章首衔接页（横向模式在第一页向右滑动展示，随后自动回退到上一章最后一页）
+  Widget _buildPreviousChapterBridge() {
+    final prevIndex = _currentChapterIndex - 1;
+    final prevTitle = prevIndex >= 0 ? _chapters[prevIndex].title : '';
+    final isReady = prevIndex >= 0 &&
+        (_contentCache.containsKey(prevIndex) || _prefetching.contains(prevIndex));
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const SizedBox(
+            width: 26,
+            height: 26,
+            child: CircularProgressIndicator(strokeWidth: 2.4, color: AppColors.primary),
+          ),
+          const SizedBox(height: 18),
+          Text(
+            '正在返回上一章',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.bold,
+              color: _readerTheme.text,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            prevTitle,
+            textAlign: TextAlign.center,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(fontSize: 12, color: _readerTheme.subText),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            isReady ? '正文已就绪，即将无缝切换' : '正在加载正文...',
+            style: TextStyle(fontSize: 11, color: _readerTheme.subText),
+          ),
+        ],
+      ),
     );
   }
 
