@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fluxforge/engines/web_video_gesture_engine.dart';
+import 'package:fluxforge/features/browser/engine/web_video_gesture_engine.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

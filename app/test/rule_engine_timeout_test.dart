@@ -1,9 +1,9 @@
 import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxforge/core/network/api_client.dart';
-import 'package:fluxforge/services/rule_engine.dart';
-import 'package:fluxforge/services/app_service.dart';
-import 'package:fluxforge/services/di.dart';
+import 'package:fluxforge/core/sandbox/rule_engine.dart';
+import 'package:fluxforge/data/settings/app_service.dart';
+import 'package:fluxforge/app/di/di.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

@@ -3,11 +3,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:shared_preferences_platform_interface/in_memory_shared_preferences_async.dart';
 import 'package:shared_preferences_platform_interface/shared_preferences_async_platform_interface.dart';
-import 'package:fluxforge/models/rule.dart';
-import 'package:fluxforge/views/rules/rule_tester_page.dart';
-import 'package:fluxforge/core/theme/app_theme.dart';
-import 'package:fluxforge/services/di.dart';
-import 'package:fluxforge/services/app_service.dart';
+import 'package:fluxforge/domain/rule/rule.dart';
+import 'package:fluxforge/features/rules/pages/rule_tester_page.dart';
+import 'package:fluxforge/app/theme/app_theme.dart';
+import 'package:fluxforge/app/di/di.dart';
+import 'package:fluxforge/data/settings/app_service.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

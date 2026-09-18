@@ -3,26 +3,27 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:shared_preferences_platform_interface/in_memory_shared_preferences_async.dart';
 import 'package:shared_preferences_platform_interface/shared_preferences_async_platform_interface.dart';
-import 'package:fluxforge/widgets/app_card.dart';
-import 'package:fluxforge/views/settings/logs_page.dart';
-import 'package:fluxforge/views/search/search_page.dart';
-import 'package:fluxforge/core/utils/app_logger.dart';
-import 'package:fluxforge/core/theme/app_theme.dart';
-import 'package:fluxforge/services/di.dart';
-import 'package:fluxforge/services/app_service.dart';
-import 'package:fluxforge/services/rule_service.dart';
-import 'package:fluxforge/services/history_service.dart';
-import 'package:fluxforge/services/play_history_service.dart';
-import 'package:fluxforge/services/rule_engine.dart';
-import 'package:fluxforge/widgets/player/aura_player.dart';
-import 'package:fluxforge/models/rule.dart';
-import 'package:fluxforge/router.dart';
-import 'package:fluxforge/views/media/media_detail_page.dart';
-import 'package:fluxforge/views/media/comic/reader/comic_reader_page.dart';
-import 'package:fluxforge/views/media/novel/reader/novel_reader_page.dart';
+import 'package:fluxforge/shared/widgets/app_card.dart';
+import 'package:fluxforge/features/settings/logs_page.dart';
+import 'package:fluxforge/features/search/search_page.dart';
+import 'package:fluxforge/core/logging/app_logger.dart';
+import 'package:fluxforge/app/theme/app_theme.dart';
+import 'package:fluxforge/app/di/di.dart';
+import 'package:fluxforge/data/settings/app_service.dart';
+import 'package:fluxforge/data/rule/rule_service.dart';
+import 'package:fluxforge/data/library/history_service.dart';
+import 'package:fluxforge/data/library/play_history_service.dart';
+import 'package:fluxforge/core/sandbox/rule_engine.dart';
+import 'package:fluxforge/shared/widgets/player/aura_player.dart';
+import 'package:fluxforge/domain/rule/rule.dart';
+import 'package:fluxforge/app/router/app_router.dart';
+import 'package:fluxforge/features/media/shared/media_detail_page.dart';
+import 'package:fluxforge/features/media/comic/reader/comic_reader_page.dart';
+import 'package:fluxforge/features/media/novel/reader/novel_reader_page.dart';
+import 'package:fluxforge/features/media/novel/reader/models/novel_chapter.dart';
 import 'package:ionicons/ionicons.dart';
-import 'package:fluxforge/models/media.dart';
-import 'package:fluxforge/views/media/common/media_related_grid.dart';
+import 'package:fluxforge/domain/media/media.dart';
+import 'package:fluxforge/features/media/shared/media_related_grid.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -530,9 +531,10 @@ module.exports = {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
 
-    // 目录应列出后续章节，且已就绪章节展示「已缓存」对勾图标
+    // 目录应列出后续章节；状态图标已统一为「沙盒离线下载」单一语义：
+    // 未下载章节展示云端下载入口（不再出现「已缓存」对勾，避免误以为可断网阅读）
     expect(find.text('第2章 科学边界'), findsWidgets);
-    expect(find.byIcon(Ionicons.checkmarkCircle), findsWidgets);
+    expect(find.byIcon(Ionicons.cloudDownloadOutline), findsWidgets);
     expect(tester.takeException(), isNull);
   });
 
@@ -577,6 +579,106 @@ module.exports = {
     await tester.tapAt(const Offset(100, 300));
     await tester.pump(const Duration(milliseconds: 400));
     expect(find.text('第1章 起点'), findsWidgets);
+
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('NovelReaderPage error state keeps retry button clickable without tap-zone interception', (WidgetTester tester) async {
+    const chapters = [
+      NovelChapter(title: '第1章 断链', url: 'https://example.com/broken-chapter'),
+    ];
+
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: NovelReaderPage(bookTitle: '错误态测试', chapters: chapters),
+      ),
+    );
+    // 未绑定解析规则 → 正文抓取失败，进入错误态
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.text('重试加载'), findsOneWidget);
+
+    // 点击重试按钮：必须命中按钮本身，而不是被三区热层抢走变成「呼出菜单」
+    await tester.tap(find.text('重试加载'));
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // 控制栏未被呼出，证明错误态下全屏热层已撤除
+    expect(find.byIcon(Ionicons.reorderFourOutline), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('NovelReaderPage catalog order toggle flips chapter list order', (WidgetTester tester) async {
+    const chapters = [
+      NovelChapter(title: '第1章 起点', content: '第一章正文内容。'),
+      NovelChapter(title: '第2章 发展', content: '第二章正文内容。'),
+      NovelChapter(title: '第3章 终点', content: '第三章正文内容。'),
+    ];
+
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: NovelReaderPage(bookTitle: '目录排序测试', chapters: chapters),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // 呼出控制栏并打开章节目录（左抽屉）
+    await tester.tapAt(const Offset(400, 300));
+    await tester.pump(const Duration(milliseconds: 250));
+    await tester.tap(find.byIcon(Ionicons.reorderFourOutline).first);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    double catalogItemTop(String title) => tester
+        .getTopLeft(find.descendant(of: find.byType(Drawer), matching: find.text(title)))
+        .dy;
+
+    // 默认正序：第 1 章在第 3 章上方
+    expect(catalogItemTop('第1章 起点'), lessThan(catalogItemTop('第3章 终点')));
+
+    // 切换为倒序：第 3 章应升到最上方，按钮文案同步变更
+    await tester.tap(find.text('正序'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.text('倒序'), findsOneWidget);
+    expect(catalogItemTop('第3章 终点'), lessThan(catalogItemTop('第1章 起点')));
+
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('NovelReaderPage horizontal bridge and seek synchronization does not accidentally trigger chapter retreat', (WidgetTester tester) async {
+    const chapters = [
+      NovelChapter(title: '第1章 起点', content: '第一章正文内容。'),
+      NovelChapter(title: '第2章 发展', content: '第二章长篇正文，第一段描述。\n\n第二章第二段描述。\n\n第二章第三段描述。'),
+      NovelChapter(title: '第3章 终点', content: '第三章正文内容。'),
+    ];
+
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: NovelReaderPage(
+          bookTitle: '桥接同步测试',
+          chapters: chapters,
+          initialChapterIndex: 1, // 直接从第 2 章开始
+        ),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // 验证初始状态正确处于第 2 章
+    expect(find.text('第2章 发展'), findsWidgets);
+
+    // 呼出控制栏
+    await tester.tapAt(const Offset(400, 300));
+    await tester.pump(const Duration(milliseconds: 250));
+
+    // 找到章内进度条并拖拽至起始端
+    final sliderFinder = find.byType(Slider);
+    if (sliderFinder.evaluate().isNotEmpty) {
+      await tester.drag(sliderFinder.first, const Offset(-300, 0));
+      await tester.pump(const Duration(milliseconds: 350));
+      // 必须依然保持在第 2 章，严禁误触发章首桥接页退回第 1 章
+      expect(find.text('第2章 发展'), findsWidgets);
+    }
 
     expect(tester.takeException(), isNull);
   });

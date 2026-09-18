@@ -1,0 +1,1093 @@
+import 'package:material_ui/material_ui.dart';
+import 'package:fluxforge/app/router/app_navigator.dart';
+import 'package:ionicons/ionicons.dart';
+
+import 'package:fluxforge/app/theme/app_colors.dart';
+import 'package:fluxforge/domain/rule/rule.dart';
+import 'package:fluxforge/core/sandbox/rule_engine.dart';
+import 'package:fluxforge/shared/widgets/app_card.dart';
+import 'package:fluxforge/shared/widgets/app_empty_state.dart';
+import 'package:fluxforge/shared/widgets/app_loading.dart';
+import 'package:fluxforge/shared/widgets/app_net_image.dart';
+
+/// 规范化的媒体条目模型（严格遵循固定契约）
+class _MediaItem {
+  final String title;
+  final String url;
+  final String cover;
+  final String desc;
+  final String badge;
+
+  const _MediaItem({
+    required this.title,
+    required this.url,
+    required this.cover,
+    this.desc = '',
+    this.badge = '',
+  });
+
+  factory _MediaItem.fromMap(Map map) {
+    return _MediaItem(
+      title: map['title']?.toString() ?? '',
+      url: map['url']?.toString() ?? '',
+      cover: map['cover']?.toString() ?? '',
+      desc: map['desc']?.toString() ?? '',
+      badge: map['badge']?.toString() ?? '',
+    );
+  }
+}
+
+/// 规范化的分类标签模型
+class _DiscoveryTab {
+  final String title;
+  final String url;
+
+  const _DiscoveryTab({
+    required this.title,
+    required this.url,
+  });
+
+  factory _DiscoveryTab.fromMap(Map map) {
+    return _DiscoveryTab(
+      title: map['title']?.toString() ?? '',
+      url: map['url']?.toString() ?? '',
+    );
+  }
+}
+
+/// 规则发现流浏览视图
+/// 
+/// 固定接收规则 discovery 生命周期返回的结构：
+/// { tabs?: Array<{ title: string, url: string }>, items: MediaItem[], hasMore?: boolean } 或 MediaItem[]
+class RuleCatalogPage extends StatefulWidget {
+  const RuleCatalogPage({
+    super.key,
+    required this.rule,
+  });
+
+  final Rule rule;
+
+  @override
+  State<RuleCatalogPage> createState() => _RuleCatalogPageState();
+}
+
+class _RuleCatalogPageState extends State<RuleCatalogPage> {
+  final ScrollController _scrollController = ScrollController();
+  final ScrollController _tabsScrollController = ScrollController();
+
+  // 状态机
+  List<_MediaItem> _items = [];
+  List<_DiscoveryTab> _tabs = [];
+  _DiscoveryTab? _selectedTab;
+  int _currentPage = 1;
+  bool _hasMore = false;
+  bool _loading = true;
+  bool _loadingMore = false;
+  String? _error;
+  bool _isGridView = true;
+  /// 是否在顶部展开全部分类面板
+  bool _isTabsExpanded = false;
+
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_onScroll);
+    _loadDiscovery(page: 1);
+  }
+
+  @override
+  void dispose() {
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
+    _tabsScrollController.dispose();
+    super.dispose();
+  }
+
+
+  void _onScroll() {
+    if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 200) {
+      if (!_loading && !_loadingMore && _hasMore) {
+        _loadMore();
+      }
+    }
+  }
+
+  /// 执行规则发现请求
+  Future<void> _loadDiscovery({required int page, bool isLoadMore = false}) async {
+    if (isLoadMore) {
+      setState(() {
+        _loadingMore = true;
+      });
+    } else {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    }
+
+    try {
+      final tabParam = _resolveTabParam(_selectedTab);
+      final result = await RuleEngine.discovery(
+        widget.rule,
+        page: page,
+        tab: tabParam,
+      );
+
+      final List<_MediaItem> fetchedItems = [];
+      final List<_DiscoveryTab> fetchedTabs = [];
+      bool fetchedHasMore = false;
+
+      // 严格按照固定格式解构数据
+      if (result is Map) {
+        // 1. 读取 items
+        final rawItems = result['items'];
+        if (rawItems is List) {
+          for (final e in rawItems) {
+            if (e is Map) {
+              fetchedItems.add(_MediaItem.fromMap(e));
+            }
+          }
+        }
+
+        // 2. 读取 tabs
+        final rawTabs = result['tabs'];
+        if (rawTabs is List) {
+          for (final t in rawTabs) {
+            if (t is Map) {
+              fetchedTabs.add(_DiscoveryTab.fromMap(t));
+            } else if (t is String && t.isNotEmpty) {
+              fetchedTabs.add(_DiscoveryTab(title: t, url: t));
+            }
+          }
+        }
+
+        // 3. 读取 hasMore（显式指定优先；未指定时若返回空数据则直接判无更多）
+        if (result.containsKey('hasMore')) {
+          fetchedHasMore = result['hasMore'] == true;
+        } else {
+          fetchedHasMore = fetchedItems.isNotEmpty;
+        }
+      } else if (result is List) {
+        // 纯数组直接作为 items 处理
+        for (final e in result) {
+          if (e is Map) {
+            fetchedItems.add(_MediaItem.fromMap(e));
+          }
+        }
+        fetchedHasMore = fetchedItems.isNotEmpty;
+      }
+
+      if (mounted) {
+        setState(() {
+          if (page == 1) {
+            _items = fetchedItems;
+            if (fetchedTabs.isNotEmpty) {
+              _tabs = fetchedTabs;
+              // 默认选中第一个 Tab
+              if (_selectedTab == null && _tabs.isNotEmpty) {
+                _selectedTab = _tabs.first;
+              }
+            }
+          } else {
+            _items = [..._items, ...fetchedItems];
+          }
+
+          _currentPage = page;
+          _hasMore = fetchedHasMore;
+        });
+      }
+    } catch (e) {
+      debugPrint('[RuleCatalogPage] load error: $e');
+      if (mounted) {
+        setState(() {
+          _error = '发现内容加载失败: $e';
+          // 发生错误时停止后续上拉，避免死循环触发重试
+          _hasMore = false;
+        });
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _loadingMore = false;
+        });
+      }
+    }
+  }
+
+  /// 触底加载更多（严格双重守卫：若 _hasMore 为 false 则立即拦截）
+  Future<void> _loadMore() async {
+    if (!_hasMore || _loadingMore || _loading) return;
+    await _loadDiscovery(page: _currentPage + 1, isLoadMore: true);
+  }
+
+  /// 智能解析传递给规则的分类 Tab 参数（契约：严格优先传递机器路由载荷 url，仅当无 url 时回退 title）
+  String _resolveTabParam(_DiscoveryTab? tab) {
+    if (tab == null) return '';
+    if (tab.url.isNotEmpty) {
+      return tab.url;
+    }
+    return tab.title;
+  }
+
+  /// 切换分类标签
+  void _onSelectTab(_DiscoveryTab tab) {
+    if (_loading) return;
+    if (_selectedTab?.url == tab.url && _selectedTab?.title == tab.title) {
+      return;
+    }
+    setState(() {
+      _selectedTab = tab;
+      _items = [];
+    });
+    _scrollToSelectedTab(tab);
+    _loadDiscovery(page: 1);
+  }
+
+  /// 将选中的 Tab 智能平滑居中至横向视口
+  void _scrollToSelectedTab(_DiscoveryTab tab) {
+    final index = _tabs.indexOf(tab);
+    if (index >= 0 && _tabsScrollController.hasClients) {
+      final targetOffset = (index * 72.0) - 80.0;
+      _tabsScrollController.animateTo(
+        targetOffset.clamp(0.0, _tabsScrollController.position.maxScrollExtent),
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOut,
+      );
+    }
+  }
+
+
+  /// 点击媒体卡片跳转至详情
+  void _onItemTap(_MediaItem item) {
+    context.pushRuleDetail(RuleDetailArgs(
+      title: item.title,
+      url: item.url,
+      cover: item.cover,
+      rule: widget.rule,
+    ));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              widget.rule.name,
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+            Text(
+              '${widget.rule.type.toUpperCase()} · 发现推荐',
+              style: TextStyle(
+                fontSize: 11,
+                color: isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          IconButton(
+            tooltip: _isGridView ? '切换为列表视图' : '切换为网格视图',
+            icon: Icon(_isGridView ? Ionicons.listOutline : Ionicons.gridOutline),
+            onPressed: () {
+              setState(() {
+                _isGridView = !_isGridView;
+              });
+            },
+          ),
+          IconButton(
+            tooltip: '在此源中搜索',
+            icon: const Icon(Ionicons.searchOutline),
+            onPressed: () {
+              context.pushSearch(rule: widget.rule);
+            },
+          ),
+          IconButton(
+            tooltip: '刷新',
+            icon: const Icon(Ionicons.refreshOutline),
+            onPressed: () => _loadDiscovery(page: 1),
+          ),
+        ],
+      ),
+      body: Column(
+        children: [
+          // 顶部横向分类栏 (若规则提供了 tabs)
+          if (_tabs.isNotEmpty) _buildTabsBar(isDark),
+
+          // 主数据内容与顶部向下展开分类面板的层叠容器
+          Expanded(
+            child: Stack(
+              children: [
+                // 1. 主数据列表主体
+                Positioned.fill(
+                  child: _buildBody(isDark),
+                ),
+
+                // 2. 顶部紧贴 tabs 向下展开的全部分类面板与半透明遮罩 (方案 B)
+                if (_tabs.isNotEmpty && _isTabsExpanded) ...[
+                  // 半透明背景遮罩 (点击快速收起面板)
+                  Positioned.fill(
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () {
+                        setState(() {
+                          _isTabsExpanded = false;
+                        });
+                      },
+                      child: Container(
+                        color: Colors.black.withValues(alpha: 0.42),
+                      ),
+                    ),
+                  ),
+
+                  // 紧贴顶部向下滑出的全部分类药丸面板
+                  Positioned(
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    child: _buildTopExpandedPanel(isDark),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 构建顶部横向分类栏 (纯净透明无分割线，与页面底色 100% 融为一体，右侧常驻折叠/展开按钮)
+  Widget _buildTabsBar(bool isDark) {
+    final bgColor = isDark ? AppColors.darkBg : AppColors.lightBg;
+
+    return Container(
+      height: 44,
+      color: Colors.transparent, // 保持完全透明，与外部页面底色 100% 一体化
+      child: Row(
+        children: [
+          // 1. 左侧横向可滚动分类标签
+          Expanded(
+            child: ListView.separated(
+              controller: _tabsScrollController,
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+              itemCount: _tabs.length,
+              separatorBuilder: (_, _) => const SizedBox(width: 8),
+              itemBuilder: (context, index) {
+                final tab = _tabs[index];
+                final isSelected = _selectedTab?.url == tab.url && _selectedTab?.title == tab.title;
+
+                return ChoiceChip(
+                  label: Text(tab.title),
+                  selected: isSelected,
+                  selectedColor: AppColors.primary.withValues(alpha: 0.16),
+                  backgroundColor: isDark ? Colors.white.withValues(alpha: 0.05) : Colors.black.withValues(alpha: 0.04),
+                  labelStyle: TextStyle(
+                    fontSize: 12,
+                    fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                    color: isSelected
+                        ? AppColors.primary
+                        : (isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary),
+                  ),
+                  side: BorderSide(
+                    color: isSelected
+                        ? AppColors.primary
+                        : (isDark ? AppColors.darkBorder : AppColors.lightBorder),
+                    width: isSelected ? 1.0 : 0.6,
+                  ),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  onSelected: (_) => _onSelectTab(tab),
+                );
+              },
+            ),
+          ),
+
+          // 2. 右侧展开/收起顶部面板切换按钮 (渐变遮罩使用页面原生底色无痕融入)
+          Container(
+            height: double.infinity,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.centerLeft,
+                end: Alignment.centerRight,
+                colors: [
+                  bgColor.withValues(alpha: 0.0),
+                  bgColor,
+                ],
+              ),
+            ),
+            padding: const EdgeInsets.only(left: 4, right: 6),
+            child: IconButton(
+              tooltip: _isTabsExpanded ? '收起全部分类' : '展开全部分类',
+              icon: AnimatedRotation(
+                turns: _isTabsExpanded ? 0.5 : 0.0,
+                duration: const Duration(milliseconds: 200),
+                curve: Curves.easeInOut,
+                child: Icon(Ionicons.chevronDownOutline,
+                  size: 18,
+                  color: _isTabsExpanded
+                      ? AppColors.primary
+                      : (isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary),
+                ),
+              ),
+              onPressed: () {
+                setState(() {
+                  _isTabsExpanded = !_isTabsExpanded;
+                });
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 构建顶部紧贴 tabs 向下展开的分类折叠面板 (背景色与外部页面原生底色 100% 一致，从上往下自然流淌)
+  Widget _buildTopExpandedPanel(bool isDark) {
+    final bgColor = isDark ? AppColors.darkBg : AppColors.lightBg;
+
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        // 与外部页面底色完全一模一样，从上往下无缝连接
+        color: bgColor,
+        borderRadius: const BorderRadius.vertical(bottom: Radius.circular(20)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: isDark ? 0.65 : 0.08),
+            blurRadius: 20,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.fromLTRB(16, 6, 16, 18),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 顶部信息提示与收起快捷键
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                '全部分类 (${_tabs.length})',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
+                ),
+              ),
+              GestureDetector(
+                onTap: () => setState(() => _isTabsExpanded = false),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 6),
+                  child: Text(
+                    '收起',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: AppColors.primary,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+
+          // 流式展示所有分类标签药丸 (限高内部滚动)
+          ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(context).size.height * 0.45,
+            ),
+            child: SingleChildScrollView(
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 10,
+                children: _tabs.map((tab) {
+                  final isSelected = _selectedTab?.url == tab.url && _selectedTab?.title == tab.title;
+                  return InkWell(
+                    borderRadius: BorderRadius.circular(16),
+                    onTap: () {
+                      setState(() => _isTabsExpanded = false);
+                      _onSelectTab(tab);
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6.5),
+                      decoration: BoxDecoration(
+                        color: isSelected
+                            ? AppColors.primary.withValues(alpha: 0.16)
+                            : (isDark ? Colors.white.withValues(alpha: 0.05) : Colors.black.withValues(alpha: 0.04)),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: isSelected
+                              ? AppColors.primary
+                              : (isDark ? AppColors.darkBorder : AppColors.lightBorder),
+                          width: isSelected ? 1.2 : 0.8,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            tab.title,
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                              color: isSelected
+                                  ? AppColors.primary
+                                  : (isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary),
+                            ),
+                          ),
+                          if (isSelected) ...[
+                            const SizedBox(width: 4),
+                            const Icon(Ionicons.checkmarkOutline, size: 13, color: AppColors.primary),
+                          ],
+                        ],
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+
+
+  /// 构建主视图主体内容
+  Widget _buildBody(bool isDark) {
+    if (_loading && _items.isEmpty) {
+      return const Center(
+        child: LoadingIndicator(message: '正在调用沙箱加载发现内容...'),
+      );
+    }
+
+    if (_error != null && _items.isEmpty) {
+      return Center(
+        child: EmptyState(
+          icon: Ionicons.warningOutline,
+          title: '发现流加载失败',
+          description: _error,
+          actionText: '重新加载',
+          onAction: () => _loadDiscovery(page: 1),
+        ),
+      );
+    }
+
+    if (_items.isEmpty) {
+      return Center(
+        child: EmptyState(
+          icon: Ionicons.fileTrayOutline,
+          title: '暂无发现内容',
+          description: '当前规则未返回任何推荐项目',
+          actionText: '刷新重试',
+          onAction: () => _loadDiscovery(page: 1),
+        ),
+      );
+    }
+
+    return RefreshIndicator(
+      color: AppColors.primary,
+      onRefresh: () => _loadDiscovery(page: 1),
+      child: _isGridView ? _buildGridView(isDark) : _buildListView(isDark),
+    );
+  }
+
+  bool get _isVideoRule {
+    final t = widget.rule.type.toLowerCase().trim();
+    return t == 'video' || t == 'tv' || t == 'movie' || t == 'anime' || t == 'short' || t.isEmpty;
+  }
+
+  /// 网格海报视图（采用 CustomScrollView + SliverGrid + SliverToBoxAdapter 通栏 Footer）
+  Widget _buildGridView(bool isDark) {
+    final isVideo = _isVideoRule;
+    final showFooter = _loadingMore || (!_hasMore && _items.isNotEmpty);
+
+    return CustomScrollView(
+      controller: _scrollController,
+      physics: const AlwaysScrollableScrollPhysics(),
+      slivers: [
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+          sliver: SliverGrid(
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2,
+              childAspectRatio: isVideo ? 1.12 : 0.72,
+              crossAxisSpacing: 10,
+              mainAxisSpacing: 10,
+            ),
+            delegate: SliverChildBuilderDelegate(
+              (context, index) {
+                final item = _items[index];
+                return isVideo ? _buildVideoGridCard(item, isDark) : _buildPortraitGridCard(item);
+              },
+              childCount: _items.length,
+            ),
+          ),
+        ),
+        if (showFooter)
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.only(bottom: 24),
+              child: _buildLoadingMoreFooter(),
+            ),
+          ),
+      ],
+    );
+  }
+
+  /// 列表紧凑视图
+  Widget _buildListView(bool isDark) {
+    final isVideo = _isVideoRule;
+    final showFooter = _loadingMore || (!_hasMore && _items.isNotEmpty);
+
+    return ListView.separated(
+      controller: _scrollController,
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
+      itemCount: _items.length + (showFooter ? 1 : 0),
+      separatorBuilder: (_, _) => const SizedBox(height: 10),
+      itemBuilder: (context, index) {
+        if (index == _items.length) {
+          return _buildLoadingMoreFooter();
+        }
+        final item = _items[index];
+        return isVideo ? _buildVideoListCard(item, isDark) : _buildPortraitListCard(item);
+      },
+    );
+  }
+
+  /// 单条横屏视频网格卡片（顶部 16:9 封面，宽大于高）
+  Widget _buildVideoGridCard(_MediaItem item, bool isDark) {
+    return AppCard(
+      padding: EdgeInsets.zero,
+      borderRadius: 12,
+      onTap: () => _onItemTap(item),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 顶部 16:9 横屏视频封面（宽大于高）
+          AspectRatio(
+            aspectRatio: 16 / 9,
+            child: ClipRRect(
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  NetImage(
+                    imageUrl: item.cover,
+                    fit: BoxFit.cover,
+                    headers: widget.rule.baseUrl.isNotEmpty ? {'referer': widget.rule.baseUrl} : null,
+                  ),
+                  // 底部轻度渐变微遮罩
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    height: 28,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            Colors.transparent,
+                            Colors.black.withValues(alpha: 0.65),
+                          ],
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                        ),
+                      ),
+                    ),
+                  ),
+                  // 角标 (如更新集数、清晰度等)
+                  if (item.badge.isNotEmpty)
+                    Positioned(
+                      right: 6,
+                      bottom: 5,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.75),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          item.badge,
+                          style: const TextStyle(
+                            fontSize: 9.5,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+          // 底部标题与描述
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(8, 7, 8, 7),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    item.title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w600,
+                      height: 1.25,
+                    ),
+                  ),
+                  if (item.desc.isNotEmpty)
+                    Text(
+                      item.desc,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 10.5,
+                        color: isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted,
+                      ),
+                    )
+                  else
+                    const SizedBox.shrink(),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 单条竖版海报网格卡片（适用于图集、漫画等）
+  Widget _buildPortraitGridCard(_MediaItem item) {
+    return AppCard(
+      padding: EdgeInsets.zero,
+      borderRadius: 12,
+      onTap: () => _onItemTap(item),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+            // 海报封面
+            NetImage(
+              imageUrl: item.cover,
+              fit: BoxFit.cover,
+              headers: widget.rule.baseUrl.isNotEmpty ? {'referer': widget.rule.baseUrl} : null,
+            ),
+            // 底部渐变暗色遮罩
+            Positioned.fill(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      Colors.transparent,
+                      Colors.black.withValues(alpha: 0.85),
+                    ],
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    stops: const [0.5, 1.0],
+                  ),
+                ),
+              ),
+            ),
+            // 角标 (若有)
+            if (item.badge.isNotEmpty)
+              Positioned(
+                top: 8,
+                right: 8,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withValues(alpha: 0.9),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    item.badge,
+                    style: const TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ),
+            // 底部标题与描述
+            Positioned(
+              left: 8,
+              right: 8,
+              bottom: 8,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    item.title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                  if (item.desc.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      item.desc,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: Colors.white.withValues(alpha: 0.75),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+    );
+  }
+
+  /// 单条横屏视频列表卡片（缩略图 140x80，宽大于高）
+  Widget _buildVideoListCard(_MediaItem item, bool isDark) {
+    return AppCard(
+      padding: const EdgeInsets.all(8),
+      borderRadius: 12,
+      onTap: () => _onItemTap(item),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 横屏 16:9 视频缩略图（宽大于高）
+          ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: SizedBox(
+              width: 140,
+              height: 80,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  NetImage(
+                    imageUrl: item.cover,
+                    fit: BoxFit.cover,
+                    headers: widget.rule.baseUrl.isNotEmpty ? {'referer': widget.rule.baseUrl} : null,
+                  ),
+                  if (item.badge.isNotEmpty)
+                    Positioned(
+                      right: 4,
+                      bottom: 4,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1.5),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.75),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          item.badge,
+                          style: const TextStyle(
+                            fontSize: 9.5,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: SizedBox(
+              height: 80,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        item.title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.bold,
+                          height: 1.25,
+                        ),
+                      ),
+                      if (item.desc.isNotEmpty) ...[
+                        const SizedBox(height: 3),
+                        Text(
+                          item.desc,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                        decoration: BoxDecoration(
+                          color: AppColors.primary.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          widget.rule.name,
+                          style: const TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.primary,
+                          ),
+                        ),
+                      ),
+                      const Icon(Ionicons.playCircleOutline, size: 16, color: AppColors.primary),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 单条竖版海报列表卡片（适用于图集、漫画等）
+  Widget _buildPortraitListCard(_MediaItem item) {
+    return AppCard(
+      padding: const EdgeInsets.all(10),
+      borderRadius: 12,
+      onTap: () => _onItemTap(item),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: SizedBox(
+                  width: 90,
+                  height: 120,
+                  child: NetImage(
+                    imageUrl: item.cover,
+                    fit: BoxFit.cover,
+                    headers: widget.rule.baseUrl.isNotEmpty ? {'referer': widget.rule.baseUrl} : null,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: SizedBox(
+                  height: 120,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            item.title,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          if (item.desc.isNotEmpty) ...[
+                            const SizedBox(height: 4),
+                            Text(
+                              item.desc,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Theme.of(context).textTheme.bodySmall?.color,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                      if (item.badge.isNotEmpty)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: AppColors.primary.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            item.badge,
+                            style: const TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.primary,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+              const Icon(Ionicons.chevronForwardOutline, size: 18, color: Colors.grey),
+            ],
+          ),
+    );
+  }
+
+  /// 底部加载状态指示
+  Widget _buildLoadingMoreFooter() {
+    if (_loadingMore) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 16),
+        child: Center(
+          child: LoadingIndicator.compact(size: 20),
+        ),
+      );
+    }
+
+    if (!_hasMore && _items.isNotEmpty) {
+      final isDark = Theme.of(context).brightness == Brightness.dark;
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        child: Center(
+          child: Text(
+            '— 没有更多内容了 —',
+            style: TextStyle(
+              fontSize: 12,
+              color: isDark
+                  ? AppColors.darkTextMuted.withValues(alpha: 0.7)
+                  : AppColors.lightTextMuted.withValues(alpha: 0.7),
+              letterSpacing: 0.5,
+            ),
+          ),
+        ),
+      );
+    }
+
+    return const SizedBox.shrink();
+  }
+}
+
+/// 规则目录分类与资源发现统一语义别名
+typedef RuleDiscoveryPage = RuleCatalogPage;

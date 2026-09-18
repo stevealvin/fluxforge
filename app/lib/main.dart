@@ -3,12 +3,13 @@ import 'dart:io';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 
-import 'core/storage/app_storage.dart';
-import 'core/theme/app_theme.dart';
-import 'core/utils/app_logger.dart';
-import 'router.dart';
-import 'services/di.dart';
-import 'services/rule_engine.dart';
+import 'package:fluxforge/core/storage/app_storage.dart';
+import 'package:fluxforge/app/theme/app_theme.dart';
+import 'package:fluxforge/core/logging/app_logger.dart';
+import 'package:fluxforge/app/router/app_router.dart';
+import 'package:fluxforge/app/router/app_routes.dart';
+import 'package:fluxforge/app/di/di.dart';
+import 'package:fluxforge/core/sandbox/rule_engine.dart';
 
 void main() async {
   // 确保 Flutter 底层桥接层绑定就绪
@@ -57,7 +58,7 @@ void main() async {
                     if (router.canPop()) {
                       router.pop();
                     } else {
-                      router.go('/home');
+                      router.go(AppRoutes.home);
                     }
                   },
                   icon: const Icon(Icons.arrow_back_rounded, size: 16),
@@ -84,6 +85,8 @@ void main() async {
   await historyService.init();
   // 预热加载跨媒体消费历史与断点续播进度
   await playHistoryService.init();
+  // 预热离线下载服务（准备沙盒目录并恢复被中断的下载任务）
+  await downloadService.init();
 
   // 3. 预热初始化 QuickJS 脚本执行沙箱
   RuleEngine.init();
@@ -112,7 +115,7 @@ class MyApp extends StatelessWidget {
       valueListenable: appService.themeModeNotifier,
       builder: (context, currentThemeMode, _) {
         return MaterialApp.router(
-          title: 'FluxForge',
+          title: '流光视界',
           // 全局现代浅色主题 (纯净星暮白)
           theme: AppTheme.lightTheme,
           // 全局现代深色主题 (曜夜极光翡翠)
