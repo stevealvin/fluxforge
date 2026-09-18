@@ -84,7 +84,13 @@ const onSearch = () => {
 }
 
 const onGoto = (row: RuleSchema) => {
-  router.push(`/rules/edit?id=${row.id}`)
+  router.push({
+    path: '/rules/edit',
+    query: {
+      id: row.id,
+      title: `编辑: ${row.name}`
+    }
+  })
 }
 
 const toggleRule = async (row: RuleSchema, val: boolean) => {

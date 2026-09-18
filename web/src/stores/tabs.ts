@@ -7,6 +7,12 @@ export interface TabItem {
   title: string
   name: string
   closable: boolean
+  cacheKey: string
+}
+
+let tabSeq = 0
+function generateCacheKey(fullPath: string): string {
+  return `${fullPath}_${Date.now()}_${++tabSeq}`
 }
 
 const tabs = ref<TabItem[]>([
@@ -16,6 +22,7 @@ const tabs = ref<TabItem[]>([
     title: '首页探索',
     name: 'HomeView',
     closable: false,
+    cacheKey: '/_init_0',
   },
 ])
 
@@ -87,7 +94,9 @@ function addTab(route: RouteLocationNormalized) {
 
   const existingIndex = tabs.value.findIndex((t) => t.fullPath === fullPath)
   if (existingIndex !== -1) {
-    tabs.value[existingIndex].title = title
+    if (title && tabs.value[existingIndex].title !== title) {
+      tabs.value[existingIndex].title = title
+    }
     return
   }
 
@@ -97,7 +106,41 @@ function addTab(route: RouteLocationNormalized) {
     title,
     name: compName,
     closable: route.path !== '/',
+    cacheKey: generateCacheKey(fullPath),
   })
+}
+
+function getTabCacheKey(fullPath: string): string {
+  const tab = tabs.value.find((t) => t.fullPath === fullPath)
+  return tab ? tab.cacheKey : fullPath
+}
+
+function refreshTab(targetFullPath: string) {
+  const tab = tabs.value.find((t) => t.fullPath === targetFullPath)
+  if (tab) {
+    tab.cacheKey = generateCacheKey(targetFullPath)
+  }
+}
+
+function updateTabTitle(targetFullPath: string, newTitle: string) {
+  const tab = tabs.value.find((t) => t.fullPath === targetFullPath)
+  if (tab && newTitle && tab.title !== newTitle) {
+    tab.title = newTitle
+  }
+}
+
+function updateTabFullPath(oldFullPath: string, newFullPath: string, newTitle?: string) {
+  const index = tabs.value.findIndex((t) => t.fullPath === oldFullPath)
+  if (index !== -1) {
+    const tab = tabs.value[index]
+    tab.fullPath = newFullPath
+    tab.path = newFullPath.split('?')[0]
+    if (newTitle) {
+      tab.title = newTitle
+    }
+    tab.cacheKey = generateCacheKey(newFullPath)
+    activeFullPath.value = newFullPath
+  }
 }
 
 function closeTab(targetFullPath: string): string | null {
@@ -137,8 +180,13 @@ export function useTabsStore() {
     openFullPaths,
     cachedTabNames,
     addTab,
+    getTabCacheKey,
+    refreshTab,
+    updateTabTitle,
+    updateTabFullPath,
     closeTab,
     closeOtherTabs,
     closeAllTabs,
   }
 }
+

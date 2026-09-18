@@ -56,7 +56,9 @@ const handleCloseTab = (fullPath: string) => {
 }
 
 const handleSelectTabOption = (key: string) => {
-  if (key === 'close-others') {
+  if (key === 'refresh') {
+    tabsStore.refreshTab(route.fullPath)
+  } else if (key === 'close-others') {
     tabsStore.closeOtherTabs(route.fullPath)
   } else if (key === 'close-all') {
     const nextPath = tabsStore.closeAllTabs()
@@ -364,6 +366,7 @@ const navRules = [
           <n-dropdown
             trigger="click"
             :options="[
+              { label: '刷新当前标签', key: 'refresh' },
               { label: '关闭其他标签页', key: 'close-others' },
               { label: '关闭全部标签页', key: 'close-all' }
             ]"
@@ -410,10 +413,10 @@ const navRules = [
       <main class="flex-1 flex flex-col min-h-0 min-w-0 overflow-y-auto p-4 relative">
         <router-view v-slot="{ Component, route }">
           <transition name="fade-slide" mode="out-in">
-            <keep-alive :include="tabsStore.cachedTabNames.value">
+            <keep-alive :include="tabsStore.cachedTabNames.value" :max="20">
               <component
                 :is="Component"
-                :key="tabsStore.openFullPaths.value.includes(route.fullPath) ? route.fullPath : route.fullPath + '_fresh'"
+                :key="tabsStore.getTabCacheKey(route.fullPath)"
                 class="w-full flex-1 flex flex-col min-h-0"
               />
             </keep-alive>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, useTemplateRef, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, useTemplateRef, onMounted, onUnmounted, onActivated, onDeactivated } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 defineOptions({ name: 'EditView' })
@@ -35,17 +35,27 @@ import CodeEditor from '@/components/CodeEditor/index.vue'
 import RuleWorkbenchModal from './components/RuleWorkbenchModal.vue'
 import WorkbenchSandbox from './components/workbench/WorkbenchSandbox.vue'
 import { useAiSettingsStore } from '@/stores/aiSettings'
+import { useTabsStore } from '@/stores/tabs'
 
 const route = useRoute()
 const router = useRouter()
 const message = useMessage()
 const aiStore = useAiSettingsStore()
+const tabsStore = useTabsStore()
+
+// 每个编辑实例分配唯一模型 ID，彻底杜绝多标签打开时 Monaco 全局模型冲突覆写
+const instanceId = Math.random().toString(36).slice(2, 9)
+const editorModelId = computed(() => {
+  const id = route.query.id
+  return id ? `rule_editor_${id}` : `rule_editor_new_${instanceId}`
+})
 
 // AI 工作台与左侧元数据配置默认展开
 const showWorkbench = ref(true)
 const showMetaSidebar = ref(true)
 const sandboxCollapsed = ref(false)
 
+const editorRef = useTemplateRef<any>('editorRef')
 const sandboxRef = useTemplateRef<any>('sandboxRef')
 const workbenchRef = useTemplateRef<any>('workbenchRef')
 
@@ -129,21 +139,37 @@ const form = ref<Partial<RuleSchema>>({
   code: '' // 默认不设置代码，保持纯净空白
 })
 
-const handleInsertTemplate = () => {
+// 查看与应用模板弹窗状态
+const showTemplateModal = ref(false)
+
+// 复制模板代码到剪贴板
+const copyTemplateCode = async () => {
+  try {
+    await navigator.clipboard.writeText(RULE_TEMPLATE)
+    message.success('已复制标准模板代码到剪贴板')
+  } catch {
+    message.error('复制失败')
+  }
+}
+
+// 将模板代码应用到当前编辑器中
+const applyTemplateToEditor = () => {
   if (form.value.code && form.value.code.trim()) {
     window.$dialog?.warning({
       title: '覆盖确认',
-      content: '当前编辑器中已有规则代码，插入模板将覆盖现有内容，确定继续吗？',
+      content: '当前编辑器中已有规则代码，应用模板将覆盖现有内容，确定继续吗？',
       positiveText: '确定覆盖',
       negativeText: '取消',
       onPositiveClick: () => {
         form.value.code = RULE_TEMPLATE
-        message.success('已插入标准规则模板代码')
+        showTemplateModal.value = false
+        message.success('已将标准规则模板应用到当前编辑器')
       }
     })
   } else {
     form.value.code = RULE_TEMPLATE
-    message.success('已插入标准规则模板代码')
+    showTemplateModal.value = false
+    message.success('已将标准规则模板应用到当前编辑器')
   }
 }
 
@@ -202,6 +228,9 @@ const loadData = async () => {
     if (result) {
       form.value = { ...result }
       originalCode.value = result.code || ''
+      if (result.name) {
+        tabsStore.updateTabTitle(route.fullPath, `编辑: ${result.name}`)
+      }
     } else {
       loadError.value = '未找到对应的规则数据，可能已被删除'
     }
@@ -211,6 +240,19 @@ const loadData = async () => {
     pageLoading.value = false
   }
 }
+
+// 动态同步标签页标题
+watch(
+  () => form.value.name,
+  (name) => {
+    if (name && name.trim()) {
+      tabsStore.updateTabTitle(
+        route.fullPath,
+        route.query.id ? `编辑: ${name.trim()}` : `新建: ${name.trim()}`
+      )
+    }
+  }
+)
 
 const onReset = () => {
   form.value = {
@@ -234,7 +276,9 @@ const onSubmit = async () => {
     originalCode.value = form.value.code || ''
     message.success('保存规则成功')
     if (!route.query.id && saved?.id) {
-      router.replace(`/rules/edit?id=${saved.id}`)
+      const newPath = `/rules/edit?id=${saved.id}`
+      tabsStore.updateTabFullPath(route.fullPath, newPath, `编辑: ${form.value.name || '规则'}`)
+      router.replace(newPath)
     } else {
       await loadData()
     }
@@ -379,7 +423,17 @@ const handleKeydown = (e: KeyboardEvent) => {
 
 onMounted(() => {
   loadData()
+})
+
+onActivated(() => {
   window.addEventListener('keydown', handleKeydown)
+  setTimeout(() => {
+    editorRef.value?.layout?.()
+  }, 50)
+})
+
+onDeactivated(() => {
+  window.removeEventListener('keydown', handleKeydown)
 })
 
 onUnmounted(() => {
@@ -710,19 +764,19 @@ onUnmounted(() => {
                 ></span>
               </n-button>
 
-              <!-- 📥 插入模板 -->
+              <!-- 📋 查看模板 -->
               <n-button
                 size="tiny"
                 secondary
                 type="primary"
                 class="!rounded-lg !font-bold !px-2.5 shadow-2xs"
-                @click="handleInsertTemplate"
-                title="向当前编辑器插入标准规则模板代码"
+                @click="showTemplateModal = true"
+                title="查看标准规则模板代码与结构规范"
               >
                 <template #icon>
                   <FileCode class="w-3.5 h-3.5" />
                 </template>
-                <span>插入模板</span>
+                <span>查看模板</span>
               </n-button>
             </div>
           </div>
@@ -730,8 +784,9 @@ onUnmounted(() => {
           <!-- Monaco 代码编辑器主体 -->
           <div class="flex-1 w-full relative min-h-0 overflow-hidden">
             <code-editor
+              ref="editorRef"
               v-model="form.code"
-              model-id="rule_main_editor"
+              :model-id="editorModelId"
               height="100%"
               class="w-full h-full"
             />
@@ -796,9 +851,9 @@ onUnmounted(() => {
           <code-editor
             :model-value="originalCode"
             model-id="rule_saved_code_preview_modal"
+            :read-only="true"
             height="100%"
             class="w-full h-full"
-            :options="{ readOnly: true, lineNumbers: 'on', minimap: { enabled: false } }"
           />
         </div>
       </div>
@@ -820,6 +875,57 @@ onUnmounted(() => {
             >
               <template #icon><RotateCcw class="w-3.5 h-3.5" /></template>
               <span>还原为已保存版本</span>
+            </n-button>
+          </div>
+        </div>
+      </template>
+    </n-modal>
+
+    <!-- 📋 标准规则模板展示与应用弹窗 -->
+    <n-modal
+      v-model:show="showTemplateModal"
+      preset="card"
+      title="📋 标准规则模板代码 (ESModule defineRule)"
+      class="!max-w-3xl !w-[92vw] !rounded-2xl shadow-2xl"
+      :segmented="{ content: true, action: true }"
+    >
+      <div class="space-y-2.5">
+        <div class="flex items-center justify-between text-xs">
+          <div class="flex items-center gap-1.5 text-zinc-500 dark:text-zinc-400">
+            <Info class="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+            <span>FluxForge 标准 ESModule 规则规范，包含 discovery、search、detail、parse 四大生命周期方法。</span>
+          </div>
+          <span class="font-mono text-[11px] px-2 py-0.5 rounded-md font-bold shrink-0 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+            v2.0 规范标准
+          </span>
+        </div>
+
+        <div class="h-[460px] rounded-xl overflow-hidden border border-zinc-200/80 dark:border-white/10 shadow-inner">
+          <code-editor
+            :model-value="RULE_TEMPLATE"
+            model-id="rule_template_preview_modal"
+            :read-only="true"
+            height="100%"
+            class="w-full h-full"
+          />
+        </div>
+      </div>
+      <template #action>
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <span class="text-xs text-zinc-400">可一键复制全部模板代码，或直接覆盖应用到当前编辑器</span>
+          <div class="flex items-center gap-2">
+            <n-button size="small" secondary class="!rounded-xl" @click="copyTemplateCode">
+              <template #icon><Copy class="w-3.5 h-3.5" /></template>
+              <span>复制模板</span>
+            </n-button>
+            <n-button
+              size="small"
+              type="primary"
+              class="!rounded-xl !font-bold"
+              @click="applyTemplateToEditor"
+            >
+              <template #icon><CheckCircle2 class="w-3.5 h-3.5" /></template>
+              <span>应用到编辑器</span>
             </n-button>
           </div>
         </div>

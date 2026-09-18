@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, useTemplateRef, watch, onMounted, onBeforeUnmount } from 'vue'
+import { computed, useTemplateRef, watch, onMounted, onBeforeUnmount, onActivated } from 'vue'
 import type * as monaco from 'monaco-editor'
 import loader from '@monaco-editor/loader'
 import { addExtraLibFromFetch, addExtraLibs, addGlobalSandboxTypes, detectLanguage } from './util'
@@ -14,13 +14,17 @@ interface Props {
 }
 
 const props = withDefaults(defineProps<Props>(), {
-  modelId: 'main',
+  modelId: '',
   height: '500px',
   theme: 'vs-dark',
   readOnly: false,
   language: 'javascript',
   autoDetectLanguage: true,
 })
+
+// 为未显式指定 modelId 的编辑器实例生成唯一模型 ID，防止同名冲突
+const instanceModelId = `editor_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`
+const activeModelId = computed(() => props.modelId || instanceModelId)
 
 const modelValue = defineModel<string>()
   
@@ -44,7 +48,7 @@ const init = async () => {
   const monaco: typeof import('monaco-editor') = await loader.init()
   monacoInstance = monaco
 
-  const uri = monaco.Uri.parse(`file:///${props.modelId}.ts`)
+  const uri = monaco.Uri.parse(`file:///${activeModelId.value}.ts`)
   const existingModel = monaco.editor.getModel(uri)
   if (existingModel) {
     model = existingModel
@@ -168,6 +172,31 @@ watch(() => modelValue.value, (newValue) => {
   }
 })
 
+watch(() => activeModelId.value, (newId, oldId) => {
+  if (!monacoInstance || !editor || newId === oldId) return
+  const newUri = monacoInstance.Uri.parse(`file:///${newId}.ts`)
+  let targetModel = monacoInstance.editor.getModel(newUri)
+  if (!targetModel) {
+    targetModel = monacoInstance.editor.createModel(
+      modelValue.value || '',
+      props.language,
+      newUri
+    )
+  } else {
+    if (modelValue.value !== undefined && targetModel.getValue() !== modelValue.value) {
+      targetModel.setValue(modelValue.value || '')
+    }
+  }
+  model = targetModel
+  editor.setModel(model)
+})
+
+watch(() => props.readOnly, (newVal) => {
+  if (editor) {
+    editor.updateOptions({ readOnly: newVal })
+  }
+})
+
 watch(() => props.theme, (newTheme) => {
   if (editor && newTheme) {
     editor.updateOptions({ theme: newTheme })
@@ -184,6 +213,11 @@ onMounted(() => {
   init()
 })
 
+onActivated(() => {
+  // 当从 KeepAlive 缓存中切回激活时，确保布局尺寸正确重算
+  editor?.layout()
+})
+
 onBeforeUnmount(() => {
   model?.dispose()
   editor?.dispose()
@@ -193,6 +227,8 @@ onBeforeUnmount(() => {
 defineExpose({
   // 获取编辑器实例
   getEditor: () => editor,
+  // 重新排版布局
+  layout: () => editor?.layout(),
   // 获取编辑器内容
   getValue: () => editor?.getValue() || '',
   // 设置编辑器内容
