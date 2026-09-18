@@ -394,3 +394,60 @@ class PlayRecord {
 - 「搜索足迹」与「观看历史」统一由历史管理中心页承载，资产卡点击不得跳转到搜索页；
 - 「我的规则」资产卡点击应切换至底部导航「规则」Tab（通过 `ProfilePage.onSwitchTab` 回调）；
 - 所有颜色与卡片样式必须复用 `AppColors` / `AppCard` / `SettingTile` / `SettingSection`，禁止硬编码色值。
+
+---
+
+## 11. 离线下载实现规格（小说 / 漫画）
+
+### 11.1 模块定位与涉及文件
+- **核心服务**：`app/lib/services/download_service.dart`（GetIt 单例，`di.dart` 暴露 `downloadService`）；
+- **共享工具**：`app/lib/core/utils/novel_text.dart`（正文清洗，在线阅读与离线下载必须复用）；
+- **共享组件**：`app/lib/widgets/download_bar.dart`（`DownloadBar` 五态下载条）；
+- **管理页面**：`app/lib/views/downloads/download_manager_page.dart`（路由 `/downloads`，入口位于「我的 → 数据与同步 → 离线下载」）；
+- **接入点**：`views/media/novel/novel_detail_view.dart`、`views/media/novel/reader/novel_reader_page.dart`、`views/media/comic/comic_detail_view.dart`、`views/media/comic/reader/comic_reader_page.dart`。
+
+### 11.2 存储布局契约（纯 App 沙盒）
+```
+AppDocuments/fluxforge_offline/
+├── novels/<书籍安全名>/<章节索引>.txt      # 小说章节正文（已清洗排版）
+└── comics/<书籍安全名>/<URL稳定哈希>.<ext> # 漫画图片（按内容解码，扩展名仅便于管理）
+```
+强制约束：
+- **禁止写入系统相册或外部存储**，不申请存储权限，卸载即清除；
+- 书籍目录名必须为「可读前缀 + 确定性哈希」（避免不同 URL 截断后碰撞）；
+- 漫画图片必须以 **URL 稳定哈希** 命名（与阅读顺序解耦，保证任意顺序命中本地文件）。
+
+### 11.3 任务模型契约（DownloadTask）
+```dart
+class DownloadTask {
+  final String id;                  // 书籍唯一标识（与详情页 _mediaId 一致）
+  final String title, cover;
+  final String mediaType;           // novel / comic
+  final String ruleId;              // 绑定的解析规则（下载时调度沙箱）
+  final String sourceUrl;
+  final List<String> targetUrls;    // 小说=章节 URL；漫画=图片 URL
+  final List<String> targetTitles;  // 与 targetUrls 下标对齐
+  final Map<String, String> headers;// 漫画图片防盗链请求头
+  final Set<int> completed;         // 已完成下标（断点续传依据）
+  final Set<int> failed;            // 失败下标（不自动重试）
+  final DownloadStatus status;      // pending/running/paused/completed/failed
+  final DateTime createdAt, updatedAt;
+}
+```
+
+### 11.4 调度策略（强制）
+- **任务级并发上限 2、任务内严格串行**：既能并行推进多本，又避免单站点被高频请求打爆触发风控；
+- **断点续传**：`completed` 落盘持久化，App 重启后自动跳过已下载项继续；启动时把中断的 running 任务重新排队；
+- **失败熔断**：单项失败仅记入 `failed` 并跳过，**严禁自动重试**（防死循环），由用户手动「重试失败项」；
+- **节流持久化**：下载过程中进度变更按 3 秒节流落盘，任务结束/暂停时强制落盘；
+- **阅读优先级**：阅读器的正文获取顺序固定为 **沙盒离线文件 → 内存缓存 → 网络抓取**。
+
+### 11.5 交互规范
+- 详情页必须展示 `DownloadBar`（五态：未下载 / 下载中可暂停 / 已暂停可继续 / 部分失败可重试 / 已完成），小说与漫画共用，严禁各自重复实现；
+- 小说目录抽屉的章节状态图标为四态：**已离线下载（cloudDone）** / 仅内存缓存（checkmarkCircle） / 预取中（环形进度） / 未缓存（可点击缓存）；
+- 管理页必须提供：占用空间概览、任务列表（类型 / 状态 / 进度 / 失败数）、暂停 / 继续 / 重试 / 删除、一键清空，且删除与清空均需二次确认。
+
+### 11.6 本轮明确不做（边界）
+- **自动下载**（收藏后自动拉取新章节）；
+- **视频离线**（m3u8 分片与加密流下载属独立课题，需引入额外依赖，暂不实现）；
+- **导出到系统相册 / 外部存储 / 生成 epub、txt 文件**。

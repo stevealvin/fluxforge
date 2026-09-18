@@ -41,8 +41,8 @@ FluxForge 移动端不仅是一个内容浏览器，更是一个**独立的客�
 1. 🛠️ [**移动端技术开发与落地规范 (APP_DEV_SPEC.md)**](../docs/APP_DEV_SPEC.md)：
    - **必读铁律**：严禁私自引入未经批准的重型依赖；彻底弃用 Chewie；组件统一基于 `AppCard`；
    - 包含自研播放器 `AuraPlayer`、小说阅读器、测速、备份等全套接口与交互设计。
-2. 🚀 [**移动端产品规划与演进路线图 (APP_ROADMAP.md)**](../docs/APP_ROADMAP.md)：
-   - 功能优先级划分矩阵 (P0 / P1 / P2)。
+2. 🚀 [**移动端待优化与已知问题清单 (APP_TODO.md)**](../docs/APP_TODO.md)：
+  - 当前已确认待处理的技术问题与优化项（按收益 / 风险分级，附候选方案）。
 3. 📖 [**规则引擎与生命周期契约白皮书 (RULE_SPECIFICATION.md)**](../docs/RULE_SPECIFICATION.md)：
    - 移动端数据解析与 `RuleEngine` 契约依据。
 

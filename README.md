@@ -40,7 +40,7 @@ FluxForge 的核心在于其**沙箱 JavaScript 动态规则引擎**。如同“
 | **移动端 (App)** | **主框架与发现/搜索**（毛玻璃防重叠导航、全局多源检索、单源测试流） | ✅ | GoRouter + Riverpod |
 | **移动端 (App)** | **内置安全浏览器**（广告拦截引擎、Android 全屏媒体自适应、原生返回拦截） | ✅ | `webview_flutter` |
 | **移动端 (App)** | **自研现代播放器 (`AuraPlayer`)**（手势调光/音量/快进、长按2x震动倍速、断点续播、彻底弃用 Chewie） | ⏳ 即将落地 | [`APP_DEV_SPEC.md`](./docs/APP_DEV_SPEC.md) |
-| **移动端 (App)** | **规则健康巡检与毫秒级测速**（并发探测源站延迟，三色指示灯，一键清理失效源） | ⏳ 规划中 | [`APP_ROADMAP.md`](./docs/APP_ROADMAP.md) |
+| **移动端 (App)** | **规则健康巡检与毫秒级测速**（并发探测源站延迟，三色指示灯，一键清理失效源） | ⏳ 规划中 | [`APP_DEV_SPEC.md`](./docs/APP_DEV_SPEC.md) |
 | **移动端 (App)** | **纯净小说阅读引擎 (`FluxReader`)**（仿真/滚动翻页、排版色盘、预加载） | ⏳ 规划中 | [`APP_DEV_SPEC.md`](./docs/APP_DEV_SPEC.md) |
 | **移动端 (App)** | **漫画与图集查看器 (`FluxGallery`)**（瀑布流/条漫长图、双指平滑缩放） | ⏳ 规划中 | [`APP_DEV_SPEC.md`](./docs/APP_DEV_SPEC.md) |
 | **移动端 (App)** | **本地数据全量备份/还原**（单文件 JSON 导出分享，无需第三方网盘） | ⏳ 规划中 | [`APP_DEV_SPEC.md`](./docs/APP_DEV_SPEC.md) |
@@ -55,7 +55,7 @@ FluxForge 的核心在于其**沙箱 JavaScript 动态规则引擎**。如同“
 
 - 📖 [**规则引擎与生命周期契约白皮书 (RULE_SPECIFICATION.md)**](./docs/RULE_SPECIFICATION.md)：编写规则必读，四大生命周期输入输出定义与 `items` 统一模型；
 - 🛠️ [**移动端核心功能技术开发规范 (APP_DEV_SPEC.md)**](./docs/APP_DEV_SPEC.md)：移动端开发者与 AI 助手必读，自研 `AuraPlayer`、阅读器、测速、备份等技术实现规格；
-- 🚀 [**移动端产品规划与演进路线图 (APP_ROADMAP.md)**](./docs/APP_ROADMAP.md)：移动端功能优先级矩阵（P0/P1/P2）；
+- 🚀 [**移动端待优化与已知问题清单 (APP_TODO.md)**](./docs/APP_TODO.md)：已确认待处理的技术问题与优化项，按收益 / 风险分级并附候选方案；
 - 🏗️ [**跨端系统架构设计规范 (SYSTEM_ARCHITECTURE.md)**](./docs/SYSTEM_ARCHITECTURE.md)：全栈拓扑、色彩设计哲学与数据流图解；
 - 📝 [**系统演进与变更日志 (CHANGELOG.md)**](./docs/CHANGELOG.md)：记录项目版本演进与关键功能重构明细。
 

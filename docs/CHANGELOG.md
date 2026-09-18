@@ -2,6 +2,751 @@
 
 本文档用于记录 FluxForge（包括 App 移动端、Server 服务端、Web 管理端）在开发过程中的重要功能迭代、UI 体验调优与架构重构日志。
 
+## [2026-09-18]
+
+### 🎥 P2 拆分巨型文件（第二十二批：视频画面层与断点续播提示）
+
+**改动**：
+
+- 新增 `shared/widgets/player/player_video_surface.dart`：`PlayerVideoSurface`
+  - 承载三种画面比例（`contain` 用 `AspectRatio` 保持原始比例居中；`cover` / `fill` 用
+    `SizedBox.expand + FittedBox` 撑满避免黑边）与水平镜像翻转；
+  - 未就绪时退化为封面海报，封面也缺失时返回空容器由外层底色兜底 —— 这套降级链逐字保留；
+  - 页面侧 `_buildVideoSurface` 由 63 行降为 **8 行装配**；
+  - 组件依赖 `video_player`（播放控制器是渲染必需输入），但不依赖任何业务 service。
+- `player_overlays.dart` 追加 `PlayerResumeTip`：断点续播气泡（「上次看到 X」+ 跳转继续 / 关闭），
+  页面侧 `_buildResumeTip` 由 52 行降为 **14 行**，文案与两个动作均通过回调接入。
+
+**顺带清理**：迁移后 `aura_player.dart` 的 `dart:math` / `dart:ui` 两个导入失效
+（`math.pi` 镜像变换与 `ImageFilter` 毛玻璃随之移出），已一并删除；
+`ImageFilter` 的依赖转入 `player_overlays.dart`。
+
+**验收**：`flutter analyze` **0 问题**；`flutter test` **137/137 全部通过**。
+`aura_player.dart` **2166 → 1069 行**（第十三～二十二批合计 **-1097，-50.6%**）。
+
+### ⬆️ P2 拆分巨型文件（第二十一批：顶部控制条 `player_top_bar.dart`）
+
+**改动**：新增 `shared/widgets/player/player_top_bar.dart`：
+
+| 组件 | 说明 |
+|---|---|
+| `PlayerTopBar` | 顶部渐变条 + 返回键 + 标题 + 扩展操作区 + 更多设置；内边距由上层算好后整体传入（与 `PlayerControlBar` 同一约定） |
+| `PlayerMoreSettingsButton` | 右上角「更多设置」；全屏下靠右固定尺寸容器（与进度条 / 全屏键右对齐），非全屏用 `IconButton` |
+
+- 页面侧 `_buildTopBar` 由 54 行降为 **25 行装配**，`_buildMoreSettingsButton`（31 行）整体删除；
+- 返回键显隐条件改为显式的 `showBackButton`（原为 `_isFullScreen || widget.onBack != null`），
+  由上层判定后传入 —— 组件不再感知"什么时候该显示返回键"这条业务规则；
+- 触感反馈内聚进按钮，与 `PlayerControlButtons` 保持一致；
+- 顺带按 lint 建议把 `if (extraActions != null) ...extraActions!` 改为空感知展开 `...?extraActions`。
+
+**验收**：`flutter analyze` **0 问题**；`flutter test` **137/137 全部通过**。
+`aura_player.dart` **2166 → 1158 行**（第十三～二十一批合计 **-1008，-46.5%**）。
+
+### 🪟 P2 拆分巨型文件（第二十批：控制浮层与微型进度条）
+
+**改动**：向 `shared/widgets/player/player_overlays.dart` 追加三个浮层组件：
+
+| 组件 | 说明 |
+|---|---|
+| `PlayerAnimatedBar` | 控制条显隐动画：微位移与淡出同步播放（顶栏上滑 / 底栏下滑），收起时不拦截点击 |
+| `PlayerControlOverlays` | 顶 / 底两条控制栏的浮层容器；`topBar` 传 null 即表示本条不参与渲染 |
+| `PlayerBottomMiniProgress` | 小屏常驻的 2px 微型进度条。`currentPosition` 用 `ValueGetter` 由上层注入，保证手势预览局部重建时拿到最新进度 |
+
+- 页面侧 `_buildControlOverlays` 由 28 行降为 **13 行**、`_buildBottomMiniProgress` 由 39 行降为 **15 行**，
+  `_buildAnimatedBar`（20 行）整体删除；
+- **渲染守卫保留在页面侧**（全屏 / 未初始化 / 播放错误时不渲染微型进度条）——
+  这是依赖播放状态的条件，属于页面职责；组件只负责视觉与动画。
+
+**验收**：`flutter analyze` **0 问题**；`flutter test` **137/137 全部通过**。
+`aura_player.dart` **2166 → 1214 行**（第十三～二十批合计 **-952，-44%**）。
+
+### 🧷 P2 拆分巨型文件（第十九批：手势层外壳 `player_gesture_layer.dart`）
+
+**背景**：第十八批已把分区判定与滑动算法抽成纯引擎，但页面里仍留着 `LayoutBuilder` +
+`GestureDetector` 的接线代码，以及"把手势坐标换算成归一化比例"这一步 ——
+前者是纯 UI 管道，后者是可在组件内统一处理的机械换算。
+
+**改动**：新增 `shared/widgets/player/player_gesture_layer.dart`：
+
+| 组件 | 说明 |
+|---|---|
+| `PlayerGestureLayer` | 未锁定态手势层：`LayoutBuilder` 取真实宽高 → 归一化 → 语义化回调；**分区判定在组件内统一调用一次**（原来分散在页面闭包里） |
+| `PlayerLockedGestureLayer` | 锁定态极简层：仅捕获单击切换锁图标，完全拦截滑动/双击/长按 |
+
+- 回调签名改为语义化：`onVerticalDragUpdate(zone, deltaRatio)` 与
+  `onHorizontalDragUpdate(deltaRatio)`，页面侧不再出现 `primaryDelta / totalWidth` 这类换算；
+- **除零保护**：`totalWidth <= 0` / `totalHeight <= 0` 时传 0，避免未完成布局时产生
+  `NaN` 污染手势状态（原实现在未布局时可能写入 NaN）；
+- 长按/双击等无参数手势用 `VoidCallback` 替代 `(_) {}`，签名更诚实；
+- 组件不持有任何播放状态、不依赖 `video_player`，符合 ADR 对 `shared/widgets/` 的约束。
+
+**验收**：`flutter analyze` **0 问题**；`flutter test` **137/137 全部通过**。
+`aura_player.dart` **2166 → 1271 行**（第十三～十九批合计 **-895，-41%**）。
+
+> 本批行数仅 -15：手势**逻辑**仍属页面状态机，抽走的只是接线管道与机械换算。
+> 收益在结构（页面不再出现 `LayoutBuilder`/`GestureDetector`）与安全性（除零保护）。
+
+### 🖐️ P2 拆分巨型文件（第十八批：手势引擎 `player_gesture_engine.dart`）
+
+**背景**：手势层里最复杂、最容易出 bug 的两块计算埋在两段 `onXxxDragUpdate` 闭包中，只能靠真机拖动验证：
+
+1. 垂直滑动的**分区判定**（左 35% 调亮度 / 右 35% 调音量 / 中间不响应）与量程换算；
+2. 水平快进/快退的**浮点累积 + 毫秒精度 + 越界位移回写** —— 这正是此前"左右滑动不流畅"
+   优化的核心算法，却没有任何测试保护。
+
+**改动**：新增 `shared/widgets/player/player_gesture_engine.dart`（无状态纯函数）：
+
+| API | 职责 |
+|---|---|
+| `zoneOf(localX, totalWidth)` | 手势分区；宽度为 0（尚未布局）时返回 `none`，避免除零误判 |
+| `applyVerticalDrag(current, deltaRatio, min, max)` | 1.5 倍灵敏度量程换算 + 限幅（亮度下限 0.15 以免全黑） |
+| `seekSecondsPerScreen(duration)` | 横滑档位分档：≤300 秒用 60 秒/屏，否则 120 秒/屏 |
+| `resolveSeekTarget(...)` | 浮点累积求目标位置，并**回写越界位移** |
+| `displayDeltaSeconds(accumulated)` | 浮层 `+15s / -8s` 的取整展示 |
+
+- 页面侧两段手势闭包改为调用引擎：垂直滑动从 27 行降为 20 行且分区语义显式；
+  水平滑动从 20 行降为 16 行，注释中的两条设计要点（浮点累积、越界回写）随实现迁入引擎文档。
+- **新增 18 个单元测试**（`test/unit/shared/widgets/player/player_gesture_engine_test.dart`）：
+  分区边界值（350 / 650 归入中间区）、宽度为 0、灵敏度换算与上下限、
+  恰好 300 秒仍属短片档、**慢速滑动的浮点累积不丢精度**（每帧 0.24 秒累积三帧 = 0.72 秒，
+  逐帧取整则会退化为 0）、**拖到片尾后越界回写使回滑立即响应**、时长未知时不产生非法 `Duration`。
+
+**验收**：`flutter analyze` **0 问题**；`flutter test` **137/137 全部通过**（119 → 137）。
+
+### 🎨 P2 拆分巨型文件（第十七批：进度条轨道绘制 `player_track_shape.dart`）
+
+**背景**：`AuraSliderTrackShape` 是 160 行的自定义 `SliderTrackShape`，纯 Canvas 绘制逻辑
+（消除原生 24px 内缩留白、统一三条轨道粗细、未加载区呼吸 + 流光扫光动效），
+却与 1500 行的播放器页面挤在同一个文件里。
+
+**改动**：整体迁至 `shared/widgets/player/player_track_shape.dart`。
+
+- **类名不变**，因此 `_buildProgressSliderBody` 里的引用无需任何改动，只新增一条 import ——
+  这是最安全的抽取形态：**零调用点改动、零行为变化**；
+- 依赖收敛为 `dart:math` + `material_ui` + `AppColors`，与播放器内核、`video_player` 完全解耦；
+- 文档注释中的三条设计目标（消除内缩边距 / 统一粗细 / 流光动效）随类一起迁移。
+
+**验收**：`flutter analyze` **0 问题**；`flutter test` **119/119 全部通过**。
+`aura_player.dart` **2166 → 1273 行**（第十三～十七批合计 **-893，-41%**）。
+
+### 📊 P2 拆分巨型文件（第十六批：控制栏 `player_control_bar.dart` / `player_control_buttons.dart`）
+
+**背景**：控制栏 7 个方法共 326 行内联在页面里 —— `_buildBottomBar` + 宽/窄两套布局 +
+时间文本 + 三个按键，其中「全屏 / 非全屏」的分支散落在每个按键内部。
+
+**改动**：
+
+- 新增 `shared/widgets/player/player_control_bar.dart`：`PlayerControlBar`
+  - 承载底部渐变遮罩、宽版布局（时间组合 + 全宽进度条 + 三键行）与小屏紧凑布局（单行居中）；
+  - 两种布局**复用同一套控件**，差异仅在排布 —— 原来"全屏/非全屏"的分支在 5 处各写一遍；
+  - 内边距由上层算好后整体传入（含全屏避让与底部安全区），组件不依赖 MediaQuery 细节；
+  - **`currentPosition` 声明为 `ValueGetter<Duration>` 而非值** —— 时间文本要在
+    手势预览的局部重建中拿到最新进度，传值会停留在建树那一刻（这一点写进了文档注释）。
+- 新增 `shared/widgets/player/player_control_buttons.dart`：`PlayerPlayPauseButton` /
+  `PlayerSpeedButton` / `PlayerFullscreenButton`
+  - 触感反馈（`HapticFeedback.lightImpact()`）内聚到按键内部，调用方只表达"切换播放状态"；
+  - 全屏下的贴边对齐（`Alignment.centerLeft` / `centerRight` + 固定 42/38 尺寸容器）
+    与图标尺寸分档全部保留。
+- **进度条刻意不抽**：`_buildProgressSlider` / `_buildProgressSliderBody` 需要缓冲比例、
+  拖拽阻尼状态（`_isDraggingProgress` / `_dragProgressValue`）、seek 防抖定时器与
+  `_shimmerController` 等播放器内部细节，抽出将被迫搬走一整套拖动状态机。
+  改为通过 `PlayerProgressSliderBuilder` 由上层注入 —— 控制栏只负责它在两种布局中的位置。
+- 页面侧 `_buildBottomBar` 由 25 行降为 **30 行装配**（含回调语义化），
+  并删除 `_buildWideControlLayout` / `_buildCompactControlLayout` / `_buildTimeText` /
+  `_buildPlayPauseButton` / `_buildSpeedButton` / `_buildFullscreenButton` 共 222 行。
+
+**验收**：`flutter analyze` **0 问题**；`flutter test` **119/119 全部通过**。
+`aura_player.dart` **2166 → 1415 行**（第十三～十六批合计 -751）。
+
+### 🎛️ P2 拆分巨型文件（第十五批：播放设置抽屉 `player_settings_panel.dart`）
+
+**背景**：`_showMoreSettingsDrawer` 178 行 + `_buildFitChip` 30 行 + `_buildSettingSwitchRow` 43 行
+内联在页面里，且通过 `StatefulBuilder` 的 `setDrawerState` 从外部驱动抽屉局部刷新 ——
+页面被迫持有并传递一个**纯 UI 刷新句柄**，`_buildSettingSwitchRow` / `_buildFitChip` /
+`_buildSpeedChip` 三个辅助方法也都只为这一个抽屉服务。
+
+**改动**：
+
+- 新增 `shared/widgets/player/player_settings_panel.dart`：`PlayerMoreSettingsPanelBody`
+  （`StatefulWidget`）
+  - **`StateSetter` 彻底消失**：抽屉内容改为自身持有「展示副本」
+    （`_isMirrored` / `_isLooping` / `_videoFit` / `_preferences`），
+    改动后先 `setState` 立即回显、再上抛语义化回调；
+  - 抽屉是模态的，页面状态不会被外部改动，因此无需双向同步 —— 这一点写进了文档注释；
+  - `_applyPreferences(next)` 用 `copyWith` **只构造一次**新偏好值，避免先改本地、再重复构造上抛值；
+  - 触感反馈（`HapticFeedback.lightImpact()`）从页面移到面板，与原「点击先震一下」的时序保持一致。
+- `player_settings_sheets.dart` 追加 `showPlayerMoreSettingsDrawer(...)`：只负责弹出外壳
+  （右滑入场动画 + 毛玻璃 + 遮罩），内容委托给面板；对外 9 个语义化参数，
+  **不泄漏任何 UI 刷新细节**。
+- `player_overlays.dart` 追加 `PlayerSettingSwitchRow` 与 `PlayerFitChip`
+  （两者均返回 `Expanded`，需置于 `Row`，已写入文档注释）。
+- 页面侧 `_showMoreSettingsDrawer` 由 178 行降为 **13 行**；删除
+  `_buildFitChip` / `_buildSpeedChip` / `_buildSettingSwitchRow` 共 91 行。
+
+**验收**：`flutter analyze` **0 问题**；`flutter test` **119/119 全部通过**。
+`aura_player.dart` **2166 → 1615 行**（第十三～十五批合计 -551）。
+
+### 🎚️ P2 拆分巨型文件（第十四批：倍速抽屉 + 播放器状态层 `player_settings_sheets` / `player_overlays`）
+
+**改动**：
+
+- 新增 `shared/widgets/player/player_settings_sheets.dart`：`showPlayerSpeedDrawer`
+  - 把 135 行的 `showGeneralDialog` 内联块收成一个命令式函数，页面侧 `_showPlaybackSpeedDialog`
+    从 135 行降为 **13 行**，只保留「取当前倍速 → 回调里写控制器与偏好」；
+  - 档位常量 `kPlayerSpeedOptions` 提到模块级，避免每次弹窗重复构造列表；
+  - 选项行拆为 `PlayerSpeedOptionTile`，选中态样式与 `HapticFeedback` 反馈内聚在组件内；
+  - 页面回调仍负责 `setState` 与 `_startControlsTimer()`，抽屉不感知播放器状态。
+- 新增 `shared/widgets/player/player_overlays.dart`：
+  - `PlayerSpeedChip`：长按加速倍率胶囊（返回 `Expanded`，需置于 `Row`，已写入文档注释）；
+  - `PlayerStateOverlay`：加载中 / 失败重试两层状态合一，页面侧 `_buildStateOverlay()`
+    从 39 行降为 **5 行**；
+  - 顺带清理迁移后失效的 `app_loading.dart` 导入。
+
+**验收**：`flutter analyze` **0 问题**；`flutter test` **119/119 全部通过**。
+`aura_player.dart` **2166 → 1858 行**（第十三 + 十四批合计 -308）。
+
+### 🎬 P2 拆分巨型文件（第十三批：播放器手势浮层胶囊 `player_capsules.dart`）
+
+**背景**：`aura_player.dart`（2166 行）的视图层此前未拆，四个手势浮层各自内联了
+完整的毛玻璃容器结构 —— 亮度与音量两个胶囊**代码几乎逐行重复**，仅「图标 / 贴边方向 / 偏移」不同。
+
+**改动**：抽出 `shared/widgets/player/player_capsules.dart`：
+
+| 组件 | 说明 |
+|---|---|
+| `PlayerVerticalIndicatorCapsule` + `PlayerCapsuleSide` | 亮度 / 音量合并为一个组件，靠 `side` 决定贴左还是贴右、`icon` / `value` 由调用方传入 |
+| `PlayerSeekingCapsule` | 居中快进 / 快退胶囊，入参为 `deltaSeconds` 与已格式化的 `targetLabel` |
+| `PlayerFastForwardCapsule` | 长按加速顶部微胶囊（无状态、无参数） |
+
+- **消除重复**：亮度与音量两份 48 行的容器结构合并为一份，页面侧只剩两个 6 行装配；
+- **保留视觉细节**：毛玻璃模糊半径、`RotatedBox(quarterTurns: -1)` 竖条、
+  快进翡翠绿 `#10B981` / 快退琥珀金 `#F59E0B`、百分比文案字号等全部逐字保留；
+- **顺带修掉一处死代码**：亮度胶囊原图标为 `_brightness > 0.5 ? sunnyOutline : sunnyOutline`
+  （三元两支相同），现直接传 `Ionicons.sunnyOutline`，行为等价；
+- **职责边界**：组件不感知业务规则（如「音量为 0 用静音图标」由页面算好后传入），
+  符合 ADR 对 `shared/widgets/`「不得依赖业务 service」的约束。
+
+**验收**：`flutter analyze` **0 问题**；`flutter test` **119/119 全部通过**。
+`aura_player.dart` **2166 → 2025 行**（-141）。
+
+### 🧩 P2 拆分巨型文件（第九～十二批：状态视图 / 进度引擎 / 内容管道 / 目录导航 / 偏好持久化）
+
+本轮把 `novel_reader_page.dart` 从 **1443 行压到 1191 行**，并新增 5 个模块与 42 个单测。
+
+**第九批 · 状态视图（`widgets/reader_status_views.dart`，134 行）**
+- 抽出 `ReaderEmptyScaffold`（无章节空态）、`ReaderLoadingView`（抓取中等待态）、
+  `ReaderErrorView`（抓取失败 + 重试入口）；
+- 主页面留下三个状态分流分支，`_buildEmptyScaffold` 整体删除（101 行）；
+- 顺带清理因迁移而失效的 `ionicons` / `app_colors` 两个导入。
+
+**第十批 · 进度换算引擎（`engines/reader_progress.dart`，70 行 + 28 单测）**
+- 抽出的纯计算：`charOffsetFromPage`、`pageIndexFromCharOffset`、`horizontalProgress`、
+  `pageIndexFromRatio`、`verticalProgress`、`verticalOffsetFromRatio`、`ratioFromCharOffset`
+  与两个进度文案函数；
+- 明确了三条此前只存在于代码里的边界语义并写进文档注释：
+  **偏移恰好落在页边界归入下一页**、**偏移超出正文归入末页**、**章块不足一屏视为读完**；
+- `_currentCharOffset` / `_restoreReadingPosition` / `_chapterProgress` / `_chapterProgressLabel` /
+  `_seekChapterProgress` 全部收敛为引擎调用。
+
+**第十一批 · 内容管道（`controllers/chapter_content_pipeline.dart`，218 行）**
+- 把三级正文来源（内存缓存 → 沙盒离线 → 网络沙箱）与两种后台策略（预取 / 落盘）收敛为一个组件；
+- **新增可替换的 `OfflineChapterStore` 接口**：生产环境走 `GlobalOfflineChapterStore`（接全局
+  `downloadService`），使沙盒依赖变成可注入的窄接口，而非散落的全局函数调用；
+- `RuleEngine.parse` 亦通过 `parseRule` 函数注入，默认真实实现 —— 管道因此可完全脱离沙盒与网络测试；
+- 页面删除 9 个方法（`_ensureChapterContent` / `_readOfflineChapter` / `_prefetchChapter` /
+  `_downloadChapterOffline` / `_persistChapterOffline` / `_canDownloadOffline` /
+  `_isOfflineDownloaded` / `_handleChapterJumped` / `_maybePrefetchAdjacent`，共 190 行）；
+- 页面状态（`setState`）、纵向失败熔断解除、缓存容量回收均通过回调留在页面，管道不触碰 UI。
+
+**第十二批 · 目录导航（`engines/catalog_navigator.dart`，26 行 + 8 单测）+ 偏好持久化（`controllers/reader_preferences.dart`，74 行 + 6 单测）**
+- 目录的「显示行号镜像映射」与「停靠偏移（上方保留 2 行上下文）」抽为纯计算，
+  固定行高常量一并归位；页面里的 `_catalogItemHeight` 字段删除；
+- 偏好读写收敛到 `ReaderPreferences`：四个键名与取值集中定义，类型化写入，
+  移除页面 `_savePreference(key, dynamic)` 这类靠关键字字符串 + 动态类型的分发；
+- **读取语义更严谨**：`load()` 返回的字段可空，**未持久化过的项保持 null**，
+  页面据此逐项覆盖 —— 避免把「未设置」误当作「设置为默认值」；
+  脏数据（未知配色名 / 未知模式标识）分别回落 `parchment` 与横向。
+
+**验收**：`flutter analyze` **0 问题**；`flutter test` **119/119 全部通过**。
+
+### 🎛️ P2 拆分巨型文件（第八批：排版设置面板 `ReaderSettingsPanel`）
+
+**背景**：`_buildSettingsDrawer()` 199 行内联在 `State` 中，把「护眼底色 / 翻页模式 / 字号 / 行距」
+四组控件的布局与页面状态（含偏好持久化）耦合在一起。
+
+**改动**：
+
+- 新增 `widgets/reader_settings_panel.dart`：`ReaderSettingsPanel`
+  - **纯展示 + 回调上抛**：组件不持有状态、不接触 `_savePreference`，偏好写入全部由上层在回调里完成；
+  - 11 个属性拆出语义边界清晰的行为：`onThemeSelected` / `onPageModeSelected` /
+    `onDecreaseFont` / `onIncreaseFont` / `onLineHeightChangeStart` / `onLineHeightChanged` /
+    `onLineHeightChangeEnd`；
+  - **边界判断（字号 12~32、`onChangeStart` 锚点、`onChangeEnd` 还原）留在上层** ——
+    这些规则与「阅读位置保持」逻辑同属页面职责，不适合下沉到 UI 组件；
+  - 组件返回 [Positioned]（`bottom: 96` 等定位常量由组件持有），文档标注需置于 `Stack` 内使用；
+  - 「点击当前已选中的翻页 Chip 不触发切换」的防抖判定保留在组件内，因为它是纯交互语义
+    （`ChoiceChip` 点击时回调参数为 `!selected`，组件据此拦截）。
+- 主页面 `_buildSettingsDrawer()` 收敛为 **38 行薄封装**（原 199 行）。
+
+**新增 5 个组件测试**（`test/widget/.../widgets/reader_settings_panel_test.dart`）：
+字号 / 行距回显、A+ / A- 分别上抛、选择其它配色回传对应主题、
+**点击已选中翻页模式不触发切换**、点击未选中翻页模式触发切换。
+
+**踩坑记录（值得复用的约定）**：本仓库使用 **vendored `material_ui`**（包内自带一份 material 源码副本），
+因此测试**必须** `import 'package:material_ui/material_ui.dart'` 而不是 `flutter/material.dart` ——
+两者是**不同的 `Material` 类**，混用会让 `debugCheckHasMaterial` 找不到祖先，
+报 `No Material widget found`（最初 5 个用例全红即此原因）。
+
+**验收**：`flutter analyze` **0 问题**；`flutter test` **77/77 全部通过**（含新增 5 个组件测试）。
+主文件 **1597 → 1443 行**（-154）。
+
+### 🖼️ P2 拆分巨型文件（第七批：纵向长卷视图 + 横向翻页视图）
+
+**背景**：主页面里剩下的最大两块 UI 代码 —— `_buildHorizontalPageView`（151 行）与
+`_buildVerticalScrollView`（77 行）—— 直接内联在 `State` 中，与分页状态、缓存、手势回调耦合。
+
+**改动**：
+
+- 新增 `widgets/reader_horizontal_page_view.dart`：`ReaderHorizontalPageView`
+  - 承载页眉（章节名 / 书名）、`LayoutBuilder` 翻页主体、`PageView.builder` 与底部页码指示器；
+  - **分页计算上抛**：`LayoutBuilder` 只把实测宽高通过 `onViewportResolved(w, h)` 交回上层，
+    视图本身不感知 `TextPainter` 排版细节；
+  - **语义判定上抛**：`onPageChanged` 只转发 `PageView` 原始页码，
+    「滑入衔接页 → 自动切章 / 滑入正文页 → 同步页码 + 双向预取」留在上层 `_onHorizontalPageChanged`；
+  - 衔接页改为直接传入 `previousBridge` / `nextBridge`（为 null 即不存在相邻章节），
+    视图据 `!= null` 自算总页数，因此主页面里仅供其使用的 `_nextBridgeCount` / `_totalPageCount`
+    两个 getter 一并删除；
+  - `pageController` 保持可空，与重构前「为空时由 PageView 自建控制器」的行为一致。
+- 新增 `widgets/reader_vertical_scroll_view.dart`：`ReaderVerticalScrollView`
+  - 承载长卷 `ListView`（含末尾续载占位、章节分隔与标题、全书末尾提示）与外层 `SelectionArea`；
+  - 正文取值通过 `contentOf(index)` 回调上抛，组件不依赖 `ChapterCache`，
+    保持「纯展示」定位；`hasMore` 由上层用 `VerticalFlowEngine.hasMoreBelow` 算好后传入；
+  - 主页面保留 `_buildVerticalScrollView()` 作为薄封装，继续承担「序列兜底至少含当前章 /
+    确保当前章有 blockKey」这两个状态职责。
+- 抽出的两个方法均为**纯 UI 搬运**：样式取值、`clamp` 区间、`ValueKey` 组成方式、
+  空正文占位与末页提示文案全部逐字保留。
+
+**验收**：`flutter analyze` **0 问题**；`flutter test` **72/72 全部通过**
+（两个新组件由既有 6 个 `NovelReaderPage` widget 测试间接覆盖，本轮未新增用例）。
+主文件 **1749 → 1597 行**（-152）。
+
+### 🧵 P2 拆分巨型文件（第六批：纵向长卷流程引擎 `VerticalFlowEngine`）
+
+**背景**：纵向连续滚屏的续载判定散落在 `_onVerticalScroll` 与两个 async 续载方法里，
+边界分支（首章 / 末章 / 加载中 / 失败熔断）埋在 `setState` 之间，只能靠手工滚动验证。
+
+**改动**：抽出 `reader/engines/vertical_flow_engine.dart`，5 个无状态纯函数 + 1 个意图枚举：
+
+| API | 职责 |
+|---|---|
+| `resolveIntent(pixels, maxScrollExtent, threshold)` | 滚动位置 → `none / appendNext / prependPrev / both`，阈值默认 480px；内容不足一屏时返回 `both` |
+| `nextAppendTarget(sequence, appending, failed, chapterCount)` | 向下续载目标，null 表示末章 / 加载中 / 已失败熔断 |
+| `prevPrependTarget(sequence, appending, failed)` | 向上前插目标，null 表示首章 / 加载中 / 已失败熔断 |
+| `hasMoreBelow(sequence, failed, chapterCount)` | 底部是否仍显示加载占位（决定「全书完」提示时机） |
+| `compensateOffsetAfterPrepend(beforeOffset, insertedHeight, maxScrollExtent)` | 前插后的偏移补偿；**高度未知时返回 null 表示不跳转**，避免画面跳变 |
+
+- 调用点收敛：`_onVerticalScroll` 的两条 `if`（原硬编码 `480`）改为消费意图枚举；
+  `_appendNextVerticalChapter` / `_prependPrevVerticalChapter` 的 3 行前置守卫各自收敛为一次引擎调用；
+  `_buildVerticalScrollView` 的 `hasMore` 表达式改为引擎调用；
+  前插补偿的 `clamp` 内联表达式改为引擎调用。
+- **新增 24 个单元测试**（`test/unit/.../engines/vertical_flow_engine_test.dart`）：
+  意图四态 + 阈值边界（**恰好等于阈值不触发**）+ 自定义阈值；续载目标的正常 / 空序列 /
+  末章 / 首章 / 加载中 / 失败熔断；`hasMoreBelow` 四态；偏移补偿的正常相加、clamp 到
+  `maxScrollExtent`、负偏移 clamp 到 0、高度为 0 与负高度返回 null。
+
+**验收**：`flutter analyze` **0 问题**；`flutter test` **72/72 全部通过**（含新增 24 个引擎单测）。
+
+### 🗃️ P2 拆分巨型文件（第五批：会话缓存 `ChapterCache` + LRU 淘汰）
+
+**背景**：`novel_reader_page.dart` 里 `final Map<int, String> _contentCache = {}` 是一张**无上限**的裸 Map，
+被 18 处直接操作；它既是「切章零等待」的性能层，又承担「章节是否已就绪」的判定职责，
+却没有任何淘汰策略（APP_TODO 第 2 项）。
+
+**改动**：
+
+- 抽出 `reader/controllers/chapter_cache.dart`：`ChapterCache` 类封装这张表
+  - 内部用 Dart Map 的**插入顺序**实现访问序 LRU（读取即重插 → 置为最近使用），零额外数据结构开销；
+  - 提供 `containsKey` / `[]` / `[]=`（运算符重载让 **18 处调用点几乎零改动**）/ `nonEmptyCount` /
+    `seedFromChapters` / `evictOverflow(protect:)`；
+  - `capacity` 默认 200 章（按单章约 6 KB 估算 ≈ 1.2 MB），`<= 0` 表示不限制。
+- 阅读器侧新增两个收口方法，替换原先散落的 5 处裸写入：
+  - `_cacheChapterContent(index, content)`：写入缓存 + 触发回收；
+  - `_evictChapterCacheIfNeeded()`：按容量上限回收，并**同步清空 `_chapters[i].content`**
+    （否则 String 仍被章节模型持有，内存不会真正释放）。
+- **保护集合**是安全性的关键，淘汰时以下章节永不回收：
+  - `_verticalSequence`（纵向长卷正在渲染的章节，淘汰会出现空白块）；
+  - 当前章、`_prefetching`、`_downloadingChapters`；
+  - **没有远程地址的章节**（如详情页直传的单章正文）—— 一旦淘汰将永久无法重新获取。
+  - 若保护集合本身已超容，宁可暂时超出也不淘汰正在阅读的内容。
+- `_cachedChapterCount` 由 `entries.where(...)` 改为 `nonEmptyCount`。
+- **新增 10 个单元测试**（`test/unit/.../controllers/chapter_cache_test.dart`）：基本读写、重复写入不产生重复条目、
+  `seedFromChapters` 跳过空正文、未超容不淘汰、超容淘汰最久未使用者、**读取刷新 LRU 顺序**、
+  `protect` 内永不淘汰、全保护时宁可持续超容、`capacity <= 0` 不限制。
+
+**验收**：`flutter analyze` **0 问题**；`flutter test` **48/48 全部通过**（含新增 10 个缓存单测）。
+
+### ✂️ P2 拆分巨型文件（第四批：分页引擎 + 首批逻辑单测）
+
+- 抽出 `reader/engines/pagination_engine.dart`：把原先内嵌在 State 中的 `_computeTextPages()`（64 行）
+  提炼为**纯函数引擎** `PaginationEngine.sliceIntoPages()` —— 无状态、不依赖任何页面状态；
+- 页面侧 `_recalculatePages()` 改为调用引擎，只保留视口尺寸缓存与页码修正等状态写入；
+- **新增首批逻辑单元测试**（`test/unit/features/media/novel/reader/engines/pagination_engine_test.dart`，5 个用例）：
+  1. 空文本返回单页空串；
+  2. 尺寸非法时原样返回全文，交由调用方兜底；
+  3. 长文本切分为多页且**拼接可还原全文**（不丢字符）；
+  4. 可用高度越小，分页数越多（单调性）；
+  5. 每页高度不超过可用高度（段落吸附最多容忍一行误差）。
+- **测试暴露的既有边界**：段落自然吸附在「断点恰好是换行符」时会在其后多带 1 个字符，
+  使该页高度可能超出可用高度至多一行。因属既有行为、且改动会影响分页结果与阅读位置还原，
+  本次**未改算法**，仅在测试中显式记录容忍度，并记入 APP_TODO 第 14 项供后续评估。
+- **累计进度**：`novel_reader_page.dart` **2193 → 1705 行**（-488 行，-22%）。
+
+**验收**：`flutter analyze` **0 问题**；`flutter test` **38/38 全部通过**（含 5 个新增逻辑单测）。
+
+### ✂️ P2 拆分巨型文件（第三批：顶栏 + 底栏，阅读器降至 1757 行）
+
+- 抽出 `reader/widgets/reader_top_bar.dart`：顶部控制栏（返回 / 书名 / 刷新章节 / 章节目录），约 **75 行**；
+- 抽出 `reader/widgets/reader_bottom_bar.dart`：底部控制面板（章内进度条 + 上一章 / 下一章 + 进度文案 +
+  四个功能按钮），并把原先的私有 `_buildActionButton` 提升为可复用的 `ReaderBarActionButton`，约 **180 行**；
+- 页面侧 `_buildTopBar()` / `_buildBottomControls()` 分别收缩为 7 行 / 18 行的参数装配，
+  `_buildActionButton()`（24 行）整体移除；
+- **累计进度**：`novel_reader_page.dart` **2193 → 1757 行**（-436 行，-20%），
+  已抽出 4 个模型文件 + 5 个 widget（三区热层 / 衔接页 / 目录抽屉 / 顶栏 / 底栏）。
+
+**验收**：`flutter analyze` **0 问题**；`flutter test` **33/33 全部通过**。
+
+### ✂️ P2 拆分巨型文件（第二批：目录抽屉，阅读器降至 1905 行）
+
+- 抽出 `reader/widgets/reader_catalog_drawer.dart`：章节目录抽屉
+  （顶部信息栏「书名 + 已下载进度」+ 正序/倒序切换 + 关闭按钮 + 固定行高章节列表 + 三态下载图标），约 **130 行**；
+- 组件设计为**纯展示**：章节数据、当前章索引、单章下载状态判定全部由宿主传入，
+  选择章节 / 单章下载 / 切换排序 / 关闭等行为通过回调上抛 —— 它不依赖任何仓储或页面状态，可独立进行 Widget 测试；
+- 页面侧 `_buildCatalogDrawer()` 收缩为 18 行参数装配，`_buildCatalogItem()` 整体移除；
+- **累计进度**：`novel_reader_page.dart` **2193 → 1905 行**（-288 行），已抽出 4 个模型文件 + 3 个 widget。
+
+**验收**：`flutter analyze` **0 问题**；`flutter test` **33/33 全部通过**。
+
+### 🎬 AuraPlayer 完成业务解耦并归位 `shared/`（ADR D1 落地）
+
+**目标**：让播放器成为真正可复用的通用组件。它此前直接读写全局设置仓储（`appService.settings`），
+因此按依赖规则只能留在 feature 内。
+
+**改动**：
+
+- 新增 `shared/widgets/player/player_preferences.dart`：纯值对象 `PlayerPreferences`
+  （长按加速开关 + 倍率，含 `copyWith` / `==` / `hashCode`），零业务依赖；
+- `AuraPlayer` 新增两个注入点：
+  - `preferences` —— 偏好由宿主传入（默认 `const PlayerPreferences()`，既有调用方零改动）；
+  - `onPreferencesChanged` —— 用户在播放器设置抽屉内调整偏好时，回调宿主持久化；
+- 内部 **7 处 `appService` 引用全部替换**：长按开关 / 倍率的两个 getter、设置抽屉的开关值、
+  开关写入、倍率条件渲染、倍率选中判断、倍率写入；全屏路由内的自引用一并透传两个新参数；
+- **移除 `app/di/di.dart` 导入** —— 播放器不再认识依赖容器；
+- **归位**：`features/media/video/player/aura_player.dart` → `shared/widgets/player/aura_player.dart`，
+  满足「`shared/` 不得依赖 `data/` 与 `app/di`」的硬约束（ADR D1 的落地判据）；
+- 业务侧 `video_detail_view.dart` 承担注入与持久化职责：监听 `appService.settingsNotifier`，
+  设置变化时重新注入偏好；`onPreferencesChanged` 中写回全局设置。
+
+**验证**：`flutter analyze` **0 问题**；`flutter test` **33/33 全部通过**；
+`grep` 确认播放器文件内已无 `appService` 与 `app/di` 引用。
+
+**顺带发现（已记入 APP_TODO 第 13 项）**：设置项 `enablePlayerGestures`（播放手势开关）
+在播放器内**从未被读取**，即该开关当前不生效。因属行为变更，未在本次一并接入。
+
+### ✂️ P2 拆分巨型文件（第一批：小说阅读器 2193 → 2034 行）
+
+**目标**：`novel_reader_page.dart` 原本 2193 行，承担分页算法、纵向长卷、目录抽屉、排版设置、
+进度换算、预取调度等十余项职责，按设计文档拆为 15 个文件。
+
+**本批完成**：
+
+| 抽出内容 | 新文件 | 性质 |
+| :--- | :--- | :--- |
+| 护眼配色 `ReaderTheme` | `reader/models/reader_theme.dart` | UI 模型（含 `Color`，按 ADR D3 留在 feature 内） |
+| 翻页模式 `PageTurnMode` | `reader/models/page_turn_mode.dart` | 模型 |
+| 章节模型 `NovelChapter` | `reader/models/novel_chapter.dart` | 模型（纯 Dart） |
+| 章块几何 `_ChapterMetrics` → `ChapterMetrics` | `reader/models/chapter_metrics.dart` | 模型（跨文件使用，去掉私有前缀） |
+| 三区点击热层 | `reader/widgets/reader_tap_zones.dart` | 无状态 Widget（三回调注入） |
+| 章首 / 章末衔接页（合一） | `reader/widgets/reader_chapter_bridge.dart` | 无状态 Widget（文案参数化，两个方向共用） |
+
+**顺带收益**：
+
+- `NovelChapter` 与 `ChapterMetrics` 成为**纯 Dart 类型**，可脱离 Widget 单测（为 P4 铺路）；
+- 衔接页两个方向原本是约 90 行近乎重复的实现，现合并为一个参数化组件，杜绝"只改一边"的不一致；
+- `reader_tap_zones` 注释更正为与现状一致（正文已由 `SelectableText` 改为 `SelectionArea` + `Text`）。
+
+**过程中的失误与修正**：一次批量替换把模型提取块的 `new_str` 误填为 import 语句，导致重复导入 + 注释粘连；
+通过读取实际文件状态定位并修复（`analyze` 0 问题、测试全绿）。
+
+**验收**：`flutter analyze` **0 问题**；`flutter test` **33/33 全部通过**。
+
+**后续批次**：目录抽屉（约 250 行）→ 顶栏/底栏（约 400 行）→ 横向/纵向视图 → 排版设置面板 →
+最后提取 `controllers/`（状态编排、章节缓存）与 `engines/`（分页算法、长卷引擎）。
+
+### 🧭 P1 路由参数类型化：以强类型 Args 取代 extra 魔法字典
+
+**背景**：此前所有跳转都以 `extra: <String, dynamic>{'title': ..., 'url': ...}` 传参 ——
+键名写错不会有编译期提示，只能在运行时表现为"参数丢了"；且路径字符串在注册端与跳转端各写一遍。
+
+**新增（`app/router/`）**：
+
+| 文件 | 职责 |
+| :--- | :--- |
+| `app_routes.dart` | 路由路径常量。同时提供「跳转用绝对路径」与「注册用相对段」—— GoRouter 子路由 `path` 必须为相对段 |
+| `route_args.dart` | 4 个参数模型：`SearchArgs` / `RuleArgs` / `RuleDetailArgs` / `MediaDetailArgs`，各带 `tryParse` 集中解析与容错（兼容「参数类对象 / 裸 `Rule` / 旧字典」三种形态） |
+| `app_navigator.dart` | `BuildContext` 扩展：`pushRuleDetail()` / `pushSearch()` / `pushMarket()` 等 15 个类型化导航方法，并 `export route_args.dart`，调用方只需一个 import |
+
+**改造范围**：
+
+- **注册端**：5 个含参路由改为 `XxxArgs.tryParse(state.extra)`，原先散在 `app_router.dart` 里的内联 Map 解析（约 70 行）全部移除；
+- **跳转端**：**12 处**带参跳转改为类型化方法（覆盖 discover / search / rules / rule_catalog / history 五个功能），**9 处**无参跳转改为扩展方法；
+- **顺带修复**：`main.dart` 中 `router.go('/home')` 指向了**不存在的路由**（实际路径为 `/`），会导致兜底跳转失败，已改用 `AppRoutes.home`；
+- **顺带简化**：`rules_page` 中手工 `Uri.encodeComponent` 拼接的 `/web?url=...&title=...` 改为 `pushBrowser()`（内部用 `Uri` 构造，自动编码，杜绝截断）。
+
+**验收**：`flutter analyze` **0 问题**；`flutter test` **33/33 全部通过**；全项目已无 `context.push('/xxx')` 与 `extra: {` 形式的残留（仅剩说明性注释）。
+
+### 🧱 P0 目录结构重构落地：feature-first 六层骨架 + 全量绝对 import
+
+**背景**：`lib/` 原本按技术类型横向切分（`views` / `widgets` / `services` / `models` / `engines` / `core`），
+单个功能的代码散落在 4~6 个目录，功能边界不可见。方案见 [`APP_STRUCTURE_REWORK.md`](./APP_STRUCTURE_REWORK.md)。
+
+**步骤 1 · 相对 import 全量统一为绝对 import**
+
+- 把 `lib/` 与 `test/` 中的 **196 处** `../` / `./` 相对 import 与 **49 处**无前缀同级相对 import
+  （如 `import 'router.dart';`）全部改写为 `package:fluxforge/...`；
+- 收益：此后移动文件不再需要重算相对路径（亦为 Flutter 官方推荐写法）。
+
+**步骤 2 · 目录搬迁（纯移动，业务逻辑零改动）**
+
+- **55 个文件**迁入新的六层结构：
+
+| 顶层 | 职责 | 内容 |
+| :--- | :--- | :--- |
+| `app/` | 装配层 | `di`（原 `services/di.dart`）、`router`（原 `lib/router.dart`）、`theme`（原 `core/theme/`） |
+| `core/` | 技术基建 | `logging`（原 `core/utils/app_logger.dart`）、`sandbox`（原 `services/rule_engine.dart`）、`network` / `storage` / `utils` |
+| `domain/` | 领域模型 | `media` / `rule`（原 `models/`）、`text`（原 `core/utils/novel_text.dart`） |
+| `data/` | 数据访问 | `backup` / `download` / `library` / `rule` / `settings`（原 `services/` 下 8 个服务） |
+| `shared/` | 跨功能组件 | `widgets/`（原 `widgets/` 下 6 个通用组件） |
+| `features/` | 业务功能 | `shell` / `splash` / `discover` / `search` / `rules` / `profile` / `settings` / `browser` / `library`（favorites·history·downloads）/ `media`（shared·video·novel·comic） |
+
+- `features/browser/engine/` 收纳原 `engines/`（广告拦截、网页视频手势引擎）；
+- `widgets/player/aura_player.dart` 暂归 `features/media/video/player/` —— 待 P2 完成播放偏好解耦后
+  再下沉至 `shared/widgets/player/`（见设计文档 ADR D1）；
+- **删除死代码** `views/dev/card_gallery_page.dart`（824 行，路由入口此前已移除）。
+
+**验收**：`flutter analyze` **0 问题**；`flutter test` **33/33 全部通过**；无任何业务逻辑改动。
+
+**下一步**：P1 路由参数类型化 → P2 拆分 6 个千行文件 → P3 抽 `controllers/` 状态层 → P4 测试目录对齐 → P5 CI 门禁。
+
+### 🧱 新增《移动端目录结构重构设计方案》
+
+- 新增 [`docs/APP_STRUCTURE_REWORK.md`](./APP_STRUCTURE_REWORK.md)：基于当前 `lib/` 61 个文件、约 2.5 万行的实测数据，给出结构重构蓝图：
+  - **诊断**：根源不在命名，而在"按技术类型横向切分"——单个功能的代码散落在 4~6 个目录；6 个文件超 1000 行、2 个超 2000 行；`services/` 与 `widgets/` 职责混装；路由以 `extra: Map<String, dynamic>` 魔法字典传参；缺少状态管理层；
+  - **目标**：`app`（装配）/ `core`（技术基建）/ `domain`（纯 Dart 模型）/ `data`（Repository）/ `shared`（跨功能 UI）/ `features`（按功能垂直切分）六层，并给出 5 条依赖方向硬约束（如 feature 之间禁止互相 import）；
+  - **交付物**：完整目标目录树、**61 个文件的迁移映射表**、`novel_reader_page.dart`（2193 行 → 15 文件）与 `aura_player.dart`（2154 行 → 12 文件）的拆分清单、配套的路由类型化与测试目录对齐方案、P0~P5 分阶段迁移路径与验收标准、以及"明确不做的事"（不引状态框架 / 不拆多包 / 不引代码生成）。
+- 同步更新 `docs/README.md` 文档索引。
+
+### 🗂️ 文档体系整理：新增待优化清单，清除过时文档
+
+- **新增 [`docs/APP_TODO.md`](./APP_TODO.md)**：汇总已确认存在但尚未处理的技术问题与优化项共 12 项，按「收益 / 风险」分级：
+  - **阅读器**：纵向长卷内存无上限、`_contentCache` 无淘汰策略、滚动同步每帧测量、加载失败熔断无提示、目录排序不持久化；
+  - **播放器**：**播放期每帧 `setState` 全树重建（收益最高的一项）**、寻道期间仍在解码、长按与拖动的手势竞争；
+  - **全局**：「已缓存」与「已下载」口径不一致、横向模式仍用 `SelectableText`、内存压力主动释放未实现；
+  - 并附「已确认无需处理」结论（正文非双份存储、纵向下两个横向专用变量恒为 false 等），避免后续重复排查。
+- **清除过时文档**：
+  - 删除 `docs/APP_ROADMAP.md` —— 其 P0/P1/P2 规划项（断点续播、小说阅读器、漫画查看器、收藏追更、备份还原、离线下载、规则测速）**均已落地**，内容严重滞后；
+  - 删除根目录 `CONVERSATION_SUMMARY.md` —— 旧项目名（FluxView）时代的会话归档，已完全过时。
+- **同步修复失效引用**：`docs/README.md` 文档索引、根 `README.md`、`app/README.md` 中对 `APP_ROADMAP.md` 的链接与描述已更新为 `APP_TODO.md`（`CHANGELOG.md` 内的历史引用按惯例保留）。
+
+### ⚡ 纵向长卷渲染优化：单个 SelectionArea 替代逐块 SelectableText
+
+- **内存与卡顿排查结论**：
+  - 正文常驻内存的来源是**纵向长卷**：`_verticalSequence` 只增不减，读过的章节正文全部留在 `_contentCache` 与 `_chapters[i].content` 中（二者指向同一 String 引用，并非双份存储），且没有淘汰策略；
+  - 单章 3000 中文字 ≈ 6 KB（Dart String 为 UTF-16），1000 章 ≈ 6 MB，**内存量级本身可控**；
+  - **真正的卡顿源是渲染而非内存**：长卷中每个章节块都是一个 `SelectableText`，每个实例都会建立独立的 `EditableText` 与选择容器，多章并存时布局与绘制开销显著。
+- **本次优化**：长卷改为「外层单个 `SelectionArea` + 内部纯 `Text`」—— 选择容器只建立一次，长按划词与跨章复制能力完整保留，渲染成本大幅下降。
+- **未改动**：横向分页模式仍使用 `SelectableText`（每页独立、视口内通常仅 1~3 页，成本可控）。
+- **质量验证**：`flutter analyze` **0 问题**；`flutter test` **33/33 全部通过**。
+
+### ⬇️ 阅读临时缓存与离线下载职责分离（跳章时前后各下载一章）
+
+**最终形态：两类机制各司其职**
+
+| 机制 | 触发场景 | 是否落盘 | 生命周期 |
+|---|---|---|---|
+| **临时缓存** | 翻页 / 纵向续载的邻近预取（`_prefetchChapter`） | ❌ 仅内存 | 本次会话，退出阅读器即释放 |
+| **离线下载** | 跳章（前后各一章）、目录手动单章、详情页全本下载 | ✅ 沙盒 | 持久化，断网可读 |
+
+**演变说明**：上一版曾把「预取」也一并落盘，使得「这次看完下次还在」，抹掉了原有临时缓存的语义；本版按职责重新拆分。
+
+**关键改动**
+
+- `_prefetchChapter` 恢复为**纯内存临时缓存**（不再落盘）：保留「这次可以直接看、下一次就没了」的原有体验，阅读过程不静默占用磁盘；
+- 新增 `_handleChapterJumped()`：跳章后把**前后相邻章节各下载一章**到沙盒；正文若已在内存缓存中则**复用落盘、零额外网络请求**，否则才调度一次抓取；不具备离线条件时退化为纯内存预取；
+- 新增 `_downloadChapterOffline()` / `_persistChapterOffline()` / `_canDownloadOffline`，目录手动下载改为复用同一路径（已缓存章节不再二次抓取）；
+- `DownloadService` 收敛为单一落盘入口 `saveNovelChapterContent()`（正文由调用方提供），删除刚引入却已无调用者的 `downloadNovelChapter()` 及中转方法 `_markNovelChapterCompleted()`，避免两套单章下载逻辑并存。
+
+**质量验证**：`flutter analyze` **0 问题**；`flutter test` **33/33 全部通过**。
+
+### 📖 小说阅读器：统一缓存与下载、修复翻章加载动画、修复纵向长卷滚动与进度
+
+**① 阅读缓存与离线下载统一为一套**
+
+- 新增 `DownloadService.downloadNovelChapter()` 单章离线下载 API，与全本下载**共用同一套沙盒目录**（`<bookDir>/<index>.txt`）与**同一份任务记录**（`completed` 集合）：单章下载过的章节全本下载自动跳过，反之亦然。
+- 新增 `_ensureNovelTask()`：单章下载时若本书尚无任务，按 `paused` 创建记录 —— 既不自动开跑全本，又保证阅读器目录与下载管理页读到一致状态。
+- 目录「云端图标」由**只写内存缓存**改为**真正落盘下载**，成功后回填内存缓存；目录顶部文案改为「已下载 N 章」，状态图标统一为「已下载 / 下载中 / 未下载」三态（移除原先易误解的「已缓存」对勾态）。
+- 内存缓存 `_contentCache` 退居阅读期加速层，读取优先级仍为「内存 → 沙盒 → 网络」。
+
+**② 修复已缓存章节翻章仍出现加载动画**
+
+- 根因：章首 / 章末衔接页**无条件渲染 `CircularProgressIndicator`**，即使 `isReady`（正文已就绪 / 已下载）也照样转圈，造成「明明已缓存却仍在加载」的错觉。
+- 修复：`isReady` 时改为展示对勾就绪图标，仅未就绪才显示转圈。
+
+**③ 修复纵向长卷中段无法向上滚动**
+
+- 根因：只有 `_appendNextVerticalChapter()` 向下追加逻辑，**完全没有向上前插**，长卷滚到顶部后就再也无法回溯前文。
+- 修复：新增 `_prependPrevVerticalChapter()`，在「距顶不足 480px」时静默前插上一章；因前插会把既有内容整体下移，采用**下一帧实测新块高度后补偿滚动偏移**，保证画面不跳变；并继续向上预取再上一章。
+
+**④ 修复纵向模式加载多章后进度条不准**
+
+- 根因：`_chapterProgress` 纵向分支以**整条长卷的 `maxScrollExtent`** 作分母，而长卷每追加一章分母就变大 → 同一物理偏移对应的比例自行回退，加载章节越多偏差越大；文案却标注为「本章 X%」。
+- 修复：新增 `_verticalChapterMetrics()`，借助 `RenderAbstractViewport.getOffsetToReveal` 实测当前章块顶部偏移与高度，进度改为**章块内滚动比例**（0% = 章首对齐，100% = 章末读尽，章块不足一屏视为已读完）；同步修正 `_seekChapterProgress`（拖动改为章内定位）、`_currentCharOffset` 与 `_restoreReadingPosition`（切模式 / 改排版后的位置还原），四处共用同一套度量。
+- 新增 `_ChapterMetrics` 数据类与 `package:flutter/rendering.dart` 导入。
+
+**质量验证**：`flutter analyze` **0 问题**；`flutter test` **33/33 全部通过**（同步把目录图标断言更新为新语义）。
+
+### 📚 小说阅读器章节目录支持正序 / 倒序切换
+
+- **新增排序切换按钮**（`novel_reader_page.dart` 目录抽屉顶部信息栏）：一键在「正序（第 1 章在前）」与「倒序（最新章节在前）」之间切换，按钮文案与高亮色实时反映当前状态，便于追更时快速定位最新章。
+- **实现要点**：
+  - 新增 `_isCatalogReversed` 状态与 `_catalogDisplayIndex` 行号映射，`ListView.builder` 按显示行号镜像回真实章节索引；
+  - 抽出 `_catalogOffsetForCurrentChapter()`，「打开目录」与「切换排序」共用同一套「当前章上方保留 2 行」的定位算法，两种排序下都能自动停靠到正在阅读的章节；
+  - 目录展开状态下**不重建** `ScrollController`（旧控制器仍被列表占用，dispose 后会抛异常），改为在列表重建后的下一帧 `jumpTo` 并 clamp 到 `maxScrollExtent`。
+- **顺带修正文案缺陷**：目录内「一键缓存」此前提示「已缓存，可离线续读」，但该操作实际只写入**内存会话缓存**（`_contentCache`），退出阅读器即失效，并不具备离线能力；现更正为「已缓存，本次阅读内可瞬时切换」，并在方法注释中明确其与沙盒离线下载的区别。
+- **回归保护**：新增测试 `NovelReaderPage catalog order toggle flips chapter list order`，断言切换后第 3 章升至第 1 章上方且按钮文案变为「倒序」。
+- **质量验证**：`flutter analyze` **0 问题**；`flutter test` **全部通过**。
+
+### 🎞️ AuraPlayer 左右滑动快进快退流畅度优化
+
+**问题定位（`widgets/player/aura_player.dart`）**：滑动寻道存在「掉帧 + 顿挫」两类问题，根因有三：
+
+1. **每帧两次全树重建**：手势 `onHorizontalDragUpdate` 每帧 `setState`，叠加 `_onControllerUpdate` 里播放期每帧的 `setState(() {})`，导致 13 层 `Stack`（视频层 / 控制栏 / 各类浮层）每帧被重建两次 → 滑动明显掉帧。
+2. **逐帧取整累积造成顿挫**：原实现 `(deltaX * scale).round()` 后再累加，慢速滑动时单帧增量常不足 0.5 秒而被截断为 0，形成「一顿一停、偶尔跳 1 秒」的不跟手手感。
+3. **触顶后越界位移未回写**：拖到片头 / 片尾后继续滑动会持续累积无效位移，回滑时出现一段「不响应」的空窗期。
+
+**优化实现**：
+
+- **浮点累积 + 毫秒精度**：新增 `_seekDeltaRawSeconds` 做浮点累加，仅在渲染时 `round()`；目标位置按毫秒精度计算，彻底消除秒级顿挫。
+- **越界回写**：将 clamp 后的实际位移回写至累积值，片头片尾回滑即时响应，无空窗期。
+- **零整树重建**：新增 `ValueNotifier<int> _seekPreviewTick`，手势拖动期间只递增该 notifier；中央快进胶囊、进度条、时间文本、迷你进度条四处改为 `ValueListenableBuilder` 订阅局部重建。
+- **播放帧回调短路**：`_onControllerUpdate` 在寻道进行中直接跳过 `setState`，避免「播放帧回调 + 手势回调」双重重建。
+- **进度条主体拆分**：`_buildProgressSlider` 拆出 `_buildProgressSliderBody`，使订阅层与渲染主体解耦。
+- 手势结束仍保留一次性 `setState`，播放意图记忆（`_effectiveIsPlaying`）与 350ms 防抖逻辑不变。
+
+**质量验证**：`flutter analyze` **0 问题**；`flutter test` **32/32 全部通过**。
+
+### 🧭 「我的」页入口收敛：移除广告拦截，备份 / 日志 / 关于迁入「设置」
+
+- **「我的」页移除三项、迁移两项**：
+  - 「广告拦截规则」—— **移除**：设置页「规则沙箱与网络解析」卡片已具备开关、实时规则数 / 同步时间、一键热更与 `/adblock` 跳转，属完全重复入口；
+  - 「数据备份与还原」—— **迁入**设置页；
+  - 「沙箱与系统日志」—— **移除**：设置页对应入口已附带等效且更完整的日志统计与 ERROR 徽标；
+  - 「关于 FluxForge」—— **迁入**设置页。
+- **设置页（`settings_page.dart`）**：第 5 张卡片由「关于与系统诊断」升级为「数据备份、诊断与关于」，依次为「数据备份与还原 → `showBackupSheet`」「沙箱与系统日志中心 → `/logs`」「关于 FluxForge → `_showAboutSheet`」，以分隔线分组；`_showAboutSheet` / `_buildAboutRow` 自「我的」页整体迁移，其中运行平台取值由 `defaultTargetPlatform` 调整为等价的 `Theme.of(context).platform`，省去 `foundation.dart` 依赖。
+- **「我的」页连带收敛**：原「系统与关于」整区移除 —— 该区仅剩的「系统偏好设置」与 Hero 卡右上角齿轮完全重复，而齿轮本就是设置唯一入口。页面现由「身份 Hero → 继续观看 → 资产网格 → 数据与同步（规则市场 / 离线下载 / 缓存）」构成，「我的」彻底回归资产仪表盘定位。
+- **清理**：`profile_page.dart` 移除 `foundation.dart`、`app_logger.dart`、`backup_sheet.dart` 三个不再使用的导入，并删除 `_showAboutSheet` / `_buildAboutRow` 共 105 行。
+- **质量验证**：`flutter analyze` **0 问题**；`flutter test` **32/32 全部通过**。
+
+### 📳 阅读界面取消点击触感反馈
+
+- **变更动机**：小说 / 漫画阅读属于高频、长时沉浸场景，单击翻页与呼出菜单的震动反馈带来不必要的感官干扰，统一改为纯视觉反馈。
+- **小说阅读器（`novel_reader_page.dart`）移除 6 处触感**：
+  - 左 / 右三区点击翻页（`_goToPreviousPage` / `_goToNextPage`）原 `selectionClick`；
+  - 翻页模式切换（`_togglePageMode`）原 `selectionClick`；
+  - 章节预取（`_prefetchNextChapter`）、打开章节目录（`_showCatalogDrawer`）、目录内一键缓存（`_downloadChapterFromCatalog`）原 `lightImpact`。
+- **漫画阅读器（`comic_reader_page.dart`）移除 1 处**：阅读模式切换（`_toggleReadingMode`）原 `lightImpact`。
+- **配套清理**：两个文件的 `import 'package:flutter/services.dart'` 仅服务于 `HapticFeedback`，移除后已无用，一并删除（静态分析此前报 `unnecessary_import`）。
+- **未改动范围**：影视 / 小说 / 漫画**详情页**与视频播放器的触感反馈保持原状，本次仅收敛「阅读界面」。
+- **质量验证**：`flutter analyze` **0 问题**；`flutter test` **32/32 全部通过**。
+
+### 🖱️ 修复阅读器错误页「重试加载」按钮被三区点击热层遮挡
+
+- **问题现象**：章节正文加载失败时，错误页的「重试加载」按钮点不到，点击反而会呼出控制栏（命中了三区热层的中间区域）。
+- **根因**：三区点击热层是 `Positioned.fill` 全屏覆盖，且层级位于 `_buildReaderBody` **之上**；错误页属于正文分支的一部分，其按钮手势被热层抢走。
+- **修复（`novel_reader_page.dart`）**：
+  1. 新增 `_isContentErrorState` getter，统一判定「正文加载失败且无可用内容」；
+  2. build 中热层改为条件渲染：错误态下**撤除热层**，让点击直达「重试加载」按钮；
+  3. `_buildReaderBody` 的状态 B 分支复用同一 getter，避免两处判定逻辑漂移。
+- **设计取舍**：**保留**重试按钮而非删除 —— 该状态下重试入口即按钮本身，无需再靠点击呼出控制栏；且修复只需一个判断，不存在「判断过多不优雅」的问题。
+- **回归保护**：新增测试用例 `NovelReaderPage error state keeps retry button clickable without tap-zone interception`，断言错误态出现「重试加载」，且点击后不会呼出控制栏。
+- **质量验证**：`flutter analyze` **0 问题**；`test/widget_test.dart` **22/22 全部通过**。
+
+### 🔧 修复小说阅读器「回退到上一章」定位失效
+
+- **问题现象**：在中间章节的第一页点击左侧区域（或向右滑入章首衔接页）回退时，无法正确定位到上一章最后一页，而是停在被 clamp 过的错误页码。
+- **根因定位（三层叠加）**：
+  1. `PageView` 的 key 包含当前章节索引（`ValueKey('novel_pageview_${_currentChapterIndex}_$totalCount')`），切章时**必然触发重建**；
+  2. `_syncPageController()` 在 `setState` 之后**同步**调用 —— 此时旧 PageView 尚未销毁（build 未执行），`jumpToPage` 作用在即将被丢弃的实例上；
+  3. build 完成后新 PageView 挂载，`PageController` 重新 attach 并回退到**创建时**的陈旧 `initialPage`，最终停在被 `clamp` 过的错误页码；
+  4. 由于「下一页」的目标页为第 0 页（数值小），偏差不易察觉；而「上一页」目标为末页（数值大），问题立即暴露 —— 这正是只在「回退」时被发现的根本原因。
+- **修复方案（`novel_reader_page.dart` → `_syncPageController`）**：
+  - 统一延迟到**下一帧**（`addPostFrameCallback`：build 已完成、新 PageView 已挂载）再执行定位；
+  - 若延迟执行时控制器仍未挂载，则以正确目标页码**重建** `PageController`，杜绝沿用陈旧 `initialPage`；
+  - 补充成因注释，防止后续被改回同步调用而再次踩坑。
+- **质量验证**：`flutter analyze` **0 问题**；`test/widget_test.dart` **21/21 全部通过**（含「衔接页与 seek 同步不应误触发章节回退」用例）。
+
+### 📖 小说阅读器向前翻页、对称桥接页与 PageView 真实页码偏移加固
+
+- **背景与代码审查**：
+  - 用户提交了 `2c9f8ff`，实现了横向翻页模式下向左倒序翻页功能：
+    1. 在 `_hasPrevChapter` 时于 PageView 首位增加「上一章桥接页」(`_buildPreviousChapterBridge`)，滑入第 0 页后通过 `_autoAdvanceToPreviousChapter` 自动倒序回退到上一章最后一页；
+    2. 新增 `_openAtLastPage` 标记与 `toLastPage` 参数，使 `_switchChapter` 支持自动定位到目标章最后一页，实现了正序读与倒序翻的完整闭环；
+    3. 点击热区左侧 1/3 区域支持在第 1 页时直接触发倒序回退到上一章最后一页；
+    4. 引入 `_maybePrefetchAdjacent` 实现双向静默预取，前后相邻章节均提前缓存；
+    5. 新增 `_syncPageController` 统一按真实页面索引（考虑桥接页偏移 `_prevBridgeCount`）进行 `jumpToPage`。
+- **审查发现的严重边界隐患**：
+  1. **排版变更/模式切换后阅读位置恢复偏移**：
+     `_restoreReadingPosition` 原代码直接使用切片索引 `target` 执行 `controller.jumpToPage(target)`。
+     当用户在非第 1 章的第 1 页正文处（`target = 0`）调整字号、行距或从纵向切回横向时，会直接跳到 PageView 的 index 0（**上一章桥接页**），导致误触发 `_autoAdvanceToPreviousChapter()` 强行倒退回上一章！在第 2 页以上时也会因少算 1 个桥接页偏移而导致显示的切片倒退 1 页。
+  2. **底栏章内进度条拖动偏移**：
+     `_seekChapterProgress` 原代码直接使用 `target` 执行 `_pageController?.jumpToPage(target)`。
+     拖动进度条到最左侧（0%）时会跳到 index 0 触发误退回上一章；拖到最右侧（100%）时因少加 `_prevBridgeCount` 无法跳转到最后一页。
+- **加固方案与重构**：
+  - 将 `_restoreReadingPosition` 与 `_seekChapterProgress` 中直接调用 `jumpToPage(target)` 的地方全面替换为统一的 `_syncPageController()`；
+  - 彻底复用 `_syncPageController()` 内对 `_prevBridgeCount` 偏移、切片索引 clamp 以及控制器生命周期状态的防御逻辑；
+  - 在 `app/test/widget_test.dart` 中新增针对性测试 `NovelReaderPage horizontal bridge and seek synchronization does not accidentally trigger chapter retreat`，全量覆盖进度条拖拽与桥接页安全隔离。
+- **质量验证**：
+  - `flutter analyze` **0 错误、0 警告 (No issues found!)**；
+  - `flutter test` **31/31 测试全部通过 (All tests passed!)**。
+
+## [2026-09-18]
+
+### 📥 离线下载功能上线：小说全本与漫画整部下载至 App 沙盒
+
+- **用户诉求**：增加下载功能；经确认范围为 **小说 + 漫画**、存储于 **App 沙盒内**、**纯手动下载**（不做自动下载与视频下载）。
+- **新增服务 [`DownloadService`](file:///c:/zz/z-custom/projects/fluxforge/app/lib/services/download_service.dart)**：
+  1. **任务模型 `DownloadTask`**：记录书籍标识、标题封面、媒体类型、绑定规则、待下载目标列表（小说=章节 URL / 漫画=图片 URL）、已完成与失败下标集合、状态与时间戳；
+  2. **调度策略**：
+     - 任务级并发上限 2、任务内严格串行：既能并行推进多本，又避免单站点被高频请求打爆触发风控；
+     - **断点续传**：已完成下标落盘持久化，重启 App 自动跳过已下载项继续；
+     - **失败熔断**：单项失败记入 `failed` 且不自动重试，由用户手动「重试失败项」，杜绝死循环；
+     - **节流持久化**：下载过程中进度变更按 3 秒节流写盘（复用 PlayHistoryService 的节流范式）；
+  3. **沙盒存储布局**：`AppDocuments/fluxforge_offline/`
+     - 小说正文：`novels/<书籍安全名>/<章节索引>.txt`
+     - 漫画图片：`comics/<书籍安全名>/<URL 稳定哈希>.<扩展名>`
+     - 书籍目录名采用「可读前缀 + 确定性哈希」杜绝碰撞；图片以 URL 哈希命名，与阅读顺序解耦；
+  4. **公开 API**：`startNovelDownload` / `startComicDownload` / `pause` / `resume` / `retryFailed` / `remove` / `clearAll` / `readNovelChapter` / `localComicImagePath` / `totalBytes`；
+- **共享正文清洗工具 [`novel_text.dart`](file:///c:/zz/z-custom/projects/fluxforge/app/lib/core/utils/novel_text.dart)**：
+  - 把阅读器私有的正文清洗逻辑上提为公共函数，**在线阅读与离线下载复用同一套实现**，保证两处排版完全一致；
+- **共享组件 [`DownloadBar`](file:///c:/zz/z-custom/projects/fluxforge/app/lib/widgets/download_bar.dart)**：
+  - 小说与漫画详情页共用的五态下载条（未下载 / 下载中可暂停 / 已暂停可继续 / 部分失败可重试 / 已完成）含实时进度条，避免两处重复实现；
+- **接入落地**：
+  1. **小说**：详情页「开始阅读」下方新增下载条；阅读器新增 `offlineBookId` 参数，`_ensureChapterContent` 改为 **磁盘 → 内存 → 网络** 三级优先；目录抽屉图标升级为四态（已离线 / 仅内存缓存 / 预取中 / 未缓存）；
+  2. **漫画**：详情页头部新增下载条（图集 + 各分组章节全量收集）；打开阅读器前把已下载图片替换为本地路径；阅读器新增 `_buildComicImage` 统一构建，**本地文件优先、网络回退**（连续长卷与分页双模式均已接入）；
+  3. **管理页 [`DownloadManagerPage`](file:///c:/zz/z-custom/projects/fluxforge/app/lib/views/downloads/download_manager_page.dart)**：占用空间概览 + 任务列表（类型 / 状态 / 进度 / 失败数）+ 暂停继续重试删除 + 一键清空（均二次确认），入口挂在「我的 → 数据与同步 → 离线下载」；
+- **修复**：抽取漫画图片构建方法时，`loadStateChanged` 闭包返回类型需为 `Widget? Function(...)`（否则 `return null` 触发 `return_of_invalid_type_from_closure`）；
+- **本轮明确不做（边界）**：自动下载新章节、视频 / m3u8 离线、导出到系统相册或外部存储（纯沙盒，卸载即清除）。
+- **质量验证**：`flutter analyze` **0 问题**；`flutter test` **31/31 全部通过**。
+
 ## [2026-09-17]
 
 ### 📊 阅读器底栏进度条改为「章内页数」语义
