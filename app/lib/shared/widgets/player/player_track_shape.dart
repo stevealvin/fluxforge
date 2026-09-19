@@ -114,14 +114,21 @@ class AuraSliderTrackShape extends RoundedRectSliderTrackShape {
     canvas.drawRect(activeRect, activePaint);
     canvas.restore();
 
-    // 4. 加载/缓冲状态动效：严格仅在【未加载区域 (Unloaded Area)】流动呈现
+    // 4. 加载/缓冲状态动效
     if (isBuffering) {
       final double bufferedWidth = (trackRect.width * bufferedFraction.clamp(0.0, 1.0));
       final double loadedRight = math.max(activeRect.right, trackRect.left + bufferedWidth);
       final double unloadedLeft = loadedRight;
       final double unloadedWidth = trackRect.right - unloadedLeft;
 
-      // 仅当存在未加载的空白轨道时执行未加载专属动画
+      // 圆弧旋转相位：每动画周期转 3 圈（与条纹滚动相位解耦，
+      // 保证条纹放宽后加载指示仍保持活跃的旋转节奏）
+      final double angle = shimmerProgress * 2 * math.pi * 3;
+
+      // A. 未加载区域：灰白斜条纹滚动（Barber Pole 转筒）
+      //    深浅两档灰白斜条纹沿轨道方向循环平移，表达「后续内容正在滚动加载」。
+      //    注：轨道仅 2.5~3.5px 高，45° 斜切在此高度只产生同等像素的斜边位移，
+      //    斜度弱于普通转筒，动感主要由相位滚动承担。
       if (unloadedWidth > 4.0) {
         final Rect unloadedRect = Rect.fromLTWH(unloadedLeft, trackRect.top, unloadedWidth, trackHeight);
 
@@ -129,43 +136,57 @@ class AuraSliderTrackShape extends RoundedRectSliderTrackShape {
         canvas.clipRRect(fullRRect); // 约束在圆角轨道内
         canvas.clipRect(unloadedRect); // 严格约束仅在未加载空白区域内
 
-        // A. 未加载区域柔和呼吸底色 (Breathing Pulse)
-        final double pulseOpacity = 0.12 + 0.10 * (0.5 + 0.5 * math.sin(shimmerProgress * 2 * math.pi));
-        final Paint pulsePaint = Paint()
-          ..color = Colors.white.withValues(alpha: pulseOpacity)
-          ..style = PaintingStyle.fill;
-        canvas.drawRect(unloadedRect, pulsePaint);
+        const double period = 32.0; // 一个完整「亮灰 + 暗灰」周期的宽度（单条 16px）
+        final double phase = (shimmerProgress * period) % period;
 
-        // B. 未加载区域专属流光光斑 (Shimmer Sweep，从缓冲端点向右掠过)
-        final double shimmerWidth = math.max(unloadedWidth * 0.45, 36.0);
-        final double shimmerLeft = unloadedLeft - shimmerWidth + (unloadedWidth + shimmerWidth * 2) * shimmerProgress;
-        final Rect shimmerRect = Rect.fromLTWH(shimmerLeft, trackRect.top, shimmerWidth, trackHeight);
+        // 相位平移 + 45° 斜切；斜切使条纹 x 偏移 ±trackHeight，故绘制范围左右外扩
+        canvas.translate(unloadedLeft - period + phase, 0);
+        canvas.skew(-1.0, 0);
 
-        final Paint shimmerPaint = Paint()
-          ..shader = LinearGradient(
-            colors: [
-              Colors.transparent,
-              Colors.white.withValues(alpha: 0.60),
-              Colors.transparent,
-            ],
-          ).createShader(shimmerRect);
+        final Paint stripeLight =
+            Paint()..color = Colors.white.withValues(alpha: 0.50);
+        final Paint stripeDim =
+            Paint()..color = Colors.white.withValues(alpha: 0.18);
 
-        canvas.drawRect(shimmerRect, shimmerPaint);
-
-        // C. 已缓冲端点向右微光波纹 (Buffer Head Glow)
-        final double headGlowWidth = 14.0;
-        final Rect headGlowRect = Rect.fromLTWH(unloadedLeft, trackRect.top, headGlowWidth, trackHeight);
-        final Paint headGlowPaint = Paint()
-          ..shader = LinearGradient(
-            colors: [
-              AppColors.primary.withValues(alpha: 0.70),
-              Colors.transparent,
-            ],
-          ).createShader(headGlowRect);
-        canvas.drawRect(headGlowRect, headGlowPaint);
+        final double drawStart = -trackHeight - period;
+        final double drawEnd = unloadedWidth + trackHeight + period;
+        var even = true;
+        for (double x = drawStart; x < drawEnd; x += period / 2) {
+          canvas.drawRect(
+            Rect.fromLTWH(x, trackRect.top, period / 2, trackHeight),
+            even ? stripeLight : stripeDim,
+          );
+          even = !even;
+        }
 
         canvas.restore();
       }
+
+      // B. 缓冲前沿灰白旋转弧：以缓冲端点为圆心的灰白扫掠圆弧持续旋转，
+      //    是「正在加载后续内容」最直观的表达；半径略大于轨道高度，
+      //    因此不参与上方裁剪，画在轨道外圈
+      final double arcRadius = math.max(trackHeight * 1.5, 5.0);
+      final double arcCenterX = loadedRight.clamp(
+        trackRect.left + arcRadius,
+        trackRect.right - arcRadius,
+      );
+      final Rect arcRect = Rect.fromCircle(
+        center: Offset(arcCenterX, trackRect.center.dy),
+        radius: arcRadius,
+      );
+      final Paint arcPaint = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.6
+        ..strokeCap = StrokeCap.round
+        ..shader = SweepGradient(
+          colors: [
+            Colors.white.withValues(alpha: 0.85),
+            Colors.white.withValues(alpha: 0.25),
+            Colors.white.withValues(alpha: 0.85),
+          ],
+          transform: GradientRotation(-angle),
+        ).createShader(arcRect);
+      canvas.drawArc(arcRect, -math.pi / 2, math.pi * 1.35, false, arcPaint);
     }
   }
 }

@@ -5,17 +5,29 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:dio/dio.dart';
+import 'package:ffmpeg_kit_flutter_new/ffmpeg_kit.dart';
+import 'package:ffmpeg_kit_flutter_new/return_code.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import 'package:fluxforge/core/network/api_client.dart';
+import 'package:fluxforge/data/download/ffmpeg_command_builder.dart';
+import 'package:fluxforge/data/download/hls_playlist_parser.dart';
 import 'package:fluxforge/core/storage/app_storage.dart';
 import 'package:fluxforge/domain/text/novel_text.dart';
 import 'package:fluxforge/domain/media/media.dart';
 import 'package:fluxforge/domain/rule/rule.dart';
 import 'package:fluxforge/core/sandbox/rule_engine.dart';
 import 'package:fluxforge/data/rule/rule_service.dart';
+
+/// URL 失效刷新器：源站拒绝（401/403/410）时触发，宿主重新解析播放页返回新地址；
+/// 返回 null 或未注册则按普通失败处理
+typedef UrlExpiredRefresher = Future<String?> Function(
+  DownloadTask task,
+  int index,
+  String staleUrl,
+);
 
 /// 离线下载任务状态
 enum DownloadStatus {
@@ -68,6 +80,13 @@ class DownloadTask {
   final DateTime createdAt;
   final DateTime updatedAt;
 
+  /// 当前正在下载项的**项内**进度（0.0 ~ 1.0）
+  ///
+  /// 只有「单项耗时很长」的任务才用得到：视频一集可能下载数分钟，
+  /// 若只按「已完成项数」计量，进度条会长时间纹丝不动，用户会误判为卡死。
+  /// 小说章节 / 漫画图片的单项都很快，恒为 0 即可，因此不影响既有行为。
+  final double activeItemProgress;
+
   const DownloadTask({
     required this.id,
     required this.title,
@@ -81,6 +100,7 @@ class DownloadTask {
     this.completed = const {},
     this.failed = const {},
     this.status = DownloadStatus.pending,
+    this.activeItemProgress = 0,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -92,7 +112,13 @@ class DownloadTask {
   int get doneCount => completed.length;
 
   /// 下载进度（0.0 ~ 1.0）
-  double get progress => total == 0 ? 0.0 : (doneCount / total).clamp(0.0, 1.0);
+  ///
+  /// 计入当前项的项内进度（[activeItemProgress]），使长视频下载时进度条能持续前进；
+  /// 小说 / 漫画的项内进度恒为 0，因此结果与改造前完全一致。
+  double get progress {
+    if (total == 0) return 0.0;
+    return ((doneCount + activeItemProgress) / total).clamp(0.0, 1.0);
+  }
 
   /// 是否处于可继续调度状态
   bool get isActive =>
@@ -114,6 +140,7 @@ class DownloadTask {
     Set<int>? completed,
     Set<int>? failed,
     DownloadStatus? status,
+    double? activeItemProgress,
     DateTime? updatedAt,
   }) {
     return DownloadTask(
@@ -129,6 +156,7 @@ class DownloadTask {
       completed: completed ?? this.completed,
       failed: failed ?? this.failed,
       status: status ?? this.status,
+      activeItemProgress: activeItemProgress ?? this.activeItemProgress,
       createdAt: createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );
@@ -148,6 +176,7 @@ class DownloadTask {
       'completed': completed.toList(),
       'failed': failed.toList(),
       'status': status.name,
+      'activeItemProgress': activeItemProgress,
       'createdAt': createdAt.toIso8601String(),
       'updatedAt': updatedAt.toIso8601String(),
     };
@@ -170,6 +199,8 @@ class DownloadTask {
         (e) => e.name == json['status']?.toString(),
         orElse: () => DownloadStatus.pending,
       ),
+      // 项内进度属瞬时状态：重启后旧值无意义，一律从 0 重新计
+      activeItemProgress: 0,
       createdAt: DateTime.tryParse(json['createdAt']?.toString() ?? '') ?? DateTime.now(),
       updatedAt: DateTime.tryParse(json['updatedAt']?.toString() ?? '') ?? DateTime.now(),
     );
@@ -201,12 +232,30 @@ class DownloadService {
   final Queue<String> _queue = Queue<String>();
   final Set<String> _running = <String>{};
 
+  /// 正在执行的「视频下载」FFmpeg 会话（任务 id → sessionId）
+  ///
+  /// 视频下载是单条 FFmpeg 会话的长任务，pause / 删除任务时必须主动 cancel 对应会话，
+  /// 否则 FFmpeg 会继续把整部视频拉完，白白消耗流量与电量。
+  final Map<String, int> _videoSessions = <String, int>{};
+
+  /// 正在进行的直链下载取消令牌（任务 id → token）
+  ///
+  /// 直链视频的单个请求可能持续数十分钟，暂停 / 删除任务时必须打断流式读取，
+  /// 已下载字节保留在 `.part` 文件中供下次续传。
+  final Map<String, CancelToken> _videoCancelTokens = <String, CancelToken>{};
+
+  /// URL 过期刷新回调（可空）：源站 401/403/410 时触发，宿主重新解析播放页换新地址
+  final UrlExpiredRefresher? onUrlExpired;
+
   DateTime _lastPersistAt = DateTime.fromMillisecondsSinceEpoch(0);
 
   List<DownloadTask> get tasks => tasksNotifier.value;
 
-  DownloadService({required RuleService ruleService, ApiClient? apiClient})
-      : _ruleService = ruleService,
+  DownloadService({
+    required RuleService ruleService,
+    ApiClient? apiClient,
+    this.onUrlExpired,
+  })  : _ruleService = ruleService,
         _apiClient = apiClient ?? ApiClient() {
     init();
   }
@@ -415,10 +464,73 @@ class DownloadService {
     );
   }
 
+  /// 创建（或续传）视频整部离线下载任务
+  ///
+  /// [episodes] 为待下载分集（标题 + 播放地址），地址通常是 m3u8 清单或 mp4 直链；
+  /// 产物统一落在 `videos/<书籍ID>/<索引>.mp4`。
+  ///
+  /// [headers] 用于防盗链站点（Referer / User-Agent / Cookie 等），
+  /// 会透传给 FFmpeg 的输入侧选项（详见 [FfmpegCommandBuilder.buildHeaderArgs]）。
+  Future<DownloadTask> startVideoDownload({
+    required Rule rule,
+    required String bookId,
+    required String title,
+    required String cover,
+    required List<MediaEpisode> episodes,
+    Map<String, String> headers = const {},
+  }) {
+    // 过滤掉无有效地址的分集：FFmpeg 面对空地址只会白跑一轮再失败
+    final valid =
+        episodes.where((e) => e.url.trim().isNotEmpty).toList();
+    return _startTask(
+      id: bookId,
+      title: title,
+      cover: cover,
+      mediaType: 'video',
+      ruleId: rule.id?.toString() ?? rule.name,
+      sourceUrl: bookId,
+      targetUrls: valid.map((e) => e.url.trim()).toList(),
+      targetTitles: valid.map((e) => e.title).toList(),
+      headers: headers,
+    );
+  }
+
+  /// 某一集视频是否已下载完成
+  ///
+  /// 与 [isNovelChapterDownloaded] 同一约定：依据内存中的任务记录判断，
+  /// 避免每次 build 都触发磁盘 IO。
+  bool isVideoEpisodeDownloaded(String bookId, int index) {
+    final task = taskOf(bookId);
+    if (task == null || task.mediaType != 'video') return false;
+    return task.completed.contains(index);
+  }
+
+  /// 查询已下载视频的本地路径（未下载返回 null）
+  ///
+  /// 供播放器使用：`video_player` 直接支持本地文件路径。
+  Future<String?> localVideoPath(String bookId, int index) async {
+    final task = taskOf(bookId);
+    if (task == null || task.mediaType != 'video') return null;
+    if (!task.completed.contains(index)) return null;
+
+    final file = await _videoFile(bookId, index);
+    if (!await file.exists() || await file.length() <= 0) return null;
+    return file.path;
+  }
+
   /// 暂停任务
   void pause(String id) {
     _queue.removeWhere((e) => e == id);
-    _mutate(id, (t) => t.copyWith(status: DownloadStatus.paused));
+    // 视频下行任务必须显式终止：FFmpeg 会话与直链流式请求两条通道都要打断，
+    // 否则它会继续把整部视频拉完，白白消耗流量与电量
+    final sessionId = _videoSessions.remove(id);
+    if (sessionId != null && sessionId > 0) unawaited(FFmpegKit.cancel(sessionId));
+    _videoCancelTokens.remove(id)?.cancel('任务已暂停');
+    _mutate(id, (t) => t.copyWith(
+          status: DownloadStatus.paused,
+          // 项内进度属瞬时状态，暂停即作废
+          activeItemProgress: 0,
+        ));
     unawaited(_persist());
   }
 
@@ -472,6 +584,15 @@ class DownloadService {
     _queue.clear();
     _cache.clear();
     _publish();
+    // 终止所有还在跑的视频下载会话（须在清空 _videoSessions 之前收集）
+    for (final sessionId in _videoSessions.values) {
+      if (sessionId > 0) unawaited(FFmpegKit.cancel(sessionId));
+    }
+    _videoSessions.clear();
+    for (final token in _videoCancelTokens.values) {
+      token.cancel('清空全部下载');
+    }
+    _videoCancelTokens.clear();
     try {
       await AppStorage.remove(storageKey);
       final root = await _rootDir();
@@ -620,6 +741,9 @@ class DownloadService {
       if (task.mediaType == 'novel') {
         return await _downloadNovelChapter(task, index, targetUrl);
       }
+      if (task.mediaType == 'video') {
+        return await _downloadVideoEpisode(task, index, targetUrl);
+      }
       return await _downloadComicImage(task, index, targetUrl);
     } catch (e) {
       debugPrint('[DownloadService] 下载失败《${task.title}》#$index: $e');
@@ -671,6 +795,410 @@ class DownloadService {
     final code = response.statusCode ?? 0;
     if (code < 200 || code >= 300) return false;
     return await file.exists() && await file.length() > 0;
+  }
+
+  /// 视频下载分派：按地址形态选择续传策略
+  ///
+  /// - m3u8（HLS 清单）→ 分片级续传：逐分片落盘，已完成的跳过；
+  /// - 其余（mp4 / mkv 等直链）→ HTTP Range 字节级续传。
+  /// 两者的共同点：**任何中断都不会丢掉已下载的部分**。
+  Future<bool> _downloadVideoEpisode(
+    DownloadTask task,
+    int index,
+    String url,
+  ) {
+    return _downloadVideoEpisodeGuarded(task, index, url, allowRefresh: true);
+  }
+
+  /// 下载一集；URL 失效（401/403/410）时刷新地址重试一次，已下载进度保留
+  Future<bool> _downloadVideoEpisodeGuarded(
+    DownloadTask task,
+    int index,
+    String url, {
+    required bool allowRefresh,
+  }) async {
+    try {
+      return _isHlsUrl(url)
+          ? await _downloadHlsEpisode(task, index, url)
+          : await _downloadDirectVideo(task, index, url);
+    } on _UrlExpiredException {
+      if (!allowRefresh) return false;
+      final refresher = onUrlExpired;
+      if (refresher == null) return false;
+
+      // 暂停 / 删除后不再触发刷新
+      final live = taskOf(task.id);
+      if (live == null || !live.isActive) return false;
+
+      final fresh = await refresher(task, index, url);
+      final freshUrl = fresh?.trim() ?? '';
+      if (freshUrl.isEmpty || freshUrl == url.trim()) return false;
+
+      // 新地址登记回任务：本次重试与后续「重试失败」都用它
+      _mutate(task.id, (t) {
+        if (index >= t.targetUrls.length) return t;
+        final urls = [...t.targetUrls]..[index] = freshUrl;
+        return t.copyWith(targetUrls: urls, updatedAt: DateTime.now());
+      });
+
+      // HLS：含冻结签名的旧清单必须作废重拉；分片本身与签名无关，保留续传
+      if (_isHlsUrl(freshUrl)) {
+        try {
+          final workDir = await _videoWorkDir(task.id, index);
+          final stale =
+              File(p.join(workDir.path, 'remote.m3u8'));
+          if (await stale.exists()) await stale.delete();
+        } catch (_) {}
+      }
+
+      return _downloadVideoEpisodeGuarded(
+        task,
+        index,
+        freshUrl,
+        allowRefresh: false,
+      );
+    }
+  }
+
+  /// 是否为 HLS 清单地址
+  ///
+  /// 依据扩展名判断：绝大多数站点都会带 `.m3u8`。对无扩展名的地址，
+  /// 直链 Range 续传是更安全的兜底（误判成直链只会少一次解密机会，不会失败）。
+  static bool _isHlsUrl(String url) => url.toLowerCase().contains('.m3u8');
+
+  /// 401/403/410 视为 URL 失效；超时、断网、5xx 刷新无意义
+  static bool isAuthExpiredStatus(int? statusCode) =>
+      statusCode == 401 || statusCode == 403 || statusCode == 410;
+
+  /// 拉取清单文本；被源站拒绝（401/403/410）时转译为 [_UrlExpiredException]
+  Future<String> _getPlaylistText(
+    String url,
+    Map<String, String> headers,
+  ) async {
+    try {
+      final res = await _apiClient.dio.get<String>(
+        url,
+        options: Options(headers: headers, responseType: ResponseType.plain),
+      );
+      return res.data ?? '';
+    } on DioException catch (e) {
+      if (isAuthExpiredStatus(e.response?.statusCode)) {
+        throw _UrlExpiredException(e.response?.statusCode ?? 0);
+      }
+      rethrow;
+    }
+  }
+
+  /// HLS：分片级断点续传
+  ///
+  /// 1. 下载清单（**优先复用上次已存清单** —— 源站临时不可达时也能续传）；
+  /// 2. master 多码率清单取第一个码率子清单再解析一层；
+  /// 3. 逐个下载资源（分片 / 密钥 / 初始化段），**已存在的直接跳过** —— 续传的核心；
+  /// 4. 改写出指向本地文件的清单，交给 FFmpeg 合并（AES 解密由其 crypto 协议完成）；
+  /// 5. 合并成功后删除分片目录，只保留最终 MP4。
+  ///
+  /// 分片写入统一「先写 `.tmp` 再改名」：保证磁盘上存在的分片一定是完整的，
+  /// 中断不会留下半截分片被误判为已下载。
+  Future<bool> _downloadHlsEpisode(
+    DownloadTask task,
+    int index,
+    String url,
+  ) async {
+    final workDir = await _videoWorkDir(task.id, index);
+    await workDir.create(recursive: true);
+    final playlistFile = File(p.join(workDir.path, 'remote.m3u8'));
+
+    // 1. 清单文本
+    String playlistText;
+    if (await playlistFile.exists()) {
+      playlistText = await playlistFile.readAsString();
+    } else {
+      playlistText = await _getPlaylistText(url, task.headers);
+      if (playlistText.trim().isEmpty) return false;
+      await playlistFile.writeAsString(playlistText, flush: true);
+    }
+
+    var baseUri = Uri.parse(url);
+    var playlist = HlsPlaylistParser.parse(playlistText, baseUri);
+
+    // 2. master 清单：取第一个码率子清单再解析一层
+    if (playlist.isMaster) {
+      if (playlist.variantUrls.isEmpty) return false;
+      final variantUrl = playlist.variantUrls.first;
+      playlistText = await _getPlaylistText(variantUrl, task.headers);
+      baseUri = Uri.parse(variantUrl);
+      playlist = HlsPlaylistParser.parse(playlistText, baseUri);
+      if (playlist.segmentUrls.isEmpty) return false;
+      await playlistFile.writeAsString(playlistText, flush: true);
+    }
+
+    // 3. 逐资源下载
+    final resources = playlist.resourceUrls;
+    final remoteToLocal = <String, String>{};
+    var lastPublishAt = DateTime.fromMillisecondsSinceEpoch(0);
+
+    for (var i = 0; i < resources.length; i++) {
+      // 每个分片之间检查任务存活性：暂停 / 删除后立即中止，不再消耗流量
+      final live = taskOf(task.id);
+      if (live == null || !live.isActive) return false;
+
+      final remote = resources[i];
+      final isSegment = playlist.segmentUrls.contains(remote);
+      final fileName = isSegment
+          ? 'seg_${i.toString().padLeft(4, '0')}'
+          : 'res_${i.toString().padLeft(4, '0')}';
+      final target = File(p.join(workDir.path, fileName));
+      remoteToLocal[remote] = fileName;
+
+      // 续传核心：已存在的分片直接跳过
+      if (await target.exists() && await target.length() > 0) continue;
+
+      final tmp = File('${target.path}.tmp');
+      try {
+        await _apiClient.dio.download(
+          remote,
+          tmp.path,
+          options: Options(
+            headers: task.headers,
+            receiveTimeout: const Duration(seconds: 60),
+          ),
+        );
+        if (!await tmp.exists() || await tmp.length() <= 0) return false;
+        await tmp.rename(target.path);
+      } on DioException catch (e) {
+        // 源站拒绝（401/403/410）→ 上抛交「URL 过期刷新」编排，临时文件照常清理
+        if (await tmp.exists()) await tmp.delete();
+        if (isAuthExpiredStatus(e.response?.statusCode)) {
+          throw _UrlExpiredException(e.response?.statusCode ?? 0);
+        }
+        debugPrint('[DownloadService] HLS 分片下载失败《${task.title}》#$index/$i: $e');
+        return false;
+      } catch (e) {
+        debugPrint('[DownloadService] HLS 分片下载失败《${task.title}》#$index/$i: $e');
+        if (await tmp.exists()) await tmp.delete();
+        return false;
+      }
+
+      // 分片粒度进度（500ms 节流）
+      final now = DateTime.now();
+      if (now.difference(lastPublishAt).inMilliseconds >= 500) {
+        lastPublishAt = now;
+        if (mountedTask(task.id)) {
+          _mutate(task.id, (t) => t.copyWith(
+                activeItemProgress: (i + 1) / resources.length,
+                updatedAt: now,
+              ));
+        }
+      }
+    }
+
+    // 4. 改写清单为本地引用（分片 + 密钥全部指向本地文件）
+    final localPlaylist = File(p.join(workDir.path, 'local.m3u8'));
+    await localPlaylist.writeAsString(
+      HlsPlaylistParser.rewriteToLocal(playlistText, baseUri, remoteToLocal),
+      flush: true,
+    );
+
+    // 5. FFmpeg 合并（AES 解密由其 crypto 协议完成）
+    final outputFile = await _videoFile(task.id, index);
+    final ok = await _runFfmpeg(
+      taskId: task.id,
+      command: FfmpegCommandBuilder.buildLocalMerge(
+        playlistPath: localPlaylist.path,
+        outputPath: outputFile.path,
+      ),
+      failLabel: 'HLS 合并失败《${task.title}》#$index',
+    );
+    if (!ok) return false;
+
+    // 6. 合并成功后清掉分片目录，只保留最终 MP4
+    try {
+      await workDir.delete(recursive: true);
+    } catch (_) {}
+
+    return await outputFile.exists() && await outputFile.length() > 0;
+  }
+
+  /// 直链视频：HTTP Range 字节级断点续传
+  ///
+  /// mp4 / mkv 等单文件直链不需要 FFmpeg —— 按字节区间续传更快也更省电：
+  /// - 中断后已有字节保留在 `.part` 文件，继续时带 `Range: bytes=<已有>-` 请求；
+  /// - 服务器不支持 Range（返回 200）时自动退化为整文件重下；
+  /// - 完成后**原子改名**为正式 MP4，杜绝「半截文件被当成品」。
+  Future<bool> _downloadDirectVideo(
+    DownloadTask task,
+    int index,
+    String url,
+  ) async {
+    final finalFile = await _videoFile(task.id, index);
+    await finalFile.parent.create(recursive: true);
+    final partFile = File('${finalFile.path}.part');
+
+    final downloaded = (await partFile.exists()) ? await partFile.length() : 0;
+
+    final cancelToken = CancelToken();
+    if (downloaded > 0) _videoCancelTokens[task.id] = cancelToken;
+
+    final Response<ResponseBody> response;
+    try {
+      response = await _apiClient.dio.get<ResponseBody>(
+        url,
+        options: Options(
+          headers: {
+            ...task.headers,
+            if (downloaded > 0) 'Range': 'bytes=$downloaded-',
+          },
+          responseType: ResponseType.stream,
+          // 单集视频很大，接收超时必须放宽；连接超时由 Dio 全局配置兜底
+          receiveTimeout: const Duration(minutes: 2),
+        ),
+        cancelToken: cancelToken,
+      );
+    } on DioException catch (e) {
+      _videoCancelTokens.remove(task.id);
+      // 用户主动暂停：保留 .part 供下次续传
+      if (e.type == DioExceptionType.cancel) return false;
+      // 源站拒绝（401/403/410）→ 上抛交「URL 过期刷新」编排，.part 保留续传
+      if (isAuthExpiredStatus(e.response?.statusCode)) {
+        throw _UrlExpiredException(e.response?.statusCode ?? 0);
+      }
+      rethrow;
+    } catch (_) {
+      _videoCancelTokens.remove(task.id);
+      rethrow;
+    }
+    _videoCancelTokens.remove(task.id);
+
+    final code = response.statusCode ?? 0;
+    // 206 = 服务器支持续传；200 = 不支持 Range，只能整文件重下
+    final canResume = code == 206;
+    if (code != 206 && code != 200) return false;
+
+    final contentLength = int.tryParse(
+          response.headers.value(Headers.contentLengthHeader) ?? '',
+        ) ??
+        0;
+    // 续传时 Content-Length 只是剩余字节数
+    final totalBytes = canResume ? downloaded + contentLength : contentLength;
+
+    if (!canResume && downloaded > 0) {
+      // 服务器忽略了 Range：丢弃旧 .part 从头来
+      await partFile.delete();
+    }
+
+    final sink =
+        partFile.openWrite(mode: canResume ? FileMode.append : FileMode.write);
+    var received = canResume ? downloaded : 0;
+    var lastPublishAt = DateTime.fromMillisecondsSinceEpoch(0);
+
+    try {
+      await for (final chunk in response.data!.stream) {
+        sink.add(chunk);
+        received += chunk.length;
+        if (totalBytes <= 0) continue;
+        final now = DateTime.now();
+        if (now.difference(lastPublishAt).inMilliseconds < 500) continue;
+        lastPublishAt = now;
+        if (!mountedTask(task.id)) break;
+        _mutate(task.id, (t) => t.copyWith(
+              activeItemProgress: (received / totalBytes).clamp(0.0, 1.0),
+              updatedAt: now,
+            ));
+      }
+      await sink.flush();
+      await sink.close();
+    } catch (e) {
+      await sink.close();
+      // 中断：保留 .part 供下次续传
+      debugPrint('[DownloadService] 直链下载中断《${task.title}》#$index: $e');
+      return false;
+    }
+
+    if (received <= 0) return false;
+    await partFile.rename(finalFile.path);
+    return true;
+  }
+
+  /// 执行一条 FFmpeg 命令并回报项内进度
+  ///
+  /// - 用 [FFmpegKit.executeAsync] 而非 `execute`：后者要等命令跑完才返回，
+  ///   期间无法响应「暂停 / 删除任务」的取消请求；
+  /// - 进度来自 [Statistics.getTime] 与日志中的 `Duration:` 摘要行 ——
+  ///   **不额外发起 FFprobe 请求**：带防盗链头的源它也发不了；
+  /// - 统计回调非常密集，做了 500ms 节流，否则下载列表会每秒重建几十次。
+  Future<bool> _runFfmpeg({
+    required String taskId,
+    required String command,
+    required String failLabel,
+  }) async {
+    final completer = Completer<bool>();
+    Duration? totalDuration;
+    var lastPublishAt = DateTime.fromMillisecondsSinceEpoch(0);
+
+    final session = await FFmpegKit.executeAsync(
+      command,
+      // 完成回调：以返回码判定成败
+      (session) async {
+        final returnCode = await session.getReturnCode();
+        final ok = ReturnCode.isSuccess(returnCode);
+        if (!ok && !ReturnCode.isCancel(returnCode)) {
+          final allLogs = await session.getLogs();
+          final tail =
+              allLogs.length > 8 ? allLogs.sublist(allLogs.length - 8) : allLogs;
+          final tailText = tail
+              .map((l) => l.getMessage())
+              .where((m) => m.trim().isNotEmpty)
+              .join('\n');
+          debugPrint(
+            '[DownloadService] $failLabel rc=${returnCode?.getValue()}\n$tailText',
+          );
+        }
+        if (!completer.isCompleted) completer.complete(ok);
+      },
+      // 日志回调：只抓一次媒体总时长
+      (log) {
+        totalDuration ??=
+            FfmpegCommandBuilder.parseDurationFromLog(log.getMessage());
+      },
+      // 统计回调：换算项内进度（500ms 节流）
+      (statistics) {
+        final ratio = FfmpegCommandBuilder.progressRatio(
+          processedMillis: statistics.getTime(),
+          totalDuration: totalDuration,
+        );
+        if (ratio == null) return;
+        final now = DateTime.now();
+        if (now.difference(lastPublishAt).inMilliseconds < 500) return;
+        lastPublishAt = now;
+        if (!mountedTask(taskId)) return;
+        _mutate(taskId, (t) => t.copyWith(
+              activeItemProgress: ratio,
+              updatedAt: now,
+            ));
+      },
+    );
+
+    // getSessionId 可能为 null（会话未成功登记）；0 同样视为无效 ——
+    // FFmpegKit.cancel(null) 语义是「取消全部会话」，绝不能把无效值传进去
+    final sessionId = session.getSessionId() ?? 0;
+    if (sessionId > 0) _videoSessions[taskId] = sessionId;
+    // 会话启动瞬间任务可能已被暂停 / 删除，此时立即终止 FFmpeg
+    final live = taskOf(taskId);
+    if (live == null || !live.isActive) {
+      if (sessionId > 0) await FFmpegKit.cancel(sessionId);
+    }
+
+    final ok = await completer.future;
+    _videoSessions.remove(taskId);
+
+    // 无论成败都清掉项内进度，避免任务收尾时进度条停在半路
+    if (mountedTask(taskId)) {
+      _mutate(taskId, (t) => t.copyWith(
+            activeItemProgress: 0,
+            updatedAt: DateTime.now(),
+          ));
+    }
+    return ok;
   }
 
   /// 依据规则标识查找本地规则
@@ -744,7 +1272,7 @@ class DownloadService {
   Future<Directory> _bookDir(String mediaType, String bookId) async {
     final root = await _rootDir();
     final dir = Directory(
-      p.join(root.path, mediaType == 'novel' ? 'novels' : 'comics', _safeName(bookId)),
+      p.join(root.path, _mediaDirName(mediaType), _safeName(bookId)),
     );
     if (!await dir.exists()) {
       await dir.create(recursive: true);
@@ -787,4 +1315,40 @@ class DownloadService {
     final ext = p.extension(path).toLowerCase();
     return allowed.contains(ext) ? ext : '.img';
   }
+
+  /// 媒体类型 → 沙盒子目录名
+  ///
+  /// 视频沿用同一套根目录与任务记录，只是落在独立的 `videos/` 子树，
+  /// 与小说 / 漫画互不干扰，也便于按类型清理。
+  static String _mediaDirName(String mediaType) => switch (mediaType) {
+        'novel' => 'novels',
+        'comic' => 'comics',
+        'video' => 'videos',
+        _ => 'others',
+      };
+
+  /// 视频分集文件路径（`videos/<bookId>/<index>.mp4`）
+  ///
+  /// 以索引命名而非集标题：集标题可能含非法字符且可能重复，索引进沙盒后
+  /// 天然有序，播放时再从 `targetTitles` 取标题展示。
+  Future<File> _videoFile(String bookId, int index) async {
+    final dir = await _bookDir('video', bookId);
+    return File(p.join(dir.path, '$index.mp4'));
+  }
+
+  /// 视频分片工作目录（`videos/<bookId>/<index>/`），合并成功后整体删除
+  Future<Directory> _videoWorkDir(String bookId, int index) async {
+    final dir = await _bookDir('video', bookId);
+    return Directory(p.join(dir.path, '$index'));
+  }
+}
+
+/// 内部信号：源站以 401/403/410 拒绝请求，交由上层编排「刷新 URL 重试」
+class _UrlExpiredException implements Exception {
+  const _UrlExpiredException(this.statusCode);
+
+  final int statusCode;
+
+  @override
+  String toString() => 'UrlExpired(status: $statusCode)';
 }

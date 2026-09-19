@@ -77,7 +77,7 @@ class RuleEngine {
       final custom = appService.settingsNotifier.value.customUserAgent.trim();
       if (custom.isNotEmpty) return custom;
     }
-    return 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36';
+    return 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36';
   }
 
   /// 初始化运行环境与注入核心依赖

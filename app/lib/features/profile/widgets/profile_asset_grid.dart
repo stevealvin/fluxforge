@@ -6,6 +6,7 @@ import 'package:fluxforge/app/theme/app_colors.dart';
 import 'package:fluxforge/core/utils/app_utils.dart';
 import 'package:fluxforge/domain/rule/rule.dart';
 import 'package:fluxforge/app/di/di.dart';
+import 'package:fluxforge/data/download/download_service.dart';
 import 'package:fluxforge/data/library/favorite_service.dart';
 import 'package:fluxforge/data/library/play_history_service.dart';
 import 'package:fluxforge/shared/widgets/app_card.dart';
@@ -39,7 +40,7 @@ class ProfileAssetGrid extends StatelessWidget {
           children: [
             Expanded(child: _RuleAssetCard(onTap: onSwitchToRulesTab)),
             const SizedBox(width: 10),
-            const Expanded(child: _SearchHistoryAssetCard()),
+            const Expanded(child: _DownloadAssetCard()),
           ],
         ),
       ],
@@ -139,22 +140,48 @@ class _RuleAssetCard extends StatelessWidget {
   }
 }
 
-/// 4. 搜索足迹资产卡
-class _SearchHistoryAssetCard extends StatelessWidget {
-  const _SearchHistoryAssetCard();
+//// 4. 离线下载管理资产卡
+///
+/// 取代原先的「搜索足迹」卡：搜索足迹已完整收纳在历史中心页内，
+/// 在此重复出现只会造成同一份数据两个入口；而离线下载是「我的」页缺失的资产维度，
+/// 且能给出任务数与进行中 / 失败状态这类一眼可读的信息。
+class _DownloadAssetCard extends StatelessWidget {
+  const _DownloadAssetCard();
 
   @override
   Widget build(BuildContext context) {
-    return ValueListenableBuilder<List<String>>(
-      valueListenable: historyService.searchHistoryNotifier,
-      builder: (context, keywords, _) {
+    return ValueListenableBuilder<List<DownloadTask>>(
+      valueListenable: downloadService.tasksNotifier,
+      builder: (context, tasks, _) {
+        final runningCount = tasks
+            .where((t) =>
+                t.status == DownloadStatus.running ||
+                t.status == DownloadStatus.pending)
+            .length;
+        final failedCount = tasks
+            .where((t) => t.status == DownloadStatus.failed)
+            .length;
+
+        final String subtitle;
+        if (tasks.isEmpty) {
+          subtitle = '暂无离线内容';
+        } else if (runningCount > 0) {
+          subtitle = '正在下载 $runningCount 部';
+        } else if (failedCount > 0) {
+          subtitle = '$failedCount 部存在失败项';
+        } else {
+          subtitle = '全部下载完成';
+        }
+
         return _AssetTile(
-          icon: Ionicons.searchOutline,
+          icon: Ionicons.cloudDownloadOutline,
           iconColor: AppColors.accentAmber,
-          value: '${keywords.length} 条',
-          label: '搜索足迹',
-          subtitle: keywords.isEmpty ? '暂无搜索记录' : keywords.first,
-          onTap: () => context.pushHistory(),
+          value: '${tasks.length} 部',
+          label: '下载管理',
+          subtitle: subtitle,
+          // 仅在存在失败项时亮红点：进行中属于正常状态，无需额外提示
+          showBadge: failedCount > 0,
+          onTap: () => context.pushDownloads(),
         );
       },
     );

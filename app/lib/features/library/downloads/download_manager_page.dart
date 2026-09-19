@@ -140,7 +140,8 @@ class _DownloadManagerPageState extends State<DownloadManagerPage> {
             return const EmptyState(
               icon: Ionicons.cloudDownloadOutline,
               title: '暂无离线下载',
-              description: '在小说或漫画详情页点击「下载全本」，即可保存到手机沙盒离线阅读',
+              description:
+                  '在小说、漫画或视频详情页点击「下载」，即可保存到手机沙盒离线观看或阅读',
             );
           }
 
@@ -206,7 +207,12 @@ class _DownloadManagerPageState extends State<DownloadManagerPage> {
 
   /// 单个下载任务卡片
   Widget _buildTaskCard(DownloadTask task, bool isDark) {
-    final unit = task.mediaType == 'novel' ? '章' : '页';
+    final unit = switch (task.mediaType) {
+      'novel' => '章',
+      'comic' => '页',
+      'video' => '集',
+      _ => '项',
+    };
 
     return AppCard(
       margin: const EdgeInsets.only(bottom: 10),
@@ -243,7 +249,12 @@ class _DownloadManagerPageState extends State<DownloadManagerPage> {
                             borderRadius: BorderRadius.circular(5),
                           ),
                           child: Text(
-                            task.mediaType == 'novel' ? '小说' : '漫画',
+                            switch (task.mediaType) {
+                              'novel' => '小说',
+                              'comic' => '漫画',
+                              'video' => '视频',
+                              _ => '其他',
+                            },
                             style: const TextStyle(
                               fontSize: 10,
                               fontWeight: FontWeight.w600,

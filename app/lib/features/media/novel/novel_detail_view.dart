@@ -368,10 +368,16 @@ class _NovelDetailViewState extends State<NovelDetailView> {
               child: Center(
                 child: TextButton.icon(
                   onPressed: () => _openReader(initialIndex: _resumeChapterIndex),
-                  icon: const Icon(Ionicons.listOutline, size: 14, color: AppColors.primary),
+                  // 跟随主题解析品牌色，暗色下自动用更亮的 primaryGlow
+                  icon: Icon(Ionicons.listOutline, size: 14,
+                    color: Theme.of(context).colorScheme.primary),
                   label: Text(
                     '进入阅读器查看全部 ${chapters.length} 章节',
-                    style: const TextStyle(fontSize: 12, color: AppColors.primary, fontWeight: FontWeight.w600),
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Theme.of(context).colorScheme.primary,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
               ),

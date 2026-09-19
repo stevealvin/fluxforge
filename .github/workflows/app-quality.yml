@@ -1,0 +1,46 @@
+name: App Quality Gate
+
+on:
+  push:
+    paths:
+      - 'app/**'
+      - '.github/workflows/app-quality.yml'
+  pull_request:
+    paths:
+      - 'app/**'
+      - '.github/workflows/app-quality.yml'
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Clone repository
+        uses: actions/checkout@v7
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Show Flutter version
+        run: flutter --version
+
+      - name: Install dependencies
+        working-directory: app
+        run: flutter pub get
+
+      # 门禁 1：静态分析出现任何 error / warning / lint 直接 fail
+      - name: Static analyze
+        working-directory: app
+        run: flutter analyze
+
+      # 门禁 2：架构约束（domain 零 Flutter / shared 禁止反向依赖 features / 禁止新增超长 UI 文件）
+      - name: Architecture guardrails
+        working-directory: app
+        run: dart run tool/guardrails/check_architecture.dart
+
+      # 门禁 3：单元测试与组件测试全绿
+      - name: Run tests
+        working-directory: app
+        run: flutter test

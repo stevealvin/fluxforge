@@ -17,14 +17,14 @@ class ReaderBottomBar extends StatelessWidget {
     required this.progressLabel,
     required this.canGoPrev,
     required this.canGoNext,
-    required this.cachedChapterCount,
+    required this.downloadedChapterCount,
     required this.isHorizontalMode,
     required this.pageModeLabel,
     required this.onSeek,
     required this.onPrevChapter,
     required this.onNextChapter,
     required this.onOpenCatalog,
-    required this.onPrefetchNext,
+    required this.onDownloadNext,
     required this.onTogglePageMode,
     required this.onToggleSettingsPanel,
   });
@@ -40,8 +40,12 @@ class ReaderBottomBar extends StatelessWidget {
   final bool canGoPrev;
   final bool canGoNext;
 
-  /// 当前已缓存的章节数（会话级内存缓存口径）
-  final int cachedChapterCount;
+  /// 当前已离线下载到沙盒的章节数
+  ///
+  /// 与目录抽屉顶部、下载管理页共用**同一口径**（沙盒落盘），
+  /// 不再使用「会话级内存缓存」那套只在本次阅读内成立的临时计数 ——
+  /// 用户视角里「缓存」就是「离线下载」，本来就是同一件事。
+  final int downloadedChapterCount;
 
   /// 是否处于横向翻页模式（决定翻页模式按钮的图标）
   final bool isHorizontalMode;
@@ -54,7 +58,10 @@ class ReaderBottomBar extends StatelessWidget {
   final VoidCallback onPrevChapter;
   final VoidCallback onNextChapter;
   final VoidCallback onOpenCatalog;
-  final VoidCallback onPrefetchNext;
+
+  /// 下载下一章到离线沙盒（不具备离线条件时降级为会话内预取）
+  final VoidCallback onDownloadNext;
+
   final VoidCallback onTogglePageMode;
   final VoidCallback onToggleSettingsPanel;
 
@@ -131,12 +138,12 @@ class ReaderBottomBar extends StatelessWidget {
                   color: readerTheme.text,
                   onTap: onOpenCatalog,
                 ),
-                // 缓存状态与手动预取（复制整章入口已统一收敛至顶栏，避免重复）
+                // 离线下载状态 + 下载下一章（复制整章入口已统一收敛至顶栏，避免重复）
                 ReaderBarActionButton(
                   icon: Ionicons.downloadOutline,
-                  label: '已缓存 $cachedChapterCount 章',
+                  label: '已下载 $downloadedChapterCount 章',
                   color: readerTheme.text,
-                  onTap: onPrefetchNext,
+                  onTap: onDownloadNext,
                 ),
                 ReaderBarActionButton(
                   icon: isHorizontalMode

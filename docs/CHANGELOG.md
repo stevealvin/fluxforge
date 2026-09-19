@@ -2,7 +2,509 @@
 
 本文档用于记录 FluxForge（包括 App 移动端、Server 服务端、Web 管理端）在开发过程中的重要功能迭代、UI 体验调优与架构重构日志。
 
+## [2026-09-19]
+
+### 🧭 新增「站点」Tab：自定义网站入口 + 内置浏览器打开
+
+**入口**：底部导航由「发现 / 规则 / 我的」扩为 **「发现 / 规则 / 站点 / 我的」**，
+图标 `globeOutline`，与「发现」（规则源驱动的媒体内容浏览）职责明确区分。
+
+**能力**：
+
+- **添加站点**：名称（留空自动用域名兜底）+ 网址；地址自动补全 scheme
+  （输入 `example.com` 即可），校验仅放行 http / https 且 host 非空；
+- **打开站点**：点击卡片走现成的 `context.pushBrowser` 进入内置浏览器
+  （自动广告拦截 + 视频手势嗅探 + 全屏播放能力全部继承）；
+- **管理**：长按卡片弹出「编辑 / 删除」，同地址重复添加自动去重并置顶；
+- **网格布局**：三列图标网格（图标 + 名称 + 域名），单屏可见条目更多；
+- **空态引导**：说明用途并给出添加入口。
+
+**实现**：
+
+| 层 | 文件 | 职责 |
+|---|---|---|
+| data | `data/sites/site_store.dart` | `SiteEntry` 模型 + `SiteStore`（`ValueNotifier` + `AppStorage` JSON 持久化、URL 规范化与校验） |
+| feature | `features/sites/sites_page.dart` | 站点列表 / 空态 / 打开动作 |
+| feature | `features/sites/widgets/site_sheets.dart` | 新增编辑弹层、长按操作弹层 |
+
+**顺带**：`sites_page` 初版 325 行被架构门禁拦下（>300 上限），按门禁要求拆出弹层组件 ——
+门禁对新增代码同样生效，未走白名单豁免。
+
+**验收**：新增 6 条单测（URL 规范化与校验、去重置顶、按 id 编辑删除、落盘往返读回）；
+`flutter analyze` 0 问题；`flutter test` **235/235 通过**；架构门禁通过。
+
+**测试基建修正**：`AppStorage` 的静态句柄会固定首次使用的 `SharedPreferencesAsyncPlatform`
+实例，仅替换 `instance` 无法隔离测试数据（前序用例的持久化内容会泄漏），
+现改为在 `setUp` 中显式 `AppStorage.clear()`。
+
+### ✨ 进度条缓冲动效改版：Barber Pole 灰白斜条纹 + 缓冲前沿旋转弧
+
+**旧动效**：未加载区域「白色流光单向扫掠 + 呼吸底色 + 缓冲端点横向光晕」——
+单色白斑语义偏「数据流动」，且三个元素叠加偏碎。
+
+**新动效**（统一灰白无彩色，避免与品牌翡翠轨争夺注意力）：
+
+- **未加载区域 · Barber Pole 斜条纹滚动**：深浅两档灰白斜条纹（周期 14px）沿轨道方向
+  循环平移，转筒式表达「后续内容正在滚动加载」；条纹用 `canvas.skew(-1, 0)` 做 45° 斜切，
+  clip 严格限制在未加载区域与圆角轨道内。
+  注：轨道仅 2.5~3.5px 高，斜切产生的斜边位移与轨道高度同量级，斜度弱于标准转筒，
+  动感主要由相位滚动承担；
+- **缓冲前沿 · 灰白旋转弧**：以缓冲端点为圆心的 `SweepGradient` 扫掠圆弧持续旋转
+  （1.35π 留缺口、圆头描边），半径略大于轨道高度、水平位置 clamp 在轨道内；
+- 移除原「端点横向光晕」（职责由旋转弧承担）。
+
+**同步调整快捷胶囊视觉**（快进 / 快退 / 长按加速）：
+
+- 图标与文字统一为**纯白**（原为方向色 / 品牌色），胶囊内不再出现彩色元素；
+- 底色透明度下调（快进快退 0.45 → 0.35、长按加速 0.55 → 0.42），更通透。
+
+动画仍复用 `_shimmerController`（已按缓冲状态启停），无新增动画器；
+`flutter analyze` 0 问题，播放器测试通过。
+
+### ⚡ 播放器性能：流光扫光动画改为按缓冲状态启停
+
+**问题**：进度条扫光动画 `_shimmerController` 在 `initState` 里无条件 `..repeat()`，
+但其视觉只在「未加载空白轨道」上可见（`AuraSliderTrackShape.paint` 内 `if (isBuffering)`）。
+播放器常驻详情页时，即便视频暂停、控制栏隐藏，也会一直跑 60fps ticker 并持续重建进度条。
+
+**修复**：新增 `_syncShimmerTicker()`，按综合缓冲状态（未初始化 / `isBuffering` / seek 后
+缓冲指示）启停动画，并在状态变化点同步（帧监听、初始化成功与失败、手势 seek 与进度条拖动的
+两端）。判定为「非缓冲」时 `stop()`，不影响任何视觉效果。
+
+### 🖥️ 修复：全屏内修改播放设置需退出全屏才生效
+
+**问题**：全屏是 `Navigator.push` 的独立路由，宿主的 `setState` 重建不到它；
+而 `AuraPlayer` 内部无偏好副本、getter 直读 `widget.preferences`（创建时的快照）。
+于是全屏内从右上角菜单改设置后，持久化与宿主回灌都成功，但**全屏实例仍用旧值**，
+必须退出全屏（路由销毁、小屏实例重建）才生效。
+
+**修复**：播放器内部持有偏好本地副本 `_preferences` ——
+
+- 菜单改动：**先本地 `setState` 立即生效**，再上抛宿主持久化；
+- 外部变更（设置页等）：`didUpdateWidget` 比对后回灌本地副本；
+- 进入全屏时透传本地副本而非 widget 参数，宿主尚未回灌也不会带旧值。
+
+现在小屏与全屏行为一致：改完立即生效，且同步持久化。
+
+## [2026-09-19]
+
+### 🔋 修复：小屏播放时屏幕常亮失效（多实例竞态）
+
+**期望行为**：只要视频在播放（无论全屏还是小屏）就保持屏幕常亮（不锁屏），
+暂停 / 播放结束 / 退出播放器时解除、恢复系统锁屏节奏。
+
+**根因（多实例竞态）**：小屏与全屏是两个**共享控制器**的 `AuraPlayer` 实例，
+而 `WakelockPlus` 是全局单例资源。原实现每个实例各自维护一份
+`_isWakelockEnabled` 去重状态 —— 挂载 / 卸载时序稍错位（如新实例 initState
+的 enable 先于旧实例 dispose 的 disable），旧实例的解除就会**关掉新实例刚开启
+的常亮**，且随后被新实例自己的去重守卫拦截、无法恢复 → 常亮永久丢失。
+
+**修复**：改为**全局引用计数**收敛 ——
+
+- 静态计数 `_wakelockDemandCount`：>0 时保持常亮，归 0 才解除；
+- 实例只登记 / 撤销自己的需求（`_wakelockDemanded` 防重复计数）；
+- 旧实例 dispose 的解除最多把计数减 1，只要新实例仍在播放（计数 ≥1），
+  常亮不会被误关 —— 时序错位不再可能造成常亮丢失；
+- 暂停 / 结束 / 后台切前台等所有转换最终都经由 `_updateWakelock` 收敛，
+  行为与「播放即常亮、不播即恢复锁屏」严格一致。
+
+**验收**：`flutter analyze` **0 问题**；播放器测试全部通过。
+
 ## [2026-09-18]
+
+### 📖 小说阅读器横向模式重构：跨章连续渲染（章节切换与章内翻页完全一致）
+
+**旧机制**：`PageView` 只渲染单章 + 章首/章末「衔接提示页」，key 含章号 ——
+翻到衔接页后必须整体重建 PageView 并 jump 定位，翻章永远伴随过渡页与跳变。
+
+**新机制（滑窗式跨章连续渲染）**：
+
+- `PageView` 渲染以当前章为中心的**滑窗**：`[上一章切片..., 当前章切片..., 下一章切片...]`
+  扁平页序列；**key 不再含章号，组件全程不重建**；
+- 章末继续向后翻，滑动动画**直接进入下一章第一页**，与章内翻页视觉完全一致；向前翻同理；
+- 跨章瞬间：`onPageChanged` 把扁平页码反解为 (章, 章内页) → 更新当前章 → **窗口平移** +
+  无动画 `jumpToPage`（jump 前后渲染同一页正文，仅索引变化，视觉零跳变）；
+- 分片缓存 `Map<章号, 切片>`：正文已在内存的章节同步分片（`PaginationEngine` 纯函数直接复用）；
+  相邻章内容预取完成后自动补片，翻章零等待；
+- 正文未就绪的相邻章在窗口中占一页加载占位（复用 `ReaderChapterBridge`），就绪后自动顶替；
+- 视口尺寸 / 字号 / 行距变化时全量失效重算（`invalidateAll`），单章内容更新只重算该章，
+  相邻章分片得以复用；
+- 章首/章末衔接页机制整体移除（`_autoAdvance*` / `_advanceToBridgeChapter` /
+  `_prevBridgeCount` 等 ~80 行），三区点击翻页统一为滑窗内 `nextPage/previousPage` 动画。
+
+**顺带修复**：小说详情页「进入阅读器查看全部 N 章节」使用固定 `AppColors.primary`，
+暗色主题下应为更亮的 `primaryGlow`，改跟随 `colorScheme.primary` 自适应。
+
+**验收**：阅读器 8/8 测试通过（无缝续读 / 无缝回退 / 进度条同步 / 目录 / 错误态全部保持）；
+`flutter analyze` **0 问题**；`flutter test` **229/229 通过**；架构门禁通过。
+
+### 🔁 视频下载新增「URL 过期刷新」机制（`onUrlExpired`）
+
+**背景**：规则源的视频地址常带时效签名（`?sign=...&expire=...`）。源站以 401/403/410
+拒绝请求时，此前该集只能标记失败，「重试失败」仍用同一条过期地址，永远 403。
+
+**机制**（`DownloadService` 新增可空回调 `onUrlExpired`，未注册时行为与既往完全一致）：
+
+- **触发判定**：`isAuthExpiredStatus` —— 仅 401 / 403 / 410 视为 URL 失效并尝试刷新；
+  超时、断网、5xx 刷新 URL 无意义，照常按失败处理，杜绝死循环；
+- **三个触发点**：HLS 清单请求、HLS 分片下载、直链 Range 续传；
+- **编排**：触发后回调宿主重新解析播放页 → 新地址登记回 `targetUrls[index]`
+  （后续「重试失败」也用它）→ 原路重试。**每集每轮至多刷新一次**；
+- **进度保留**：分片与 `.part` 均与签名无关，重试原样续传；HLS 会作废含冻结签名的
+  旧清单（`remote.m3u8`）重新拉取，但已落盘分片不重下；
+- 与「再点一次下载按钮」的手动恢复路径互补：该路径刷新全部 URL 但救不了
+  「分片签名冻结在已存盘清单里」的场景，本机制正好补上这一空档。
+
+**验收**：新增 6 条测试（状态码判定边界 + 4 条直链端到端：刷新成功续传 / 回调返回
+null 按普通失败 / 新地址再 403 不二次刷新 / 未注册回调行为与既往一致）；
+`flutter analyze` **0 问题**；`flutter test` **229/229 通过**；架构门禁通过。
+
+### ⏯️ 视频下载全类型断点续传
+
+**上一版的局限**：中断后只有「整集级」续传（已完成集跳过），正在下载的那一集会从头重下 ——
+因为 FFmpeg 把 HLS 合并成单个 MP4，半截文件既不可播也不可续。
+
+**现在按地址形态分成两条续传通道**：
+
+| 类型 | 续传粒度 | 机制 |
+|---|---|---|
+| m3u8（HLS） | **分片级** | 清单解析 → 逐分片落盘（跳过已有）→ 改写清单指向本地 → FFmpeg 合并 |
+| mp4 / mkv 等直链 | **字节级** | dio `Range: bytes=<已有>-` → `.part` 追加 → 完成后原子改名 |
+
+**HLS 分片续传的关键设计**：
+
+- **解密不在 Dart 侧实现**：AES-128 的 key 也被下载到本地并改写进清单，
+  合并时交给 FFmpeg 的 `crypto` 协议解密 —— 避免重复实现分片解密与 IV 推导；
+- 清单**优先复用上次已存的原文**：源站临时不可达时也能续传；
+- 分片写入「先 `.tmp` 再改名」：磁盘上存在的分片一定是完整的，中断不留脏文件；
+- master 多码率清单取第一个码率子清单再解析一层；
+- 每个分片之间检查任务存活性，暂停 / 删除后立即中止，不再消耗流量；
+- 合并成功后整体删除分片目录，只保留最终 MP4（磁盘不双份占用）。
+
+**直链续传**：服务器返回 206 时从断点追加；返回 200（不支持 Range）时自动退化为整文件重下；
+`.part` 临时文件完成后**原子改名**，杜绝半截文件被当成品。
+
+**配套改动**：
+
+- `FfmpegCommandBuilder.buildLocalMerge()`：本地分片合并命令，协议白名单收窄为
+  `file,crypto,data`（不再需要网络协议）；
+- 新增 `HlsPlaylistParser`：master / media 识别、相对路径绝对化、
+  `EXT-X-KEY / SESSION-KEY / MAP` 的 `URI` 提取、`data:` 内联资源跳过、清单本地化改写；
+- `pause()` / `clearAll()` 同时打断两条通道（FFmpeg 会话 + dio CancelToken）。
+
+**验收**：`flutter analyze` **0 问题**；`flutter test` **223/223 通过**
+（新增 HLS 解析 8 条 + 本地合并命令 1 条）；架构门禁通过。
+
+**⚠️ 已知限制**：HLS 的 `#EXT-X-MEDIA`（独立音轨 / 字幕轨子清单）暂不支持；
+真实解密与合并行为仍需 Android 真机验证。
+
+### 📥 集成 FFmpeg 实现视频离线下载
+
+**依赖与原生配置**：
+
+- 新增 `ffmpeg_kit_flutter_new: ^4.6.2`（FFmpegKit 的社区维护分支，内核 FFmpeg v8.1.2，
+  已适配 Android V2 embedding）；
+- Android `minSdk` 显式抬到 **24**（该包原生库以此为基础，低于它会运行期加载 .so 失败）；
+- 项目仅构建 Android（无 ios/ 目录），且 `abiFilters` 只保留 arm64-v8a，ffmpeg 原生库体积可控。
+
+**核心设计**：
+
+- **命令构造抽成纯逻辑** `data/download/ffmpeg_command_builder.dart`：
+  FFmpeg 命令是纯字符串，参数顺序、引号转义、HTTP 头传递方式写错只会在真机上表现为
+  「下载失败」或「视频无声」，抽成纯函数后用 **18 条单测**把所有转义分支固定下来；
+  - `-protocol_whitelist` 含 `crypto`/`data`（AES-128 加密 m3u8 的硬需求）；
+  - `-bsf:a aac_adtstoasc`（缺失会让产出的 MP4 在部分播放器上无声）；
+  - `-movflags +faststart`（moov 前置，支持边下边播）；
+  - `-user_agent` / `-referer` 走专用选项，Cookie 等其余头拼进 `-headers`（CRLF 分隔）；
+  - 总时长从 FFmpeg 日志的 `Duration:` 行解析 —— **不走 FFprobe**：带防盗链头的源它也发不了请求。
+- **DownloadService 扩展视频任务**：
+  - `startVideoDownload()`：一部剧一个任务（与小说 / 漫画同一套任务记录与下载管理页），
+    产物落 `videos/<bookId>/<索引>.mp4`；
+  - `_downloadVideoEpisode()`：`executeAsync` + `Completer`，**暂停 / 删除 / 清空任务
+    会 `FFmpegKit.cancel(sessionId)` 真正终止下载**（旧任务体系无此需求）；
+    并防御了 `getSessionId()` 返回可空、以及「无效 sessionId 绝不能传给 cancel」
+    —— 因为 `cancel(null)` 的语义是「取消全部会话」；
+  - 进度：`Statistics.getTime()` 换算成**项内进度**（500ms 节流），
+    `DownloadTask.progress` 计入项内进度 —— 长视频下载时进度条能持续前进，
+    小说 / 漫画项内进度恒为 0，行为不变；重启后项内进度一律归零（瞬时状态）；
+  - `localVideoPath()` / `isVideoEpisodeDownloaded()` 供播放与详情页查询。
+- **播放器支持本地视频**：`AuraPlayer` 对非 http 地址改用
+  `VideoPlayerController.contentUri`（Android ExoPlayer 原生支持 file:// URI），
+  **不引入 `dart:io`**，保留 web 构建路径。
+- **UI 接入**：视频详情选集栏新增「下载本部」按钮
+  （三态：未下载 / 下载中→点击看进度 / 已完成），下载管理页类型徽标与单位扩展视频（视频 / 集）。
+
+**验收**：`flutter analyze` **0 问题**；`flutter test` **214/214 通过**（含 18 条新增命令构造单测）；
+架构门禁通过。
+
+**⚠️ 必须知晓的限制**：
+
+1. **GPL v3.0**：主包标注 LGPL-3.0 但实际等效 GPL v3.0（含 x264/x265/vid.stab）。
+   若本项目计划**闭源分发**，应改用 `ffmpeg_kit_flutter_new_https` 子包（无 GPL 组件）
+   并同步调整 import；纯内部使用 / 开源则无碍。
+2. **无法端到端验证**：FFmpeg 的实际执行依赖原生库，只能通过 Android 真机构建验证 ——
+   首次构建会自动下载预编译库（约 30-50MB），建议先跑一次 `flutter build apk`
+   确认链接成功，再用真实 m3u8 源实测「下载 → 断网播放」闭环。
+3. **单集粒度下载暂不支持**：现按「整部剧」入队（与小说 / 漫画同一套任务模型），
+   「只下载当前集」需要给任务模型增加选择性下载集合，如需要再单独做。
+
+### 🧭 「我的」页资产卡去重：搜索足迹 → 下载管理
+
+- **移除「搜索足迹」资产卡**：该数据已完整收纳在历史中心页（观看历史 + 搜索足迹两个板块），
+  在「我的」页再设一张卡等于同一份数据两个入口；
+- **卡位改由「下载管理」承载**：主数值为离线任务数，副信息按优先级展示
+  「正在下载 N 部 / N 部存在失败项 / 全部下载完成 / 暂无离线内容」，
+  仅在存在失败项时亮提示点（进行中属正常状态，无需额外提示），点击直达下载管理页；
+- **同步移除设置列表里的「离线下载」项** —— 资产卡承载该入口后，这一行会形成新的同屏重复，
+  正是本次「消除重复入口」意图的一部分；
+- 颜色沿用原卡位的 `accentAmber`，保持 2×2 四色互不重复。
+
+**验收**：`flutter analyze` **0 问题**；`flutter test` **196/196 通过**；架构门禁通过。
+
+### 🎛️ 视频详情：横向快速选集按钮收紧尺寸
+
+- 剧集 chip 由「高 46 / 最小宽 54 / 水平内边距 14 / 字号 12.5 / 播放图标 10」
+  收紧为「高 38 / 最小宽 46 / 水平内边距 12 / 字号 12 / 播放图标 9」，整体缩小约 17%；
+- 附带收益：单屏可容纳的集数变多（4 字标题的按钮宽度由 78px 降至 72px）；
+- 未改动「全部」抽屉按钮与底部全量剧集网格 —— 两者原本已是紧凑规格
+  （字号 12、图标 13、网格格子高约 40px），无需再收。
+
+**验收**：`flutter analyze` **0 问题**；`flutter test` **196/196 通过**；架构门禁通过。
+
+### 🌊 修复纵向长卷向上加载章节时的顿挫（改用 center 锚点，彻底移除偏移补偿）
+
+**问题**：上下滚动模式中，向上滚动加载前面的章节时会「顿一下」，不平滑。
+
+**根因有两个，缺一不可**：
+
+1. **前插导致坐标整体位移**：单条 `ListView` 的偏移原点在整条内容最顶部，向上前插一章会让
+   所有已有章节的 index 位移，只能走「先布局 → 下一帧量高度 → `jumpTo` 补偿」。
+   这必然漏出**一帧错位画面**；更糟的是新块高度测不到时
+   `compensateOffsetAfterPrepend` 会直接返回 null 放弃补偿，位置就真的偏掉了。
+2. **分隔线放在块首**：锚点块「上方是否有内容」在插入瞬间由 false 变 true，
+   块内凭空多出 54px 的分隔线 → 锚点内容整体下移。
+
+**修复**：
+
+- `ReaderVerticalScrollView` 重构为 `CustomScrollView` + `center` 锚点：
+  以「进入纵向模式时所在的章」为坐标原点，锚点之上的 sliver 坐标**独立于锚点**，
+  向上插入内容天然不改变锚点及以下的布局 —— **无需任何补偿**，从机制上消除错位帧；
+- 页面新增 `_verticalAnchorIndex` 与 `_verticalCenterKey`（跨帧稳定），
+  并把「进入纵向模式 / 纵向内换章 / 冷启动恢复纵向模式」三条路径收敛到 `_resetVerticalFlow()`；
+- 分隔线由**块首**移到**块尾**：尾部线只取决于「后面还有没有块」，
+  前插不会改变任何已有块的布局（这一步是消除残余 54px 下移的关键）；
+- 删除 `VerticalFlowEngine.compensateOffsetAfterPrepend` 及其 5 条单测（机制已被锚点取代）。
+
+**顺带修复的既有 bug**：冷启动直接落到纵向模式时，长卷序列与锚点从未初始化
+（此前只在「手动切换模式」时初始化）→ 上次退出时是纵向模式的用户再次进入会**整屏空白**。
+
+**验收**：新增 4 条组件测试，核心断言是「向上前插后 `controller.offset` 仍为 0」
+且「锚点章节标题的**屏幕坐标逐像素不变**」。`flutter analyze` **0 问题**；
+`flutter test` **196/196 通过**；架构门禁通过。
+
+**调试备忘**：`CustomScrollView.center` 之前的 sliver，其子项是「列表越靠前离锚点越远」，
+因此向上序列必须**倒序取用**；另外 `SliverList` 懒加载是预期行为，
+屏幕外的章节不会出现在 widget 树上，测试断言不能依赖它们。
+
+### 🧩 统一「加载到即已下载」语义（取消独立的「会话级内存缓存」概念）
+
+**背景（旧模型的错位）**：正文来源长期存在两套并存概念 ——
+「会话级内存缓存（退出即失）」与「沙盒离线下载（持久化）」，
+于是出现自相矛盾的行为：**读了的不存，没读的反而存了**。
+
+| 入口 | 改造前 | 改造后 |
+|---|---|---|
+| 当前章联网抓取成功 | ❌ 只写内存，退出即失 | ✅ 内存镜像 + 落盘 |
+| `prefetch` / `prefetchAdjacent` | ❌ 只写内存 | 已删除，统一为 `downloadOffline` / `downloadAdjacent` |
+| 章节自带正文（无远程地址） | ❌ 只写内存 | ✅ 内存镜像 + 落盘 |
+| `handleChapterJumped` | 分「具备 / 不具备离线条件」两条路 | ✅ 统一走 `downloadAdjacent` |
+
+**改动**：
+
+- 新增 `_mountLoadedContent()` 作为「加载到正文」之后唯一的收尾动作：写内存镜像 + `persistOffline`；
+  落盘不可用时（未绑定书籍标识 / 解析规则）静默跳过，正文仍保留在内存镜像供本次阅读；
+- **删除 `prefetch`** —— 它是「只进内存」这套旧概念的载体。`downloadOffline` 已完整覆盖其能力
+  （内存镜像命中 → 复用落盘、零网络；沙盒命中 → 直接返回；都没有 → 一次抓取同时写内存与沙盒），
+  且落盘失败时 `ensureContent` 已把正文写入内存镜像，**不丢失任何原有能力**；
+- `prefetchAdjacent` → `downloadAdjacent`（名字如实反映行为），`handleChapterJumped` 委托给它，
+  不再保留「内存专用分支」；
+- 删除 `onPrefetched` 回调：内容就绪只剩 `onPersisted` 一个通知出口；
+- `ChapterCache` 定位注释重写：从「会话级缓存」改为**已加载正文的阅读期内存镜像**，
+  并明确「淘汰不会丢失内容 —— 只要该章已落盘，下次会被重新读回」，
+  从根上消除「两套缓存」的理解歧义；
+- 底部栏按钮在无离线条件时不再谎报「预取」，改为如实提示「未绑定书籍标识，无法离线留存」。
+
+**验收**：管道单测增至 **13 条**，新增覆盖「内存镜像命中时零网络落盘」
+「沙盒已命中则不重复 IO」「一次抓取同时写内存与沙盒」「相邻章下载跳过已落盘章节」
+「`handleChapterJumped` 与 `downloadAdjacent` 行为一致」。
+`flutter analyze` **0 问题**；`flutter test` **197/197 通过**；架构门禁通过。
+
+**可见变化**：阅读过的章节会全部落盘（约 6 KB/章），底部「已下载」计数随阅读持续增长；
+换来的是断网可读、退出重进不丢 —— 这正是「缓存即离线」的应有之义。
+
+### 📥 阅读全链路离线优先（离线下载的章节不再联网读）
+
+**背景**：`ChapterContentPipeline.ensureContent` 早已实现完整的三级正文来源
+（内存会话缓存 → 沙盒离线文件 → 网络沙箱抓取），纵向续载与预取也确实走的是它；
+但**当前章加载 `_loadChapterContent()` 自己重写了一套「缓存 → 网络」，把离线那一级整段丢了** ——
+导致目录里显示「已下载」的章节，在线阅读时仍会联网抓取，断网时明明已落盘却读不到。
+
+**改动**：
+
+- `_loadChapterContent()` 在「内存缓存命中」之后、「网络抓取」之前插入沙盒离线读取：
+  - 先用同步的 `isOfflineDownloaded()` 守卫，未下载时零开销、路径与原来完全一致；
+  - **刻意不设置 `_isLoadingContent`** —— 本地文件 IO 耗时极短，否则会出现
+    「明明已下载却仍闪一下加载态」；
+  - 读盘期间用户可能已切走，故 `await` 之后校验 `_currentChapterIndex == index` 再挂载；
+  - 离线文件读不到（损坏 / 被外部清理）时不报错，继续降级到自带正文 / 网络。
+- `_isChapterContentAvailable()` 纳入 `isOfflineDownloaded()`：衔接页就绪判定与真实可用性一致，
+  已离线章节滑到章末同样无缝切章（与上一批的体验修复形成闭环）。
+- **口径统一（销账 APP_TODO 第 10 项）**：底部控制栏由「已缓存 N 章」（内存口径）改为
+  「已下载 N 章」（沙盒口径），与目录抽屉顶部、下载管理页完全同源；
+  该按钮此前图标是 `downloadOutline`、文案是「已缓存」、行为却只是内存预取，三者自相矛盾，
+  现改为**真正下载下一章到沙盒**（`downloadOffline` 内部复用已抓取正文，零额外网络请求），
+  未绑定书籍标识 / 解析规则时降级为会话内预取。
+
+**顺带修复（写单测时查出的隐患）**：`readOffline()` 此前未包异常，沙盒文件损坏 / 被外部清理时
+本地 IO 异常会直接冒泡 —— 而 `ensureContent` 的 try 只包住网络段、`_appendNextVerticalChapter`
+更是裸调用，一次坏文件就能把整个纵向阅读流打断。现改为读取失败一律静默返回 null，
+由调用方回退到下一级来源。
+
+**验收**：新增 8 条管道单测（内存命中不碰离线也不碰网络 / 离线命中绝不发起网络请求 /
+离线空串与抛异常时降级 / 未配置书籍标识时不触碰离线存取等），
+用 `FileSystemException` 替身真实覆盖了坏文件路径。
+`flutter analyze` **0 问题**；`flutter test` **192/192 通过**；架构门禁通过。
+
+### 🔧 修复横向滑动翻章的 260ms 过渡页停留（就绪章节应与点击翻页一样无缝）
+
+**问题**：横向模式下跨章有两条路径，行为不一致 ——
+
+| 路径 | 实现 | 表现 |
+|---|---|---|
+| 点击左右区域 | `_goToNextPage` → `_switchChapter()` 直接切 | 无缝 ✓ |
+| 滑到章末 / 章首衔接页 | `_autoAdvanceToNextChapter()` → `Future.delayed(260ms)` → 切章 | 衔接页停留 260ms，「正在进入下一章」可见 ✗ |
+
+且原注释自称的「防抖」是**假的**：延迟回调里没有任何取消逻辑，用户滑回也拦不住切章，
+它唯一实际效果就是把过渡页钉在屏幕上 260ms。
+
+**修复**：
+
+- 新增统一入口 `_advanceToBridgeChapter(index, {toLastPage})`：
+  **正文已可渲染时立即 `_switchChapter`**（与点击翻页走完全同一条路径，零等待、不留过渡页）；
+  仅当目标章正文确实还没到时才保留 260ms，让加载提示有机会被看到（此时等待是真实的）；
+- 新增 `_isChapterContentAvailable(index)`：严格口径 —— 只有内存缓存命中或章节自带正文
+  才算就绪；**正在预取（`_prefetching`）不算**（此时切过去只会看到整页加载态，
+  不如留在衔接页展示「正在预取正文...」更诚实）；
+- 新增 `_isChapterBridgeReady(index)` = 上述口径 + 预取中，供衔接页的图标与文案使用；
+  衔接页原先各自复制一份的判定表达式已收敛到该方法（消除口径漂移）；
+- 顺带修正判定口径：原写法只查 `_contentCache.containsKey`，漏掉「章节自带正文但尚未进缓存」
+  的情况（详情页直传正文的单章书会误显示转圈）。
+
+**验收**：新增 2 条组件测试（章末无缝续读 / 章首无缝回溯），断言以**页码归属**为准
+而非章节标题 —— 衔接页的 `chapterTitle` 与目标章标题相同，只看标题会把
+「停在衔接页」误判为「已切章」（该坑在调试中实际踩到过）。
+`flutter analyze` **0 问题**；`flutter test` **184/184 通过**；架构门禁通过。
+
+**调试备忘**：`PageController.jumpTo()` 的参数是**像素**而非页码，
+传页码只会静默偏移几像素、`onPageChanged` 永不触发；驱动翻页必须用 `jumpToPage()`。
+另：测试环境下三区点击热层会让 `PageView` 收不到拖拽手势，组件测试需直接驱动页码。
+
+### 🐛 修复 `SearchSession` 三处状态位缺陷（独立逻辑修复，与上一批纯搬运分离）
+
+**背景**：上一批为纯搬运，严格 1:1 保留原行为；本批在此基础上做逻辑审计，共查出三处缺陷。
+
+**① `loadingMore` 跨轮次永久卡死（原代码遗留真 bug，影响可见）**
+
+- **根因**：原分页收尾为 `if (mounted && _searchEpoch == thisEpoch) setState(() => _loadingMore = false)`——
+  **轮次过期就跳过复位**；而 `search()` 开头从不重置 `_loadingMore`；
+- **触发**：上滑触发分页 → 30ms 让出窗口内用户点「搜索」（手机高频操作）→ 旧分页被 epoch 守卫
+  `return` 掉，`loadingMore` 永久为 `true`；
+- **后果**：底部永久显示「加载更多中...」转圈，且 `_onScroll` 的 `!loadingMore` 守卫永久拦截
+  → **上滑分页彻底失效**，直到下次清空 / 返回；
+- **修复**：`search()` 开头复位 `loadingMore`；分页收尾改为**只在仍属于自己这一轮时**复位
+  （避免旧轮次误关新轮次正在进行的分页）；`loadMore` 守卫补上 `loading`，
+  使「首轮检索」与「分页」严格互斥；`cancel()` 追加防御性复位。
+
+**② `clearResults()` 不中止在途检索**
+
+- **问题**：只清 `allResults` 并复位两个 loading 标志，**不递增轮次 Epoch**，导致
+  「返回 / 清空后后台仍跑完全部源（资源白烧）」+「在途回包写回已清空结果集（幽灵数据）」+
+  「留下 `statusMap` / `rulePageMap` / `currentQuery` 三个字段不清（名实不符）」；
+- **修复**：补齐 `_epoch++`（等价隐式取消）并同步清空各源状态、分页游标与关键词。
+
+**③ `isSameRule(null, null)` 返回 `true` 的语义陷阱**
+
+- **问题**：`return a == b` 让「两个空源」被判为同一个源，上层过滤逻辑一旦两侧同时为 null 就会静默走偏；
+- **修复**：任一侧为 null 一律判定不同。当前无生产调用点命中（已逐个核对），属消除定时炸弹。
+
+**顺带**：`_handleBack` / `_performSearch` 中对 `selectedRule` 的直接赋值改为 `selectRule()`，
+确保该字段变更也触发重建（此前 `_handleBack` 的赋值静默不通知）。
+
+**验收**：新增 4 条单测（清空彻底性、在途回包被轮次丢弃、分页被打断后标志不卡死、分页与检索互斥）；
+`flutter analyze` **0 问题**；`flutter test` **182/182 通过**；架构门禁通过。
+
+### 🧱 结构重构收尾（P2 末批：播放器 / 搜索 / 规则调试三大页面 + P4 测试对齐 + P5 CI 门禁）
+
+**改动**：
+
+**1. 播放器最后一块视图归位（`aura_player.dart` 1197 → 1150 行）**
+
+- `player_overlays.dart` 追加 `PlayerLockButton`：全屏浮动锁屏键（垂直居中、左边缘与底栏进度条同轴、
+  240ms 淡出 + 缩放、`Ctrl` 态图标切换）。`_buildLockButton`（53 行）整体删除，
+  页面侧只留 **1 行显隐条件装配**（`_isFullScreen` 守卫上提到页面，组件不再感知"何时该渲染"）；
+- 页面不再需要 `Ionicons.lock*`，锁图标依赖随组件迁移。
+
+**2. `search_page.dart` 1656 → 328 行（-80.2%，拆分 11 个文件）**
+
+| 层 | 文件 | 职责 |
+|---|---|---|
+| models | `search_result.dart` / `rule_search_status.dart` | 规范化结果条目（含 `displayTag` 兜底）、单源检索状态 |
+| engines | `search_aggregator.dart` | 规则 Key 安全提取、`isSameRule` / `isVideoRule`、条目提取、`hasMore` 判定、按源过滤、完成度 |
+| engines | `search_concurrency_pool.dart` | **受控并发池**：固定 Worker 数依次取任务，`shouldAbort` 在每个任务前校验 |
+| controllers | `search_session.dart` | `ChangeNotifier` 承载结果集 / 各源状态 / 分页游标 / 轮次 Epoch |
+| widgets | `search_app_bar` / `search_history_panel` / `search_source_filter_bar` | 顶部搜索栏、历史与探索面板、源筛选胶囊栏 |
+| widgets | `search_list_card` / `search_grid_card` | 横版视频与竖版海报两套列表 / 网格卡片 |
+| widgets | `search_results_view` / `search_result_list_view` / `search_result_grid_view` / `search_result_footer` / `search_placeholder_views` | 结果区三态分发 + 列表 / 网格 / 底部状态 / 等待与空态 |
+
+- **轮次 Epoch 机制原样保留**：所有回包校验 epoch，杜绝上一轮迟到结果污染新一轮；
+- 页面收敛为「输入交互 + 页面装配」，`SearchSession` 承担全部可变检索状态。
+
+**3. `rule_tester_page.dart` 1181 → 272 行（-77.0%，拆分 9 个文件）**
+
+| 层 | 文件 | 职责 |
+|---|---|---|
+| models | `rule_test_step.dart` | 阶段枚举 + `RuleTestStep`（含 `reset()`） |
+| engines | `rule_test_report.dart` | 默认关键词匹配、JSON 美化（循环引用降级）、阶段文案、Markdown 诊断报告 |
+| engines | `rule_test_log_filter.dart` | 按规则标签 + 本轮起始时间过滤日志；报告行 / 控制台行格式化 |
+| controllers | `rule_test_pipeline.dart` | 四阶段接力流水线（发现 → 搜索 → 详情 → 解析），阶段产物载体原样保留 |
+| widgets | `rule_test_app_bar` / `rule_test_control_header` / `rule_test_step_card` / `rule_test_console` | 顶栏、关键词与开始/停止、阶段卡片、沙箱控制台 |
+
+- `buildMarkdown` 的 `generatedAt` 改为**入参**而非内部 `DateTime.now()`，报告可被单测断言；
+- 日志过滤逻辑此前只能手工点测，现已被 4 条单测覆盖。
+
+**4. P4 · 测试目录全量镜像**
+
+- 根目录 4 个散落测试按被测源路径归位（`unit/core/sandbox`、`unit/features/browser/engine`、
+  `widget/features/rules/pages`）；
+- 根目录 771 行的 `widget_test.dart` 拆分并删除，按被测源镜像为 12 个文件
+  （`widget/shared/widgets/**`、`widget/features/{search,settings,media}/**`）；
+- **测试隔离度提升的直接证据**：拆出后 `media_detail_page_test.dart` 暴露了两处隐性依赖 ——
+  规则引擎 500ms 延迟初始化定时器未被排空（`Pending timers` 失败）、
+  `RuleService` 依赖同文件内前序用例的 GetIt 注册。已通过显式 `pump(600ms)` 排空定时器
+  与显式注册补齐，两处均已正交化。
+
+**5. P5 · CI 门禁落地**
+
+- 新增 `app/tool/guardrails/check_architecture.dart`（纯 `dart:io`，零第三方依赖）：
+  1. `lib/domain/**` 出现 `flutter` / `material_ui` / `go_router` / `ionicons` / `dart:ui` → 失败；
+  2. `lib/shared/**` 反向 import `package:fluxforge/features/` → 失败；
+  3. `lib/` 下 UI 文件（含 Widget 定义或位于 `pages|widgets|views`）超过 **300 行** → 失败；
+- 存量技术债登记在 `tool/guardrails/baseline.txt`（21 条），并提示"已销账待删除"的行，
+  形成只减不增的收敛机制；
+- 新增 `.github/workflows/app-quality.yml`：`flutter analyze` → 架构门禁 → `flutter test` 三道关卡。
+
+**验收**：`flutter analyze` **0 问题**；`flutter test` **178/178 全部通过**（较上批 +41）；
+架构门禁 `check_architecture` 通过。
 
 ### 🎥 P2 拆分巨型文件（第二十二批：视频画面层与断点续播提示）
 

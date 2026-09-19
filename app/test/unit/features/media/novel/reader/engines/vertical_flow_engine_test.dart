@@ -225,60 +225,6 @@ void main() {
     });
   });
 
-  group('compensateOffsetAfterPrepend 前插偏移补偿', () {
-    test('按新块实测高度等量右移', () {
-      expect(
-        VerticalFlowEngine.compensateOffsetAfterPrepend(
-          beforeOffset: 500,
-          insertedHeight: 1200,
-          maxScrollExtent: 9000,
-        ),
-        1700,
-      );
-    });
-
-    test('超出可滚动范围时 clamp 到 maxScrollExtent', () {
-      expect(
-        VerticalFlowEngine.compensateOffsetAfterPrepend(
-          beforeOffset: 8800,
-          insertedHeight: 1200,
-          maxScrollExtent: 9000,
-        ),
-        9000,
-      );
-    });
-
-    test('新块尚未布局（高度为 0）时返回 null，不跳转', () {
-      expect(
-        VerticalFlowEngine.compensateOffsetAfterPrepend(
-          beforeOffset: 500,
-          insertedHeight: 0,
-          maxScrollExtent: 9000,
-        ),
-        isNull,
-      );
-    });
-
-    test('异常负高度时返回 null', () {
-      expect(
-        VerticalFlowEngine.compensateOffsetAfterPrepend(
-          beforeOffset: 500,
-          insertedHeight: -10,
-          maxScrollExtent: 9000,
-        ),
-        isNull,
-      );
-    });
-
-    test('异常负偏移时 clamp 到 0', () {
-      expect(
-        VerticalFlowEngine.compensateOffsetAfterPrepend(
-          beforeOffset: -80,
-          insertedHeight: 50,
-          maxScrollExtent: 9000,
-        ),
-        0,
-      );
-    });
-  });
+  // 注：`compensateOffsetAfterPrepend` 的 5 条测试已随方法一并删除 ——
+  // 长卷改用 `CustomScrollView.center` 锚点后不再需要偏移补偿。
 }

@@ -14,7 +14,7 @@ dependencies:
     sdk: flutter
 
   # 官方 Material UI 解耦组件库 (Flutter 3.47+)
-  material_ui: ^1.2.0
+  material_ui: ^1.3.0
   animations: ^3.0.0
   # 路由
   go_router: ^18.0.1
@@ -64,6 +64,10 @@ dependencies:
   # 持久化存储
   shared_preferences: ^2.5.5
   video_player: ^2.14.0
+  # 视频离线下载：调用 FFmpeg 完成 HLS 分片拉取 / 解密 / 合并 / MP4 封装
+  # 注意：主包为 Full+GPL 变体，README 标注实际等效 GPL v3.0（含 x264/x265 等），
+  # 若需规避 GPL 传染性，可换成 ffmpeg_kit_flutter_new_https 等子包并同步调整 import。
+  ffmpeg_kit_flutter_new: ^4.6.2
 
 dev_dependencies:
   flutter_test:

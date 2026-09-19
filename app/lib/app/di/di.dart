@@ -7,6 +7,7 @@ import 'package:fluxforge/data/library/favorite_service.dart';
 import 'package:fluxforge/data/library/history_service.dart';
 import 'package:fluxforge/data/library/play_history_service.dart';
 import 'package:fluxforge/data/rule/rule_service.dart';
+import 'package:fluxforge/data/sites/site_store.dart';
 
 /// 全局唯一服务定位器单例
 final GetIt getIt = GetIt.instance;
@@ -18,6 +19,9 @@ HistoryService get historyService => getIt<HistoryService>();
 AppService get appService => getIt<AppService>();
 FavoriteService get favoriteService => getIt<FavoriteService>();
 BackupService get backupService => getIt<BackupService>();
+
+/// 自定义站点入口管理服务
+SiteStore get siteStore => getIt<SiteStore>();
 
 /// 统一媒体消费历史与断点续播服务
 PlayHistoryService get playHistoryService => getIt<PlayHistoryService>();
@@ -82,5 +86,9 @@ void configureDependencies() {
       historyService: historyService,
       playHistoryService: playHistoryService,
     ));
+  }
+
+  if (!getIt.isRegistered<SiteStore>()) {
+    getIt.registerSingleton<SiteStore>(SiteStore());
   }
 }

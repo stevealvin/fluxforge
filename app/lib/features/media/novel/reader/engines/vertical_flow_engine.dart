@@ -74,21 +74,10 @@ class VerticalFlowEngine {
     return !failed.contains(last + 1);
   }
 
-  /// 前插章节后的滚动偏移补偿
-  ///
-  /// 前插会把既有内容整体下移 [insertedHeight]，为保持用户当前看到的正文位置不动，
-  /// 需把偏移量同量右移后再 clamp 到可滚动范围。
-  ///
-  /// 返回 null 表示**不应跳转**：新块尚未布局完成（高度未知或为 0）时若照常偏移，
-  /// 画面会瞬间跳变。
-  static double? compensateOffsetAfterPrepend({
-    required double beforeOffset,
-    required double insertedHeight,
-    required double maxScrollExtent,
-  }) {
-    if (insertedHeight <= 0) return null;
-    return (beforeOffset + insertedHeight).clamp(0.0, maxScrollExtent);
-  }
+  // 注：原 `compensateOffsetAfterPrepend`（前插后按实测高度补偿偏移）已删除。
+  // 长卷改为 `CustomScrollView.center` 锚点结构后，向上方向的坐标独立于锚点，
+  // 前插内容不会移动既有内容的布局坐标，因此**不再需要任何偏移补偿** ——
+  // 旧的「先布局、下一帧量高度、再 jumpTo」方案必然产生一帧错位画面。
 }
 
 /// 纵向长卷的续载意图

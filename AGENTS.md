@@ -20,6 +20,20 @@ npm run build:server  # 仅编译后端 TypeScript 服务
 npm run start         # 启动后端生产服务
 ```
 
+### 移动端（`app/`，Flutter）
+
+```bash
+cd app
+flutter analyze                                        # 静态分析（CI 门禁第 1 关）
+dart run tool/guardrails/check_architecture.dart       # 架构门禁（CI 门禁第 2 关）
+dart run tool/guardrails/check_architecture.dart --update  # 重构后刷新存量白名单
+flutter test                                           # 单元 + 组件测试（CI 门禁第 3 关）
+```
+
+架构门禁三条硬性规则：`lib/domain/**` 零 Flutter 依赖、`lib/shared/**` 不得反向依赖
+`lib/features/**`、`lib/` 下 UI 文件不超过 300 行（存量债见 `app/tool/guardrails/baseline.txt`）。
+CI 工作流见 `.github/workflows/app-quality.yml`。
+
 ## Stack & toolchain
 
 - **Monorepo**: npm workspaces (`web`, `server`)

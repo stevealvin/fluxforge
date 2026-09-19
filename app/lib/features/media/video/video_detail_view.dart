@@ -4,8 +4,10 @@ import 'package:ionicons/ionicons.dart';
 import 'package:extended_image/extended_image.dart';
 
 import 'package:fluxforge/app/theme/app_colors.dart';
+import 'package:fluxforge/app/router/app_navigator.dart';
 import 'package:fluxforge/domain/rule/rule.dart';
 import 'package:fluxforge/data/settings/app_service.dart';
+import 'package:fluxforge/data/download/download_service.dart';
 import 'package:fluxforge/app/di/di.dart';
 import 'package:fluxforge/data/library/play_history_service.dart';
 import 'package:fluxforge/shared/widgets/app_card.dart';
@@ -668,6 +670,41 @@ class _VideoDetailViewState extends State<VideoDetailView> {
               ),
               Row(
                 children: [
+                  // 整部离线下载：复用统一下载任务体系，产物落 videos/<bookId>/
+                  // 状态用 ValueListenableBuilder 跟随任务变化（下载中 / 已完成 / 未下载）
+                  ValueListenableBuilder<List<DownloadTask>>(
+                    valueListenable: downloadService.tasksNotifier,
+                    builder: (context, tasks, _) {
+                      final taskIndex =
+                          tasks.indexWhere((t) => t.id == widget.data.url);
+                      final task =
+                          taskIndex >= 0 ? tasks[taskIndex] : null;
+                      final isDownloaded = task != null && task.isFinished;
+                      final isDownloading = task != null && task.isActive;
+
+                      return IconButton(
+                        tooltip: isDownloaded
+                            ? '本部剧集已下载，可断网观看'
+                            : (isDownloading ? '下载中，点击查看进度' : '下载本部剧集'),
+                        icon: Icon(
+                          isDownloaded
+                              ? Ionicons.cloudDoneOutline
+                              : Ionicons.cloudDownloadOutline,
+                          size: 16,
+                          color: isDownloaded || isDownloading
+                              ? AppColors.primary
+                              : (isDark
+                                  ? AppColors.darkTextSecondary
+                                  : AppColors.lightTextSecondary),
+                        ),
+                        visualDensity: VisualDensity.compact,
+                        onPressed: isDownloading
+                            ? () => context.pushDownloads()
+                            : () => _startVideoDownload(episodes),
+                      );
+                    },
+                  ),
+
                   // 正序 / 倒序切换按钮
                   IconButton(
                     tooltip: _isReversed ? '切换为正序' : '切换为倒序',
@@ -708,9 +745,9 @@ class _VideoDetailViewState extends State<VideoDetailView> {
         ),
         const SizedBox(height: 10),
 
-        // 3. 商业级单行横向快速选集滑动条 (高度 46px，即点即播，选中态翠绿高光微阴影)
+        // 3. 商业级单行横向快速选集滑动条 (紧凑高度 38px，即点即播，选中态翠绿高光微阴影)
         SizedBox(
-          height: 46,
+          height: 38,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 16.0),
@@ -726,8 +763,8 @@ class _VideoDetailViewState extends State<VideoDetailView> {
                 onTap: () => _playEpisode(realIndex),
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 180),
-                  constraints: const BoxConstraints(minWidth: 54),
-                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                  constraints: const BoxConstraints(minWidth: 46),
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
                   decoration: BoxDecoration(
                     color: isCurrent
                         ? AppColors.primary
@@ -754,13 +791,13 @@ class _VideoDetailViewState extends State<VideoDetailView> {
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       if (isCurrent) ...[
-                        const Icon(Ionicons.playOutline, size: 10, color: Colors.white),
-                        const SizedBox(width: 5),
+                        const Icon(Ionicons.playOutline, size: 9, color: Colors.white),
+                        const SizedBox(width: 4),
                       ],
                       Text(
                         item.title,
                         style: TextStyle(
-                          fontSize: 12.5,
+                          fontSize: 12,
                           fontWeight: isCurrent ? FontWeight.bold : FontWeight.w500,
                           color: isCurrent
                               ? Colors.white
@@ -775,6 +812,44 @@ class _VideoDetailViewState extends State<VideoDetailView> {
           ),
         ),
       ],
+    );
+  }
+
+  /// 把本部剧集加入离线下载队列
+  ///
+  /// 复用统一的下载任务体系（与小说 / 漫画同一份任务记录与下载管理页），
+  /// 每一集都会经过 FFmpeg 转封装为 MP4 后落到沙盒。
+  Future<void> _startVideoDownload(List<MediaEpisode> episodes) async {
+    final rule = widget.rule;
+    if (rule == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('未绑定解析规则，无法离线下载')),
+      );
+      return;
+    }
+
+    final bookId = widget.data.url.trim();
+    if (bookId.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('当前剧集缺少唯一标识，无法离线下载')),
+      );
+      return;
+    }
+
+    await downloadService.startVideoDownload(
+      rule: rule,
+      bookId: bookId,
+      title: widget.data.title,
+      cover: widget.data.cover,
+      episodes: episodes,
+    );
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          '已加入下载队列（${episodes.length} 集），可在「我的 · 下载管理」查看进度',
+        ),
+      ),
     );
   }
 

@@ -40,7 +40,7 @@ class PlayerSpeedChip extends StatelessWidget {
           ),
           alignment: Alignment.center,
           child: Text(
-            '${speed.toInt()}x 快进',
+            '${speed.toInt()}X 快进',
             style: TextStyle(
               fontSize: 11.5,
               fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
@@ -353,6 +353,78 @@ class PlayerBottomMiniProgress extends StatelessWidget {
                 valueColor: const AlwaysStoppedAnimation<Color>(AppColors.primary),
               );
             },
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 全屏浮动锁屏按钮
+///
+/// 外层为 [Positioned]，需置于 `Stack` 内使用；垂直居中，左边缘与底栏进度条对齐。
+/// 「是否参与渲染」（仅全屏）与「当前是否应显示」由调用方决定后传入（见上层守卫），
+/// 组件内部只负责 240ms 淡出 + 缩放动画与点击回调。
+class PlayerLockButton extends StatelessWidget {
+  const PlayerLockButton({
+    super.key,
+    required this.visible,
+    required this.isLocked,
+    required this.left,
+    required this.onToggle,
+  });
+
+  /// 当前是否应显示（未锁定态跟随控制栏、锁定态由锁图标独立计时器决定）
+  final bool visible;
+
+  /// 是否已上锁（决定展示闭合 / 开启两种锁图标）
+  final bool isLocked;
+
+  /// 与底栏进度条对齐的左边缘基准位置
+  final double left;
+
+  /// 切换锁定 / 解锁
+  final VoidCallback onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned(
+      left: left,
+      top: 0,
+      bottom: 0,
+      child: Center(
+        child: IgnorePointer(
+          ignoring: !visible,
+          child: AnimatedOpacity(
+            opacity: visible ? 1.0 : 0.0,
+            duration: const Duration(milliseconds: 240),
+            curve: Curves.easeOutCubic,
+            child: AnimatedScale(
+              scale: visible ? 1.0 : 0.82,
+              duration: const Duration(milliseconds: 240),
+              curve: Curves.easeOutCubic,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: onToggle,
+                child: Container(
+                  width: 38,
+                  height: 38,
+                  alignment: Alignment.centerLeft, // 图标左边缘与基准线严格同轴对齐
+                  child: Icon(
+                    isLocked ? Ionicons.lockClosedOutline : Ionicons.lockOpenOutline,
+                    color: Colors.white, // 关闭锁定状态去掉颜色，保持纯白通透质感
+                    size: 24,
+                    shadows: const [
+                      Shadow(
+                        color: Colors.black87,
+                        blurRadius: 8,
+                        offset: Offset(0, 1),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
           ),
         ),
       ),

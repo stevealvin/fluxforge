@@ -1,78 +1,25 @@
 import 'dart:async';
-import 'package:material_ui/material_ui.dart';
-import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
-import 'package:fluxforge/app/router/app_navigator.dart';
-import 'package:ionicons/ionicons.dart';
+import 'package:material_ui/material_ui.dart';
 
+import 'package:fluxforge/app/di/di.dart';
+import 'package:fluxforge/app/router/app_navigator.dart';
 import 'package:fluxforge/app/theme/app_colors.dart';
 import 'package:fluxforge/domain/rule/rule.dart';
-import 'package:fluxforge/app/di/di.dart';
-import 'package:fluxforge/core/sandbox/rule_engine.dart';
-import 'package:fluxforge/shared/widgets/app_card.dart';
-import 'package:fluxforge/shared/widgets/app_button.dart';
-import 'package:fluxforge/shared/widgets/app_empty_state.dart';
-import 'package:fluxforge/shared/widgets/app_loading.dart';
-import 'package:fluxforge/shared/widgets/app_net_image.dart';
-
-/// 单个源规则的检索状态
-class _RuleSearchStatus {
-  final Rule rule;
-  bool isSearching;
-  bool hasError = false;
-  String? errorMessage;
-  int count = 0;
-  /// 标记该规则源是否还有下一页数据，严禁无更多时无休止上滑加载
-  bool hasMore = true;
-
-  _RuleSearchStatus({
-    required this.rule,
-    this.isSearching = true,
-  });
-}
-
-/// 规范化后的跨源检索结果条目
-class _NormalizedSearchResult {
-  final String title;
-  final String url;
-  final String cover;
-  final String desc;
-  final String? badge;
-  final List<String>? tags;
-  final Rule rule;
-  final String baseUrl;
-  final Map<String, dynamic> raw;
-
-  _NormalizedSearchResult({
-    required this.title,
-    required this.url,
-    required this.cover,
-    required this.desc,
-    this.badge,
-    this.tags,
-    required this.rule,
-    required this.baseUrl,
-    required this.raw,
-  });
-
-  factory _NormalizedSearchResult.fromMap(Map<dynamic, dynamic> map, Rule rule) {
-    return _NormalizedSearchResult(
-      title: map['title']?.toString() ?? '未知内容',
-      url: map['url']?.toString() ?? '',
-      cover: map['cover']?.toString() ?? '',
-      desc: map['desc']?.toString() ?? '',
-      badge: map['badge']?.toString(),
-      tags: map['tags'] is List
-          ? (map['tags'] as List).map((e) => e.toString()).toList()
-          : null,
-      rule: rule,
-      baseUrl: rule.baseUrl,
-      raw: map.map((k, v) => MapEntry(k.toString(), v)),
-    );
-  }
-}
+import 'package:fluxforge/features/search/controllers/search_session.dart';
+import 'package:fluxforge/features/search/engines/search_aggregator.dart';
+import 'package:fluxforge/features/search/models/search_result.dart';
+import 'package:fluxforge/features/search/widgets/search_app_bar.dart';
+import 'package:fluxforge/features/search/widgets/search_history_panel.dart';
+import 'package:fluxforge/features/search/widgets/search_results_view.dart';
+import 'package:fluxforge/features/search/widgets/search_source_filter_bar.dart';
 
 /// 全局跨媒体多源并发聚合搜索页面
+///
+/// 页面只负责「输入交互 + 页面装配」：
+/// - 检索状态与并发调度全部下沉到 [SearchSession]；
+/// - 聚合策略见 [SearchAggregator]；
+/// - 各视图（搜索栏、源筛选、历史面板、结果区）见 `widgets/`。
 class SearchPage extends StatefulWidget {
   final String? initialKeyword;
   final Rule? targetRule;
@@ -92,26 +39,8 @@ class _SearchPageState extends State<SearchPage> {
   final FocusNode _focusNode = FocusNode();
   final ScrollController _scrollController = ScrollController();
 
-  /// 搜索轮次 Epoch，用于并发请求时丢弃已过期的上一轮结果
-  int _searchEpoch = 0;
-
-  /// 全局并发搜索加载中
-  bool _loading = false;
-
-  /// 分页加载更多中
-  bool _loadingMore = false;
-
-  /// 当前搜索关键词
-  String _currentQuery = '';
-
-  /// 全源聚合结果集
-  final List<_NormalizedSearchResult> _allResults = [];
-
-  /// 规则状态字典：Key 为规则唯一标识 (id 或 name)
-  final Map<String, _RuleSearchStatus> _ruleStatusMap = {};
-
-  /// 当前选中的筛选源规则（null 代表全部源）
-  Rule? _selectedRuleFilter;
+  /// 检索会话（全部可变检索状态由它持有）
+  late final SearchSession _session;
 
   /// 视图模式：true 为双列瀑布流海报网格，false 为紧凑卡片列表
   bool _isGridView = false;
@@ -122,9 +51,6 @@ class _SearchPageState extends State<SearchPage> {
   /// 是否展示历史/推荐面板
   bool _showHistory = true;
 
-  /// 分页游标：记录每个规则当前已加载的页码
-  final Map<String, int> _rulePageMap = {};
-
   /// 推荐热门探测词
   static const List<String> _hotSuggestions = [
     '电影', '番剧', '动漫', '电视剧', '科幻', '悬疑', '动作', '经典',
@@ -134,6 +60,10 @@ class _SearchPageState extends State<SearchPage> {
   void initState() {
     super.initState();
     _historyList = historyService.searchHistory.toList();
+
+    _session = SearchSession(resolveRules: _getEligibleRules)
+      ..selectedRule = widget.targetRule
+      ..addListener(_onSessionChanged);
 
     _scrollController.addListener(_onScroll);
     ruleService.rulesNotifier.addListener(_onRulesChanged);
@@ -147,10 +77,24 @@ class _SearchPageState extends State<SearchPage> {
         _performSearch(_controller.text);
       });
     }
+  }
 
-    if (widget.targetRule != null) {
-      _selectedRuleFilter = widget.targetRule;
-    }
+  @override
+  void dispose() {
+    historyService.searchHistoryNotifier.removeListener(_onHistoryChanged);
+    ruleService.rulesNotifier.removeListener(_onRulesChanged);
+    _focusNode.removeListener(_onFocusChanged);
+    _session
+      ..removeListener(_onSessionChanged)
+      ..dispose();
+    _controller.dispose();
+    _focusNode.dispose();
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _onSessionChanged() {
+    if (mounted) setState(() {});
   }
 
   void _onRulesChanged() {
@@ -171,32 +115,15 @@ class _SearchPageState extends State<SearchPage> {
     if (mounted) setState(() {});
   }
 
-  @override
-  void dispose() {
-    historyService.searchHistoryNotifier.removeListener(_onHistoryChanged);
-    ruleService.rulesNotifier.removeListener(_onRulesChanged);
-    _focusNode.removeListener(_onFocusChanged);
-    _controller.dispose();
-    _focusNode.dispose();
-    _scrollController.dispose();
-    super.dispose();
-  }
-
-  /// 判断当前筛选模式下是否还有更多页数据可供加载 (单源模式看单源，全源模式看是否存在任意有更多的源)
-  bool get _hasMoreCurrent {
-    if (_selectedRuleFilter != null) {
-      final key = _getRuleKey(_selectedRuleFilter);
-      return _ruleStatusMap[key]?.hasMore ?? false;
-    }
-    // 全网并发模式：只要有任意一个规则源仍有更多数据，即允许继续分页
-    return _ruleStatusMap.values.any((s) => s.hasMore);
-  }
-
   void _onScroll() {
     if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 200) {
-      // 核心硬性守卫：当 _hasMoreCurrent 为 false 时，彻底禁止触发上滑加载，防止无限空轮询
-      if (!_loading && !_loadingMore && !_showHistory && _allResults.isNotEmpty && _hasMoreCurrent) {
-        _loadMoreResults();
+      // 核心硬性守卫：当无更多数据时，彻底禁止触发上滑加载，防止无限空轮询
+      if (!_session.loading &&
+          !_session.loadingMore &&
+          !_showHistory &&
+          _session.allResults.isNotEmpty &&
+          _session.hasMore) {
+        unawaited(_loadMoreResults());
       }
     }
   }
@@ -211,23 +138,6 @@ class _SearchPageState extends State<SearchPage> {
     historyService.clearHistory();
   }
 
-  /// 安全获取规则唯一标识 Key（防御 int/String/null 等各种数据源类型，杜绝 NoSuchMethodError）
-  static String _getRuleKey(Rule? rule) {
-    if (rule == null) return '';
-    final idVal = rule.id;
-    if (idVal != null) {
-      final idStr = idVal.toString().trim();
-      if (idStr.isNotEmpty) return idStr;
-    }
-    return rule.name.trim();
-  }
-
-  /// 判断两个规则是否为同一个源
-  static bool _isSameRule(Rule? a, Rule? b) {
-    if (a == null || b == null) return a == b;
-    return _getRuleKey(a) == _getRuleKey(b);
-  }
-
   /// 获取当前有效的检索规则列表
   List<Rule> _getEligibleRules() {
     if (widget.targetRule != null) {
@@ -236,22 +146,10 @@ class _SearchPageState extends State<SearchPage> {
     return ruleService.rules.where((r) => r.enabled).toList();
   }
 
-  /// 手动中止正在进行的跨源并发检索 (开源阅读同款 Stop 机制)
-  void _cancelSearch() {
-    if (!_loading) return;
-    setState(() {
-      _searchEpoch++;
-      _loading = false;
-      // 将剩余尚未完成的规则源标记为已停止
-      for (final status in _ruleStatusMap.values) {
-        if (status.isSearching) {
-          status.isSearching = false;
-        }
-      }
-    });
-  }
+  /// 设置项中的请求超时（首页聚合检索收窄上限，避免单个死链源拖垮全局）
+  int get _searchTimeout => appService.settingsNotifier.value.requestTimeoutSeconds.clamp(5, 12);
 
-  /// 发起全局多源并发流式检索 (类开源阅读并发聚合模型)
+  /// 发起全局多源并发流式检索
   Future<void> _performSearch(String text) async {
     final query = text.trim();
     if (query.isEmpty) {
@@ -267,8 +165,7 @@ class _SearchPageState extends State<SearchPage> {
     _focusNode.unfocus();
 
     // 前置校验：若当前无可用规则，立即提示并引导去市场导入，避免清空界面导致用户困惑
-    final targetRules = _getEligibleRules();
-    if (targetRules.isEmpty) {
+    if (_getEligibleRules().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: const Text('暂无可用的规则源，请先在规则市场中导入并启用规则'),
@@ -281,205 +178,25 @@ class _SearchPageState extends State<SearchPage> {
       return;
     }
 
-    final thisEpoch = ++_searchEpoch;
-
-    // 关键修复 1：全网搜索模式下必须无条件重置选中的源胶囊为 null (全部)，
-    // 彻底杜绝因残留源筛选将新检索出来的其他源条目全部过滤为空、从而引发“一直显示加载动画”的严重假死缺陷！
+    // 关键修复：全网搜索模式下必须无条件重置选中的源胶囊为「全部」，
+    // 彻底杜绝因残留源筛选将新检索出的其他源条目全部过滤为空、
+    // 从而引发「一直显示加载动画」的严重假死缺陷
+    if (widget.targetRule == null) {
+      _session.selectRule(null);
+    }
     setState(() {
-      _currentQuery = query;
       _showHistory = false;
-      _loading = true;
-      _allResults.clear();
-      _ruleStatusMap.clear();
-      _rulePageMap.clear();
-      if (widget.targetRule == null) {
-        _selectedRuleFilter = null;
-      }
-
-      // 初始化各源检索状态（统一使用安全 Key 提取，防御 int 类型主键崩溃）
-      for (final rule in targetRules) {
-        final key = _getRuleKey(rule);
-        _ruleStatusMap[key] = _RuleSearchStatus(rule: rule, isSearching: true);
-        _rulePageMap[key] = 1;
-      }
     });
 
-    // 关键修复 2：异步持久化搜索历史记录
+    // 异步持久化搜索历史记录
     unawaited(historyService.addHistory(query));
 
-    // 让出主事件队列确保 UI 能够先平滑渲染顶部进度条与流式准备态
-    await Future<void>.delayed(const Duration(milliseconds: 30));
-    if (!mounted || _searchEpoch != thisEpoch) return;
-
-    // 关键架构升级：受控并发池并发调度 (开源阅读同款流式调度架构)
-    // 默认并发 3~4 个沙箱任务，单源超时收窄至合理范围，杜绝单个死链源阻塞全局
-    const int maxConcurrent = 3;
-    final int timeoutSec = appService.settingsNotifier.value.requestTimeoutSeconds.clamp(5, 12);
-
-    Future<void> runRuleSearch(Rule rule) async {
-      if (!mounted || _searchEpoch != thisEpoch) return;
-      final key = _getRuleKey(rule);
-
-      try {
-        final raw = await RuleEngine.search(rule, query, page: 1, timeoutSeconds: timeoutSec)
-            .timeout(Duration(seconds: timeoutSec + 1));
-
-        if (!mounted || _searchEpoch != thisEpoch) return;
-
-        final List items = raw is List
-            ? raw
-            : (raw is Map && raw['items'] is List ? raw['items'] as List : const []);
-
-        final List<_NormalizedSearchResult> parsed = [];
-        for (final item in items) {
-          if (item is Map) {
-            parsed.add(_NormalizedSearchResult.fromMap(item, rule));
-          }
-        }
-
-        // 严格遵循规则引擎契约：提取规则返回的 hasMore 状态（若未显式提供，以当前条目非空作为启发式兜底）
-        final bool ruleHasMore = (raw is Map && raw.containsKey('hasMore'))
-            ? (raw['hasMore'] == true)
-            : items.isNotEmpty;
-
-        // 单源只要搜到数据，即刻流式更新到界面，用户无需等待全部源跑完即可立刻浏览！
-        if (mounted && _searchEpoch == thisEpoch) {
-          setState(() {
-            _allResults.addAll(parsed);
-            final status = _ruleStatusMap[key];
-            if (status != null) {
-              status.isSearching = false;
-              status.count = parsed.length;
-              status.hasMore = ruleHasMore;
-            }
-          });
-        }
-      } catch (e) {
-        debugPrint('【流式搜索】源 [${rule.name}] 检索异常: $e');
-        if (mounted && _searchEpoch == thisEpoch) {
-          setState(() {
-            final status = _ruleStatusMap[key];
-            if (status != null) {
-              status.isSearching = false;
-              status.hasError = true;
-              status.errorMessage = e.toString();
-              // 出错源直接封禁分页加载，避免无限重试报错
-              status.hasMore = false;
-            }
-          });
-        }
-      }
-    }
-
-    // 启动多 Worker 并发队列流式拉取
-    final iterator = targetRules.iterator;
-    Future<void> worker() async {
-      while (iterator.moveNext()) {
-        if (!mounted || _searchEpoch != thisEpoch) break;
-        final rule = iterator.current;
-        await runRuleSearch(rule);
-      }
-    }
-
-    final workerCount = targetRules.length < maxConcurrent ? targetRules.length : maxConcurrent;
-    final workers = List.generate(workerCount, (_) => worker());
-
-    await Future.wait(workers);
-
-    if (mounted && _searchEpoch == thisEpoch) {
-      setState(() {
-        _loading = false;
-      });
-    }
+    await _session.search(query, timeoutSeconds: _searchTimeout);
   }
 
-  /// 加载下一页数据
-  Future<void> _loadMoreResults() async {
-    // 若正在加载、关键词为空或当前筛选范围已无更多数据，直接拦截，严禁发起无谓请求
-    if (_loadingMore || _currentQuery.isEmpty || !_hasMoreCurrent) return;
-
-    final thisEpoch = _searchEpoch;
-    final targetRules = _selectedRuleFilter != null
-        ? [_selectedRuleFilter!]
-        : _getEligibleRules();
-
-    // 关键过滤：仅对尚未用尽分页数据的规则源发起下一页请求
-    final eligibleRules = targetRules.where((r) {
-      final key = _getRuleKey(r);
-      final status = _ruleStatusMap[key];
-      return status != null && status.hasMore;
-    }).toList();
-
-    if (eligibleRules.isEmpty) return;
-
-    setState(() {
-      _loadingMore = true;
-    });
-
-    // 关键优化：让出主事件队列保证"加载更多"底部指示器先渲染完成，使用微延时替代易死锁挂起的 endOfFrame
-    await Future<void>.delayed(const Duration(milliseconds: 30));
-    if (!mounted) return;
-
-    for (final rule in eligibleRules) {
-      if (!mounted || _searchEpoch != thisEpoch) break;
-      final key = _getRuleKey(rule);
-      final nextPage = (_rulePageMap[key] ?? 1) + 1;
-
-      try {
-        final timeoutSec = appService.settingsNotifier.value.requestTimeoutSeconds;
-        final raw = await RuleEngine.search(rule, _currentQuery, page: nextPage, timeoutSeconds: timeoutSec)
-            .timeout(Duration(seconds: timeoutSec + 2));
-        if (!mounted || _searchEpoch != thisEpoch) break;
-
-        final List items = raw is List
-            ? raw
-            : (raw is Map && raw['items'] is List ? raw['items'] as List : const []);
-
-        // 提取该规则本页返回的 hasMore 标识（未指定时，以是否返回了条目智能兜底：空列表则判定彻底无更多）
-        final bool ruleHasMore = (raw is Map && raw.containsKey('hasMore'))
-            ? (raw['hasMore'] == true)
-            : items.isNotEmpty;
-
-        final List<_NormalizedSearchResult> parsed = [];
-        for (final item in items) {
-          if (item is Map) {
-            parsed.add(_NormalizedSearchResult.fromMap(item, rule));
-          }
-        }
-
-        if (mounted && _searchEpoch == thisEpoch) {
-          setState(() {
-            if (parsed.isNotEmpty) {
-              _allResults.addAll(parsed);
-              _rulePageMap[key] = nextPage;
-            }
-            final status = _ruleStatusMap[key];
-            if (status != null) {
-              status.count += parsed.length;
-              status.hasMore = ruleHasMore;
-            }
-          });
-        }
-      } catch (e) {
-        debugPrint('【搜索分页】源 [${rule.name}] 第 $nextPage 页加载失败: $e');
-        if (mounted && _searchEpoch == thisEpoch) {
-          setState(() {
-            final status = _ruleStatusMap[key];
-            if (status != null) {
-              // 分页异常时标记此源结束，防止因单源异常死循环触发上滑
-              status.hasMore = false;
-            }
-          });
-        }
-      }
-    }
-
-    if (mounted && _searchEpoch == thisEpoch) {
-      setState(() {
-        _loadingMore = false;
-      });
-    }
-  }
+  /// 上滑加载下一页
+  Future<void> _loadMoreResults() =>
+      _session.loadMore(timeoutSeconds: appService.settingsNotifier.value.requestTimeoutSeconds);
 
   /// 页面返回逻辑处理
   void _handleBack() {
@@ -487,29 +204,19 @@ class _SearchPageState extends State<SearchPage> {
       context.pop();
     } else {
       setState(() {
-        _allResults.clear();
-        _loading = false;
-        _loadingMore = false;
         _showHistory = true;
-        _selectedRuleFilter = widget.targetRule;
       });
+      // 先清空结果（内部会中止在途检索），再复位筛选源；
+      // 必须走 selectRule 而非直接赋值，否则该字段不会触发重建
+      _session.clearResults();
+      _session.selectRule(widget.targetRule);
     }
-  }
-
-  /// 获取经过源过滤后的最终展示列表
-  List<_NormalizedSearchResult> get _displayResults {
-    if (_selectedRuleFilter == null) {
-      return _allResults;
-    }
-    final targetKey = _getRuleKey(_selectedRuleFilter);
-    return _allResults.where((r) {
-      return _getRuleKey(r.rule) == targetKey;
-    }).toList();
   }
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final statusMap = _session.statusMap;
 
     return PopScope(
       canPop: false,
@@ -519,1133 +226,98 @@ class _SearchPageState extends State<SearchPage> {
         }
       },
       child: Scaffold(
-        appBar: _buildSearchBar(isDark),
+        appBar: SearchAppBar(
+          isDark: isDark,
+          controller: _controller,
+          focusNode: _focusNode,
+          autofocus: widget.initialKeyword == null,
+          hintText: widget.targetRule != null
+              ? '在「${widget.targetRule!.name}」中搜索...'
+              : '搜索海量影视、番剧、小说...',
+          isLoading: _session.loading,
+          onBack: _handleBack,
+          onClear: () {
+            _controller.clear();
+            setState(() {
+              _showHistory = true;
+            });
+            _session.clearResults();
+          },
+          onChanged: (_) => setState(() {}),
+          onSubmitted: _performSearch,
+          onCancel: _session.cancel,
+        ),
         body: Column(
           children: [
             // 搜索进度指示条 (并发检索中展示，显示已完成规则比例)
-            if (_loading)
+            if (_session.loading)
               LinearProgressIndicator(
-                value: _ruleStatusMap.isNotEmpty
-                    ? (_ruleStatusMap.values.where((s) => !s.isSearching).length / _ruleStatusMap.length).clamp(0.0, 1.0)
-                    : null,
+                value: statusMap.isEmpty ? null : SearchAggregator.finishedRatio(statusMap),
                 minHeight: 2.5,
                 color: AppColors.primary,
                 backgroundColor: AppColors.primary.withValues(alpha: 0.12),
               ),
 
             // 源筛选胶囊栏 (仅在聚合多源检索且源数大于1时呈现，单源模式隐藏以保持界面清爽)
-            if (!_showHistory && _ruleStatusMap.length > 1)
-              _buildSourceFilterBar(isDark),
+            if (!_showHistory && statusMap.length > 1)
+              SearchSourceFilterBar(
+                isDark: isDark,
+                statuses: statusMap.values.toList(growable: false),
+                totalCount: _session.allResults.length,
+                displayCount: _session.displayResults.length,
+                selectedRule: _session.selectedRule,
+                isLoading: _session.loading,
+                isGridView: _isGridView,
+                onRuleSelected: _session.selectRule,
+                onToggleView: (value) {
+                  setState(() {
+                    _isGridView = value;
+                  });
+                },
+              ),
 
             // 主内容区域：历史/推荐面板或聚合结果
             Expanded(
               child: _showHistory
-                  ? _buildHistoryAndSuggestionsView(isDark)
-                  : _buildResultsView(isDark),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// 顶部搜索栏与操作区
-  PreferredSizeWidget _buildSearchBar(bool isDark) {
-    return AppBar(
-      automaticallyImplyLeading: false,
-      centerTitle: false,
-      titleSpacing: 0,
-      title: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        child: Row(
-          children: [
-            IconButton(
-              icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
-              onPressed: _handleBack,
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-              tooltip: '返回',
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Container(
-                height: 38,
-                decoration: BoxDecoration(
-                  color: isDark ? AppColors.darkCard : AppColors.lightSurface,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(
-                    color: _focusNode.hasFocus
-                        ? AppColors.primary
-                        : (isDark ? AppColors.darkBorder : AppColors.lightBorder),
-                    width: _focusNode.hasFocus ? 1.2 : 0.8,
-                  ),
-                ),
-                child: TextField(
-                  controller: _controller,
-                  focusNode: _focusNode,
-                  autofocus: widget.initialKeyword == null,
-                  textInputAction: TextInputAction.search,
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
-                  ),
-                  decoration: InputDecoration(
-                    hintText: widget.targetRule != null
-                        ? '在「${widget.targetRule!.name}」中搜索...'
-                        : '搜索海量影视、番剧、小说...',
-                    hintStyle: TextStyle(
-                      fontSize: 13,
-                      color: isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted,
-                    ),
-                    prefixIconConstraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-                    prefixIcon: const Icon(
-                      Icons.search_rounded,
-                      size: 18,
-                      color: AppColors.primary,
-                    ),
-                    suffixIconConstraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                    suffixIcon: _controller.text.isNotEmpty
-                        ? GestureDetector(
-                            behavior: HitTestBehavior.opaque,
-                            onTap: () {
-                              _controller.clear();
-                              setState(() {
-                                _showHistory = true;
-                                _allResults.clear();
-                              });
-                            },
-                            child: const Padding(
-                              padding: EdgeInsets.symmetric(horizontal: 8),
-                              child: Icon(Icons.clear_rounded, size: 16),
-                            ),
-                          )
-                        : null,
-                    isDense: true,
-                    contentPadding: const EdgeInsets.symmetric(vertical: 8),
-                    // 彻底清除内层所有边框与背景继承，杜绝内外双重圆角嵌套叠加的 UI 缺陷
-                    border: InputBorder.none,
-                    enabledBorder: InputBorder.none,
-                    focusedBorder: InputBorder.none,
-                    disabledBorder: InputBorder.none,
-                    errorBorder: InputBorder.none,
-                    focusedErrorBorder: InputBorder.none,
-                    filled: false,
-                    fillColor: Colors.transparent,
-                  ),
-                  onChanged: (val) {
-                    setState(() {});
-                  },
-                  onSubmitted: (val) => _performSearch(val),
-                ),
-              ),
-            ),
-            const SizedBox(width: 10),
-            AppButton.compact(
-              label: _loading ? '停止' : '搜索',
-              color: _loading ? Colors.redAccent.withValues(alpha: 0.85) : null,
-              onPressed: _loading ? _cancelSearch : () => _performSearch(_controller.text),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// 来源规则过滤横向滑动胶囊栏
-  Widget _buildSourceFilterBar(bool isDark) {
-    final totalCount = _allResults.length;
-    final activeSearchingCount = _ruleStatusMap.values.where((s) => s.isSearching).length;
-
-    return Container(
-      width: double.infinity,
-      decoration: BoxDecoration(
-        color: isDark ? AppColors.darkBg : Colors.white,
-        border: Border(
-          bottom: BorderSide(
-            color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
-            width: 0.5,
-          ),
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            child: Row(
-              children: [
-                // “全部”源胶囊
-                FilterChip(
-                  label: Text('全部 ($totalCount)'),
-                  selected: _selectedRuleFilter == null,
-                  onSelected: (selected) {
-                    setState(() {
-                      _selectedRuleFilter = null;
-                    });
-                  },
-                  showCheckmark: false,
-                  avatar: activeSearchingCount > 0
-                      ? const LoadingIndicator.compact(size: 12, strokeWidth: 1.5)
-                      : null,
-                  selectedColor: AppColors.primary.withValues(alpha: 0.16),
-                  checkmarkColor: AppColors.primary,
-                  labelStyle: TextStyle(
-                    fontSize: 12,
-                    fontWeight: _selectedRuleFilter == null ? FontWeight.bold : FontWeight.normal,
-                    color: _selectedRuleFilter == null
-                        ? AppColors.primary
-                        : (isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary),
-                  ),
-                  side: BorderSide(
-                    color: _selectedRuleFilter == null
-                        ? AppColors.primary.withValues(alpha: 0.5)
-                        : (isDark ? AppColors.darkBorder : AppColors.lightBorder),
-                  ),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                ),
-                const SizedBox(width: 8),
-
-                // 各规则单独胶囊
-                ..._ruleStatusMap.values.map((status) {
-                  final isSelected = _isSameRule(_selectedRuleFilter, status.rule);
-                  final ruleName = status.rule.name;
-
-                  return Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: FilterChip(
-                      selected: isSelected,
-                      onSelected: (selected) {
-                        setState(() {
-                          _selectedRuleFilter = selected ? status.rule : null;
-                        });
+                  ? SearchHistoryPanel(
+                      isDark: isDark,
+                      hasActiveRules: _getEligibleRules().isNotEmpty,
+                      historyList: _historyList,
+                      hotSuggestions: _hotSuggestions,
+                      onPick: (text) {
+                        _controller.text = text;
+                        _performSearch(text);
                       },
-                      showCheckmark: false,
-                      avatar: status.isSearching
-                          ? const LoadingIndicator.compact(size: 12, strokeWidth: 1.5)
-                          : status.hasError
-                              ? const Icon(Icons.error_outline_rounded, size: 14, color: Colors.orangeAccent)
-                              : null,
-                      label: Text(
-                        status.hasError
-                            ? '$ruleName (异常)'
-                            : '$ruleName (${status.count})',
-                      ),
-                      selectedColor: AppColors.primary.withValues(alpha: 0.16),
-                      labelStyle: TextStyle(
-                        fontSize: 12,
-                        fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                        color: isSelected
-                            ? AppColors.primary
-                            : (isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary),
-                      ),
-                      side: BorderSide(
-                        color: isSelected
-                            ? AppColors.primary.withValues(alpha: 0.5)
-                            : (isDark ? AppColors.darkBorder : AppColors.lightBorder),
-                      ),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                    ),
-                  );
-                }),
-              ],
-            ),
-          ),
-          // 状态提示与视图切换条
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 12, 6),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  _loading
-                      ? '正在并发检索各源数据 (剩余 $activeSearchingCount 源)...'
-                      : '已汇聚 ${_displayResults.length} 条检索结果',
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted,
-                  ),
-                ),
-                // 列表 / 双列网格视图切换按键
-                InkWell(
-                  borderRadius: BorderRadius.circular(6),
-                  onTap: () {
-                    setState(() {
-                      _isGridView = !_isGridView;
-                    });
-                  },
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    child: Row(
-                      children: [
-                        Icon(_isGridView ? Ionicons.listOutline : Ionicons.gridOutline,
-                          size: 14,
-                          color: AppColors.primary,
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          _isGridView ? '列表排版' : '双列网格',
-                          style: const TextStyle(fontSize: 11, color: AppColors.primary),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// 搜索历史与探索词面板
-  Widget _buildHistoryAndSuggestionsView(bool isDark) {
-    final activeRules = _getEligibleRules();
-
-    return ListView(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      children: [
-        // 规则状态提示卡片 (若无可用规则则引导开启)
-        if (activeRules.isEmpty) ...[
-          Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: Colors.amber.withValues(alpha: isDark ? 0.12 : 0.08),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.amber.withValues(alpha: 0.3)),
-            ),
-            child: Row(
-              children: [
-                const Icon(Icons.info_outline_rounded, color: Colors.amber, size: 20),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    '当前未启用任何解析规则，搜索将无法获取内容',
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: isDark ? Colors.amber.shade200 : Colors.amber.shade900,
-                    ),
-                  ),
-                ),
-                TextButton(
-                  onPressed: () => context.pushMarket(),
-                  style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
-                  child: const Text('去市场导入'),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-        ],
-
-        // 搜索历史模块
-        if (_historyList.isNotEmpty) ...[
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                '搜索历史',
-                style: TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.bold,
-                  color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
-                ),
-              ),
-              TextButton.icon(
-                icon: const Icon(Icons.delete_outline_rounded, size: 15),
-                label: const Text('清空历史', style: TextStyle(fontSize: 12)),
-                style: TextButton.styleFrom(
-                  foregroundColor: isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted,
-                  visualDensity: VisualDensity.compact,
-                ),
-                onPressed: _clearAllHistory,
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: _historyList.map((text) {
-              return Material(
-                color: Colors.transparent,
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(14),
-                  onTap: () {
-                    _controller.text = text;
-                    _performSearch(text);
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.fromLTRB(10, 4, 6, 4),
-                    decoration: BoxDecoration(
-                      color: isDark ? AppColors.darkCard : AppColors.lightSurface,
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(
-                        color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
-                        width: 0.8,
-                      ),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 160),
-                          child: Text(
-                            text,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 4),
-                        GestureDetector(
-                          behavior: HitTestBehavior.opaque,
-                          onTap: () {
-                            HapticFeedback.selectionClick();
-                            _removeHistoryItem(text);
-                          },
-                          child: Padding(
-                            padding: const EdgeInsets.all(2),
-                            child: Icon(
-                              Icons.close_rounded,
-                              size: 13,
-                              color: isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              );
-            }).toList(),
-          ),
-          const SizedBox(height: 24),
-        ],
-
-        // 探索灵感推荐词
-        Row(
-          children: [
-            const Icon(Ionicons.sparklesOutline, size: 16, color: AppColors.primary),
-            const SizedBox(width: 6),
-            Text(
-              '探索推荐',
-              style: TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.bold,
-                color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 10),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: _hotSuggestions.map((text) {
-            return ActionChip(
-              label: Text(
-                text,
-                style: TextStyle(
-                  fontSize: 12,
-                  color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
-                ),
-              ),
-              backgroundColor: isDark ? AppColors.darkCard : AppColors.lightSurface,
-              side: BorderSide(
-                color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
-                width: 0.8,
-              ),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-              onPressed: () {
-                _controller.text = text;
-                _performSearch(text);
-              },
-            );
-          }).toList(),
-        ),
-      ],
-    );
-  }
-
-  /// 搜索结果列表/网格视图 (开源阅读同款流式响应)
-  Widget _buildResultsView(bool isDark) {
-    final results = _displayResults;
-
-    // 正在检索且当前暂无任何源返回数据 (前数百毫秒等待态，带友好进度指示与一键停止)
-    if (results.isEmpty && _loading) {
-      final totalCount = _ruleStatusMap.length;
-      final finishedCount = _ruleStatusMap.values.where((s) => !s.isSearching).length;
-
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 32),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const LoadingIndicator.compact(size: 28, strokeWidth: 2.5),
-              const SizedBox(height: 16),
-              Text(
-                '全网流式聚合检索中...',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                  color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
-                ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                totalCount > 0
-                    ? '已调度 $totalCount 个规则沙箱 (已完成 $finishedCount 源)'
-                    : '正在调度规则沙箱...',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted,
-                ),
-              ),
-              const SizedBox(height: 16),
-              OutlinedButton.icon(
-                icon: const Icon(Icons.stop_circle_outlined, size: 16),
-                label: const Text('停止检索', style: TextStyle(fontSize: 12)),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
-                  side: BorderSide(
-                    color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
-                  ),
-                  visualDensity: VisualDensity.compact,
-                ),
-                onPressed: _cancelSearch,
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    // 检索完成但无匹配结果 (带单源异常诊断感知)
-    if (results.isEmpty && !_loading) {
-      final singleTargetRule = widget.targetRule;
-      final targetStatus = singleTargetRule != null
-          ? _ruleStatusMap[_getRuleKey(singleTargetRule)]
-          : null;
-
-      if (targetStatus != null && targetStatus.hasError) {
-        return Center(
-          child: EmptyState(
-            icon: Icons.error_outline_rounded,
-            title: '规则「${singleTargetRule!.name}」检索异常',
-            description: targetStatus.errorMessage != null && targetStatus.errorMessage!.isNotEmpty
-                ? '错误原因: ${targetStatus.errorMessage}'
-                : '目标源站点可能网络受阻或沙箱脚本解析错误，建议前往调试器查看',
-            actionText: '调试此规则',
-            onAction: () => context.pushRuleTest(singleTargetRule),
-          ),
-        );
-      }
-
-      return Center(
-        child: EmptyState(
-          icon: Ionicons.searchOutline,
-          title: '未检索到相关内容',
-          description: widget.targetRule != null
-              ? '在「${widget.targetRule!.name}」中未搜到结果，建议更换简短词汇'
-              : '建议更换简短词汇，或前往规则中心开启更多源进行聚合检索',
-          actionText: widget.targetRule != null ? '重试搜索' : '去规则市场发现',
-          onAction: () {
-            if (widget.targetRule != null) {
-              _performSearch(_controller.text);
-            } else {
-              context.pushMarket();
-            }
-          },
-        ),
-      );
-    }
-
-    return RefreshIndicator(
-      onRefresh: () => _performSearch(_currentQuery),
-      color: AppColors.primary,
-      child: _isGridView
-          ? _buildGridView(results, isDark)
-          : _buildListView(results, isDark),
-    );
-  }
-
-  /// 紧凑卡片式列表视图
-  Widget _buildListView(List<_NormalizedSearchResult> results, bool isDark) {
-    final showBottomLoader = _loading || _loadingMore;
-    final showNoMore = !showBottomLoader && !_hasMoreCurrent && results.isNotEmpty;
-    final hasFooter = showBottomLoader || showNoMore;
-
-    return ListView.separated(
-      controller: _scrollController,
-      physics: const AlwaysScrollableScrollPhysics(),
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 24),
-      itemCount: results.length + (hasFooter ? 1 : 0),
-      separatorBuilder: (_, _) => const SizedBox(height: 10),
-      itemBuilder: (context, index) {
-        if (index == results.length) {
-          return _buildSearchFooter(isDark, showBottomLoader);
-        }
-
-        final item = results[index];
-        return _buildResultCard(item, isDark);
-      },
-    );
-  }
-
-  bool _isVideoRule(Rule rule) {
-    final t = rule.type.toLowerCase().trim();
-    return t == 'video' || t == 'tv' || t == 'movie' || t == 'anime' || t == 'short' || t.isEmpty;
-  }
-
-  /// 双列瀑布流海报网格视图（升级为 CustomScrollView + SliverGrid + 通栏居中 Footer）
-  Widget _buildGridView(List<_NormalizedSearchResult> results, bool isDark) {
-    final isMostlyVideo = widget.targetRule != null
-        ? _isVideoRule(widget.targetRule!)
-        : (results.isEmpty || results.where((r) => _isVideoRule(r.rule)).length >= results.length / 2);
-    final showBottomLoader = _loading || _loadingMore;
-    final showNoMore = !showBottomLoader && !_hasMoreCurrent && results.isNotEmpty;
-    final hasFooter = showBottomLoader || showNoMore;
-
-    return CustomScrollView(
-      controller: _scrollController,
-      physics: const AlwaysScrollableScrollPhysics(),
-      slivers: [
-        SliverPadding(
-          padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
-          sliver: SliverGrid(
-            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
-              childAspectRatio: isMostlyVideo ? 1.12 : 0.65,
-              crossAxisSpacing: 10,
-              mainAxisSpacing: 10,
-            ),
-            delegate: SliverChildBuilderDelegate(
-              (context, index) {
-                final item = results[index];
-                final isVideo = _isVideoRule(item.rule);
-                return isVideo ? _buildVideoGridCard(item, isDark) : _buildGridCard(item, isDark);
-              },
-              childCount: results.length,
-            ),
-          ),
-        ),
-        if (hasFooter)
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.only(bottom: 24),
-              child: _buildSearchFooter(isDark, showBottomLoader),
-            ),
-          ),
-      ],
-    );
-  }
-
-  /// 统一的搜索结果底部状态组件（加载中菊花 / 无更多数据通栏提示）
-  Widget _buildSearchFooter(bool isDark, bool isLoading) {
-    if (isLoading) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 16),
-        child: Center(
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const LoadingIndicator.compact(size: 14, strokeWidth: 1.8),
-              const SizedBox(width: 8),
-              Text(
-                _loading ? '正在流式检索其余规则源...' : '加载更多中...',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted,
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 18),
-      child: Center(
-        child: Text(
-          '— 已加载全部搜索结果 —',
-          style: TextStyle(
-            fontSize: 12,
-            color: isDark
-                ? AppColors.darkTextMuted.withValues(alpha: 0.7)
-                : AppColors.lightTextMuted.withValues(alpha: 0.7),
-            letterSpacing: 0.5,
-          ),
-        ),
-      ),
-    );
-  }
-
-  /// 单条列表卡片
-  Widget _buildResultCard(_NormalizedSearchResult item, bool isDark) {
-    if (_isVideoRule(item.rule)) {
-      return _buildVideoResultCard(item, isDark);
-    }
-    return _buildPortraitResultCard(item, isDark);
-  }
-
-  /// 单条横屏视频列表卡片（缩略图 140x80，宽大于高）
-  Widget _buildVideoResultCard(_NormalizedSearchResult item, bool isDark) {
-    // 优先提取清晰度/集数等角标，无角标时回退第一标签
-    final displayTag = item.badge ??
-        (item.tags != null && item.tags!.isNotEmpty ? item.tags!.first : null);
-
-    return AppCard(
-      borderRadius: 12,
-      padding: const EdgeInsets.all(8),
-      onTap: () => _navigateToDetail(item),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // 横屏视频封面 16:9 (140x80，宽大于高)
-          ClipRRect(
-            borderRadius: BorderRadius.circular(8),
-            child: SizedBox(
-              width: 140,
-              height: 80,
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  NetImage(
-                    imageUrl: item.cover,
-                    fit: BoxFit.cover,
-                    headers: item.baseUrl.isNotEmpty ? {'referer': item.baseUrl} : null,
-                  ),
-                  // 修复关键缺陷：Positioned 必须是 Stack 的直接子组件，严禁被 Builder 等包裹，否则导致 ParentDataWidget 断言崩溃灰屏
-                  if (displayTag != null && displayTag.isNotEmpty)
-                    Positioned(
-                      right: 4,
-                      bottom: 4,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1.5),
-                        decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.75),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Text(
-                          displayTag,
-                          style: const TextStyle(
-                            fontSize: 9.5,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                          ),
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: SizedBox(
-              height: 80,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        item.title,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 13.5,
-                          fontWeight: FontWeight.bold,
-                          color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
-                          height: 1.25,
-                        ),
-                      ),
-                      if (item.desc.isNotEmpty) ...[
-                        const SizedBox(height: 3),
-                        Text(
-                          item.desc,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Flexible(
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
-                          decoration: BoxDecoration(
-                            color: AppColors.primary.withValues(alpha: 0.12),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Text(
-                            item.rule.name,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontSize: 10.5,
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.primary,
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      const Icon(Ionicons.playCircleOutline, size: 16, color: AppColors.primary),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// 单条竖屏列表卡片（适用于图集、小说等）
-  Widget _buildPortraitResultCard(_NormalizedSearchResult item, bool isDark) {
-    final displayTag = item.badge ??
-        (item.tags != null && item.tags!.isNotEmpty ? item.tags!.first : null);
-
-    return AppCard(
-      borderRadius: 12,
-      padding: const EdgeInsets.all(10),
-      onTap: () => _navigateToDetail(item),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-              // 封面海报
-              ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: SizedBox(
-                  width: 95,
-                  height: 135,
-                  child: NetImage(
-                    imageUrl: item.cover,
-                    fit: BoxFit.cover,
-                    headers: item.baseUrl.isNotEmpty ? {'referer': item.baseUrl} : null,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              // 详情信息区
-              Expanded(
-                child: SizedBox(
-                  height: 135,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            item.title,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.bold,
-                              color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
-                            ),
-                          ),
-                          if (item.desc.isNotEmpty) ...[
-                            const SizedBox(height: 6),
-                            Text(
-                              item.desc,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                      // 底部标签栏 (分类、规则源徽章)
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Flexible(
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: AppColors.primary.withValues(alpha: 0.12),
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              child: Text(
-                                item.rule.name,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w600,
-                                  color: AppColors.primary,
-                                ),
-                              ),
-                            ),
-                          ),
-                          if (displayTag != null && displayTag.isNotEmpty) ...[
-                            const SizedBox(width: 8),
-                            Flexible(
-                              child: Text(
-                                displayTag,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color: isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-    );
-  }
-
-  /// 单条横屏视频网格卡片（16:9 封面，宽大于高）
-  Widget _buildVideoGridCard(_NormalizedSearchResult item, bool isDark) {
-    final displayTag = item.badge ??
-        (item.tags != null && item.tags!.isNotEmpty ? item.tags!.first : null);
-
-    return AppCard(
-      padding: EdgeInsets.zero,
-      borderRadius: 12,
-      onTap: () => _navigateToDetail(item),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // 顶部 16:9 封面
-          AspectRatio(
-            aspectRatio: 16 / 9,
-            child: ClipRRect(
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  NetImage(
-                    imageUrl: item.cover,
-                    fit: BoxFit.cover,
-                    headers: item.baseUrl.isNotEmpty ? {'referer': item.baseUrl} : null,
-                  ),
-                  Positioned(
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                    height: 28,
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [
-                            Colors.transparent,
-                            Colors.black.withValues(alpha: 0.65),
-                          ],
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                        ),
-                      ),
-                    ),
-                  ),
-                  Positioned(
-                    top: 6,
-                    right: 6,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.65),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Text(
-                        item.rule.name,
-                        style: const TextStyle(
-                          fontSize: 9.5,
-                          fontWeight: FontWeight.w500,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ),
-                  ),
-                  // 修复关键缺陷：Positioned 必须是 Stack 的直接子组件，严禁被 Builder 等包裹，否则导致 ParentDataWidget 断言崩溃灰屏
-                  if (displayTag != null && displayTag.isNotEmpty)
-                    Positioned(
-                      right: 6,
-                      bottom: 5,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
-                        decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.75),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Text(
-                          displayTag,
-                          style: const TextStyle(
-                            fontSize: 9.5,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.white,
-                          ),
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          ),
-          // 底部标题与描述
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(8, 7, 8, 7),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    item.title,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w600,
-                      color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
-                      height: 1.25,
-                    ),
-                  ),
-                  if (item.desc.isNotEmpty)
-                    Text(
-                      item.desc,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 10.5,
-                        color: isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted,
-                      ),
+                      onRemove: _removeHistoryItem,
+                      onClearAll: _clearAllHistory,
+                      onGoMarket: () => context.pushMarket(),
                     )
-                  else
-                    const SizedBox.shrink(),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// 单条海报网格卡片
-  Widget _buildGridCard(_NormalizedSearchResult item, bool isDark) {
-    return AppCard(
-      padding: EdgeInsets.zero,
-      borderRadius: 12,
-      onTap: () => _navigateToDetail(item),
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-            // 海报全幅背景
-            NetImage(
-              imageUrl: item.cover,
-              fit: BoxFit.cover,
-              headers: item.baseUrl.isNotEmpty ? {'referer': item.baseUrl} : null,
-            ),
-            // 底部暗色渐变遮罩 (保证标题清晰易读)
-            Positioned.fill(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [
-                      Colors.transparent,
-                      Colors.black.withValues(alpha: 0.85),
-                    ],
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    stops: const [0.55, 1.0],
-                  ),
-                ),
-              ),
-            ),
-            // 顶部右上角来源小角标
-            Positioned(
-              top: 6,
-              right: 6,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.65),
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Text(
-                  item.rule.name,
-                  style: const TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w500,
-                    color: Colors.white,
-                  ),
-                ),
-              ),
-            ),
-            // 底部标题与信息
-            Positioned(
-              left: 8,
-              right: 8,
-              bottom: 8,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    item.title,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
+                  : SearchResultsView(
+                      isDark: isDark,
+                      results: _session.displayResults,
+                      statusMap: statusMap,
+                      targetRule: widget.targetRule,
+                      isLoading: _session.loading,
+                      isLoadingMore: _session.loadingMore,
+                      hasMore: _session.hasMore,
+                      isGridView: _isGridView,
+                      scrollController: _scrollController,
+                      onRefresh: () => _performSearch(_session.currentQuery),
+                      onItemTap: _navigateToDetail,
+                      onCancel: _session.cancel,
+                      onRetry: () => _performSearch(_controller.text),
+                      onGoMarket: () => context.pushMarket(),
+                      onDebugRule: (rule) => context.pushRuleTest(rule),
                     ),
-                  ),
-                  if (item.desc.isNotEmpty) ...[
-                    const SizedBox(height: 2),
-                    Text(
-                      item.desc,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 10,
-                        color: Colors.white.withValues(alpha: 0.75),
-                      ),
-                    ),
-                  ],
-                ],
-              ),
             ),
           ],
         ),
+      ),
     );
   }
 
   /// 跳转至规则详情或通用媒体分发页
-  void _navigateToDetail(_NormalizedSearchResult item) {
+  void _navigateToDetail(NormalizedSearchResult item) {
     context.pushRuleDetail(RuleDetailArgs(
       title: item.title,
       url: item.url,

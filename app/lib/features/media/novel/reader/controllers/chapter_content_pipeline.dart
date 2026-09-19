@@ -85,7 +85,6 @@ class ChapterContentPipeline {
     OfflineChapterStore? offlineStore,
     Future<Object?> Function(Rule rule, String url)? parseRule,
     this.onPersisted,
-    this.onPrefetched,
   })  : offlineStore = offlineStore ?? const GlobalOfflineChapterStore(),
         _parseRule = parseRule ?? _defaultParseRule;
 
@@ -111,11 +110,11 @@ class ChapterContentPipeline {
 
   final Future<Object?> Function(Rule rule, String url) _parseRule;
 
-  /// 落盘成功回调（页面据此解除纵向续载熔断并刷新目录图标）
+  /// 落盘成功回调（页面据此解除纵向续载熔断，并刷新目录图标与底部栏计数）
+  ///
+  /// 「加载即下载」统一后，这是唯一的内容就绪通知 ——
+  /// 不再有「只进内存」的独立预取路径，因此也无需第二个回调。
   final ValueChanged<int>? onPersisted;
-
-  /// 预取成功回调（页面据此刷新「已缓存 N 章」展示）
-  final VoidCallback? onPrefetched;
 
   /// 是否具备离线落盘条件（详情页进入时才会带上书籍标识与解析规则）
   bool get canDownloadOffline =>
@@ -135,12 +134,20 @@ class ChapterContentPipeline {
     return offlineStore.isDownloaded(bookId, index);
   }
 
-  /// 读取沙盒中已离线下载的章节正文（未下载返回 null）
+  /// 读取沙盒中已离线下载的章节正文（未下载或读取失败均返回 null）
+  ///
+  /// 读取失败（文件损坏 / 被外部清理 / 权限异常）一律静默降级为 null，
+  /// 由调用方回退到下一级来源 —— 绝不能让本地 IO 异常冒泡成未捕获异常，
+  /// 否则纵向续载等裸调用点会直接把整个阅读流打断。
   Future<String?> readOffline(int index) async {
     final bookId = offlineBookId;
     if (bookId == null || bookId.isEmpty) return null;
     if (!isOfflineDownloaded(index)) return null;
-    return offlineStore.read(bookId, index);
+    try {
+      return await offlineStore.read(bookId, index);
+    } catch (_) {
+      return null;
+    }
   }
 
   /// 确保指定章节正文可用：内存缓存 → 沙盒离线 → 网络沙箱
@@ -189,30 +196,17 @@ class ChapterContentPipeline {
     }
   }
 
-  /// 静默预取指定章节正文（只写内存缓存，不改变当前显示）
+  /// 加载指定章节正文并持久化到沙盒（**统一入口**）
   ///
-  /// 本次阅读内切章零等待，退出阅读器即释放、不占用磁盘 ——
-  /// 需要长期留存（断网可读）请走 [downloadOffline] 或目录里的手动下载。
+  /// 语义约定 —— **只要加载到了正文，这一章就属于「已下载」**：
+  /// - 正文已在内存镜像 → 直接复用落盘（零网络请求）；
+  /// - 沙盒已有 → 立即返回，不重复落盘；
+  /// - 都没有 → 调度一次抓取，同一次结果同时写入内存镜像与沙盒。
   ///
-  /// 返回是否真的取到了新正文（供调用方决定是否给出反馈）。
-  Future<bool> prefetch(int index) async {
-    if (index < 0 || index >= chapters.length) return false;
-    if (cache.containsKey(index)) return false;
-    if (prefetching.contains(index)) return false;
-
-    prefetching.add(index);
-    final content = await ensureContent(index);
-    prefetching.remove(index);
-
-    if (content == null) return false;
-    onPrefetched?.call();
-    return true;
-  }
-
-  /// 抓取并落盘指定章节（跳章自动下载 / 目录手动下载共用）
+  /// 落盘不可用（未绑定书籍标识 / 解析规则）时不会失败中断：
+  /// [ensureContent] 已把正文写入内存镜像，只是本次阅读结束后不再保留。
   ///
-  /// 正文已在内存缓存时**直接复用落盘，不产生额外网络请求**；
-  /// 未缓存才调度一次抓取，抓完同时写内存与沙盒。
+  /// 返回是否已落盘成功（供调用方决定是否给出「断网可读」的反馈）。
   Future<bool> downloadOffline(int index) async {
     if (index < 0 || index >= chapters.length) return false;
     if (isOfflineDownloaded(index)) return true;
@@ -256,35 +250,23 @@ class ChapterContentPipeline {
     return saved;
   }
 
-  /// 跳章后的相邻章节处理
+  /// 跳章后的相邻章节处理：把前后相邻章节各「加载并下载」一章
   ///
-  /// - 具备离线条件：把**前后相邻章节各下载一章**到沙盒，保证向上回溯与向下续读
-  ///   都不必等待；已缓存的章节复用正文，不会产生额外网络请求；
-  /// - 不具备离线条件：退化为纯内存临时预取。
-  void handleChapterJumped(int currentIndex) {
-    if (!canDownloadOffline) {
-      prefetchAdjacent(currentIndex);
-      return;
-    }
+  /// 与「加载即下载」语义统一后，这里不再需要区分是否具备离线条件 ——
+  /// 不具备条件时 [downloadOffline] 的落盘会自然失败，但正文仍会写入内存镜像。
+  void handleChapterJumped(int currentIndex) => downloadAdjacent(currentIndex);
 
-    final prev = currentIndex - 1;
-    if (prev >= 0) downloadOffline(prev);
-
+  /// 加载并下载相邻章节（向前 / 向后双向提前准备，实现顺读与回溯零卡顿）
+  ///
+  /// 已在沙盒中的章节直接跳过：切章时会从沙盒读回，本就是零等待。
+  void downloadAdjacent(int currentIndex) {
     final next = currentIndex + 1;
-    if (next < chapters.length) downloadOffline(next);
-  }
-
-  /// 触发相邻章节双向预取（向前/向后均提前预载，实现顺读与回溯零卡顿）
-  void prefetchAdjacent(int currentIndex) {
-    // 优先预取下一章
-    final next = currentIndex + 1;
-    if (next < chapters.length && !cache.containsKey(next)) {
-      prefetch(next);
+    if (next < chapters.length && !isOfflineDownloaded(next)) {
+      downloadOffline(next);
     }
-    // 同步预取上一章
     final prev = currentIndex - 1;
-    if (prev >= 0 && !cache.containsKey(prev)) {
-      prefetch(prev);
+    if (prev >= 0 && !isOfflineDownloaded(prev)) {
+      downloadOffline(prev);
     }
   }
 }

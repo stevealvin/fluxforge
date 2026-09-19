@@ -101,9 +101,6 @@ class PlayerSeekingCapsule extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isForward = deltaSeconds >= 0;
-    // 快进 = 翡翠绿，快退 = 琥珀金（与 WebView 端 HUD 配色保持一致）
-    final accentColor =
-        isForward ? const Color(0xFF10B981) : const Color(0xFFF59E0B);
 
     return Center(
       child: ClipRRect(
@@ -113,14 +110,14 @@ class PlayerSeekingCapsule extends StatelessWidget {
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 9),
             decoration: BoxDecoration(
-              // 取消外围边框线，进一步提升半透明通透感 (alpha: 0.45)
-              color: Colors.black.withValues(alpha: 0.45),
+              // 取消外围边框线，进一步提升半透明通透感
+              color: Colors.black.withValues(alpha: 0.35),
               borderRadius: BorderRadius.circular(16),
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // 第一行：方向圆角图标 + 快进/快退秒数
+                // 第一行：方向圆角图标 + 快进/快退秒数（统一纯白）
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -128,14 +125,14 @@ class PlayerSeekingCapsule extends StatelessWidget {
                       isForward
                           ? Ionicons.playForwardOutline
                           : Ionicons.playBackOutline,
-                      color: accentColor,
+                      color: Colors.white,
                       size: 18,
                     ),
                     const SizedBox(width: 6),
                     Text(
                       '${isForward ? '+' : ''}${deltaSeconds}s',
-                      style: TextStyle(
-                        color: accentColor,
+                      style: const TextStyle(
+                        color: Colors.white,
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
                       ),
@@ -161,9 +158,12 @@ class PlayerSeekingCapsule extends StatelessWidget {
   }
 }
 
-/// 长按瞬时加速顶部微胶囊（纯净无文字版，仅展示高斯毛玻璃翡翠快进图标，视线无遮挡）
+/// 长按瞬时加速顶部微胶囊（高斯毛玻璃翡翠快进图标 + 当前倍数）
 class PlayerFastForwardCapsule extends StatelessWidget {
-  const PlayerFastForwardCapsule({super.key});
+  const PlayerFastForwardCapsule({super.key, required this.speed});
+
+  /// 长按瞬时加速倍率（如 2.0 / 3.0 / 5.0，展示为 2x / 3x / 5x）
+  final double speed;
 
   @override
   Widget build(BuildContext context) {
@@ -175,17 +175,38 @@ class PlayerFastForwardCapsule extends StatelessWidget {
           child: BackdropFilter(
             filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-              color: Colors.black.withValues(alpha: 0.55),
-              child: const Icon(
-                Ionicons.playForwardOutline,
-                color: AppColors.primary,
-                size: 20,
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              color: Colors.black.withValues(alpha: 0.42),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(
+                    Ionicons.playForwardOutline,
+                    color: Colors.white,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 5),
+                  Text(
+                    '${_formatSpeed(speed)}X',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
         ),
       ),
     );
+  }
+
+  /// 倍数文案：整数倍不带小数点（2X），非整数保留一位（2.5X）
+  static String _formatSpeed(double speed) {
+    if (speed % 1 == 0) return speed.toInt().toString();
+    return speed.toStringAsFixed(1);
   }
 }

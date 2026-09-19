@@ -12,14 +12,18 @@ import 'package:fluxforge/features/profile/widgets/profile_hero.dart';
 
 /// 个人中心页面 (我的)
 ///
-/// 经过重新设计，从「功能入口集合」升级为「个人资产仪表盘」，按五大语义区组织：
+/// 经过重新设计，从「功能入口集合」升级为「个人资产仪表盘」，按四大语义区组织：
 /// ① 身份 Hero（昵称 / 沙箱状态 / 主题三态 / 设置唯一入口）
 /// ② 继续观看（跨媒体消费记录横滑流，一键续播）
-/// ③ 我的资产（2×2 资产卡网格：收藏 / 历史 / 规则 / 足迹）
-/// ④ 数据与同步（规则市场 / 离线下载 / 缓存治理）
+/// ③ 我的资产（2×2 资产卡网格：收藏 / 历史 / 规则 / 下载）
+/// ④ 数据与同步（规则市场 / 缓存治理）
 ///
-/// 数据备份还原、沙箱日志与「关于」信息已统一收敛至「设置」页，
-/// 设置入口由顶部 Hero 卡右上角齿轮提供，避免同屏出现重复入口。
+/// 入口去重约定：
+/// - 数据备份还原、沙箱日志与「关于」信息统一收敛至「设置」页，
+///   设置入口由顶部 Hero 卡右上角齿轮提供；
+/// - **搜索足迹不再单独设卡** —— 它已完整收纳在历史中心页内，重复设卡只会让同一份
+///   数据出现两个入口；该卡位改由「下载管理」承载（含任务数与进行中 / 失败状态）；
+/// - 因此设置列表中原有的「离线下载」项同步移除，避免与资产卡再次重复。
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key, this.onSwitchTab});
 
@@ -137,14 +141,6 @@ class _ProfilePageState extends State<ProfilePage> {
                     subtitle: '探索并一键订阅最新聚合跨媒体解析源',
                     showArrow: true,
                     onTap: () => context.pushMarket(),
-                  ),
-                  SettingTile(
-                    icon: Ionicons.cloudDownloadOutline,
-                    iconColor: AppColors.accentBlue,
-                    title: '离线下载',
-                    subtitle: '管理已下载的小说与漫画，查看沙盒占用空间',
-                    showArrow: true,
-                    onTap: () => context.pushDownloads(),
                   ),
                   SettingTile(
                     icon: Ionicons.cloudOutline,

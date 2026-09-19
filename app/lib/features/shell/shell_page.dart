@@ -7,6 +7,7 @@ import 'package:fluxforge/app/theme/app_colors.dart';
 import 'package:fluxforge/features/discover/discover_page.dart';
 import 'package:fluxforge/features/profile/profile_page.dart';
 import 'package:fluxforge/features/rules/pages/rules_page.dart';
+import 'package:fluxforge/features/sites/sites_page.dart';
 
 /// FluxForge 应用顶层外壳宿主 (ShellPage)
 /// 承载全局沉浸式微光氛围底色、三维页面切换以及 Apple 级毛玻璃底部导航栏
@@ -57,6 +58,7 @@ class ShellPage extends HookWidget {
               children: [
                 const DiscoverPage(),
                 const RulesPage(),
+                const SitesPage(),
                 // 「我的」页需注入切页回调，以支持资产卡「我的规则」直达规则 Tab
                 ProfilePage(
                   onSwitchTab: (index) {
@@ -99,6 +101,11 @@ class ShellPage extends HookWidget {
                     icon: Icon(Ionicons.codeSlashOutline, size: 22),
                     selectedIcon: Icon(Ionicons.codeSlashOutline, size: 24, color: AppColors.primary),
                     label: '规则',
+                  ),
+                  NavigationDestination(
+                    icon: Icon(Ionicons.globeOutline, size: 22),
+                    selectedIcon: Icon(Ionicons.globeOutline, size: 24, color: AppColors.primary),
+                    label: '站点',
                   ),
                   NavigationDestination(
                     icon: Icon(Ionicons.personOutline, size: 22),

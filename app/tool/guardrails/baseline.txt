@@ -1,0 +1,26 @@
+# FluxForge 架构门禁 —— 存量超长 UI 文件白名单
+#
+# 本文件由 `dart run tool/guardrails/check_architecture.dart --update` 生成，
+# 仅用于登记「重构启动前就已存在」的技术债，属于待销账清单而非豁免金牌。
+# 每完成一个文件的拆分，请手动删除对应行，让门禁持续收紧。
+features/browser/adblock_rules_page.dart
+features/browser/browser_page.dart
+features/discover/discover_page.dart
+features/library/downloads/download_manager_page.dart
+features/library/history/history_center_page.dart
+features/media/comic/comic_detail_view.dart
+features/media/comic/reader/comic_reader_page.dart
+features/media/novel/novel_detail_view.dart
+features/media/novel/reader/novel_reader_page.dart
+features/media/shared/media_detail_page.dart
+features/media/shared/media_meta_header.dart
+features/media/video/video_detail_view.dart
+features/rules/pages/market_page.dart
+features/rules/pages/rule_catalog_page.dart
+features/rules/pages/rules_page.dart
+features/search/search_page.dart
+features/settings/logs_page.dart
+features/settings/settings_page.dart
+shared/widgets/app_loading.dart
+shared/widgets/player/aura_player.dart
+shared/widgets/player/player_overlays.dart

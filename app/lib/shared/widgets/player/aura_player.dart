@@ -128,8 +128,12 @@ class AuraPlayerState extends State<AuraPlayer>
   bool _hasError = false;
   String _errorMessage = '';
 
-  // 屏幕常亮状态管理（仅在有效播放中保持常亮）
-  bool _isWakelockEnabled = false;
+  // 常亮需求计数（静态）：小屏/全屏是共享控制器的多实例，Wakelock 是全局单例，
+  // 实例级去重会被旧实例 dispose 的 disable 误关常亮，故以全局计数收敛
+  static int _wakelockDemandCount = 0;
+
+  /// 本实例是否已计入常亮需求
+  bool _wakelockDemanded = false;
 
   // 控制条显隐与自动隐藏定时器
   bool _showControls = true;
@@ -172,15 +176,21 @@ class AuraPlayerState extends State<AuraPlayer>
   /// 不再调用 setState 重建整棵播放器树，从根本上消除滑动掉帧。
   final ValueNotifier<int> _seekPreviewTick = ValueNotifier<int>(0);
 
-  // 长按瞬时加速 (倍率与开关均实时读取全局播放偏好)
+  // 长按瞬时加速 (倍率与开关均实时读取当前生效偏好)
   bool _isFastForwarding = false;
   double _normalSpeed = 1.0;
 
+  /// 当前生效的播放偏好（本地副本）
+  ///
+  /// 面板改动必须本地立即生效：全屏是独立路由，宿主 rebuild 不会重建它，
+  /// 若只读 [AuraPlayer.preferences]，会出现「全屏内改设置、退出全屏才生效」。
+  late PlayerPreferences _preferences = widget.preferences;
+
   /// 长按瞬时加速是否启用
-  bool get _longPressEnabled => widget.preferences.longPressBoostEnabled;
+  bool get _longPressEnabled => _preferences.longPressBoostEnabled;
 
   /// 长按瞬时加速倍率 (可选 2.0 / 3.0 / 5.0)
-  double get _longPressSpeed => widget.preferences.longPressSpeed;
+  double get _longPressSpeed => _preferences.longPressSpeed;
 
   // 断点续播提示胶囊
   bool _showResumeTip = false;
@@ -215,11 +225,12 @@ class AuraPlayerState extends State<AuraPlayer>
     return _controller!.value.isPlaying;
   }
 
-  /// 动态更新屏幕常亮状态
+  /// 播放中保持屏幕常亮，暂停/结束/退出时解除（多实例经全局计数收敛）
   void _updateWakelock(bool enable) {
-    if (_isWakelockEnabled == enable) return;
-    _isWakelockEnabled = enable;
-    if (enable) {
+    if (enable == _wakelockDemanded) return;
+    _wakelockDemanded = enable;
+    _wakelockDemandCount += enable ? 1 : -1;
+    if (_wakelockDemandCount > 0) {
       WakelockPlus.enable().catchError((e) {
         debugPrint('[AuraPlayer] 开启屏幕常亮异常: $e');
       });
@@ -236,11 +247,12 @@ class AuraPlayerState extends State<AuraPlayer>
     WidgetsBinding.instance.addObserver(this);
     _isFullScreen = widget.isFullScreenMode;
 
-    // 初始化流光进度条循环扫光动画控制器 (周期 1400ms，平滑线性流动)
+    // 缓冲动效动画控制器（仅缓冲期间运行，见 [_syncShimmerTicker]）
+    // 周期 3000ms：条纹一个完整周期 32px，线速度与原 14px/1400ms 基本持平
     _shimmerController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1400),
-    )..repeat();
+      duration: const Duration(milliseconds: 3000),
+    );
 
     if (widget.controller != null) {
       _controller = widget.controller;
@@ -254,11 +266,34 @@ class AuraPlayerState extends State<AuraPlayer>
     } else {
       _initializePlayer();
     }
+
+    _syncShimmerTicker();
+  }
+
+  /// 按当前缓冲状态启停扫光动画
+  ///
+  /// 扫光只在「未加载空白轨道」上有视觉意义（见 `AuraSliderTrackShape.paint`），
+  /// 若常驻 `repeat()`，播放器在详情页常驻（含暂停、控制栏隐藏）时会一直跑
+  /// 60fps ticker 并持续重建进度条，白白耗电。
+  void _syncShimmerTicker() {
+    final buffering = !_hasError &&
+        (!_isInitialized ||
+            (_controller?.value.isBuffering ?? true) ||
+            _isSeekingTo);
+    if (buffering) {
+      if (!_shimmerController.isAnimating) _shimmerController.repeat();
+    } else if (_shimmerController.isAnimating) {
+      _shimmerController.stop();
+    }
   }
 
   @override
   void didUpdateWidget(covariant AuraPlayer oldWidget) {
     super.didUpdateWidget(oldWidget);
+    // 外部（设置页等）偏好变更经宿主回灌到本地副本
+    if (widget.preferences != oldWidget.preferences) {
+      _preferences = widget.preferences;
+    }
     if (widget.controller == null &&
         (oldWidget.playUrl != widget.playUrl ||
             !mapEquals(oldWidget.httpHeaders, widget.httpHeaders))) {
@@ -322,6 +357,7 @@ class AuraPlayerState extends State<AuraPlayer>
         _hasError = true;
         _errorMessage = '播放地址为空';
       });
+      _syncShimmerTicker();
       return;
     }
 
@@ -335,13 +371,23 @@ class AuraPlayerState extends State<AuraPlayer>
       _hasError = false;
       _errorMessage = '';
     });
+    _syncShimmerTicker();
 
     try {
-      final uri = Uri.parse(widget.playUrl);
-      _controller = VideoPlayerController.networkUrl(
-        uri,
-        httpHeaders: widget.httpHeaders,
-      );
+      final url = widget.playUrl.trim();
+      // 本地已下载的视频走 file:// URI：Android 侧 ExoPlayer 直接支持，
+      // 不引入 dart:io（避免破坏 web 构建路径，下载能力在 web 上本就不可用）
+      final isLocal =
+          !url.startsWith('http://') && !url.startsWith('https://');
+      if (isLocal) {
+        final normalized = url.startsWith('file://') ? url : 'file://$url';
+        _controller = VideoPlayerController.contentUri(Uri.parse(normalized));
+      } else {
+        _controller = VideoPlayerController.networkUrl(
+          Uri.parse(url),
+          httpHeaders: widget.httpHeaders,
+        );
+      }
 
       await _controller!.initialize();
 
@@ -375,6 +421,7 @@ class AuraPlayerState extends State<AuraPlayer>
       setState(() {
         _isInitialized = true;
       });
+      _syncShimmerTicker();
 
       _startControlsTimer();
     } catch (e) {
@@ -384,6 +431,7 @@ class AuraPlayerState extends State<AuraPlayer>
         _hasError = true;
         _errorMessage = '视频解析或加载失败: $e';
       });
+      _syncShimmerTicker();
     }
   }
 
@@ -392,9 +440,11 @@ class AuraPlayerState extends State<AuraPlayer>
     if (!mounted || _controller == null) return;
     final value = _controller!.value;
 
-    // 动态同步屏幕常亮状态：仅在视频有效播放时保持屏幕常亮
+    // 同步常亮：播放中常亮，其余解除
     final isPlaying = value.isInitialized && value.isPlaying && !value.hasError;
     _updateWakelock(isPlaying);
+
+    _syncShimmerTicker();
 
     // 播放进度通知上层
     if (value.isInitialized && !_isDraggingProgress && !_isSeeking) {
@@ -501,7 +551,8 @@ class AuraPlayerState extends State<AuraPlayer>
               onBack: () => Navigator.of(fullscreenContext).pop(),
               onEnded: widget.onEnded,
               extraActions: widget.extraActions,
-              preferences: widget.preferences,
+              // 用本地副本而非 widget 参数：宿主尚未回灌时也要带上最新偏好
+              preferences: _preferences,
               onPreferencesChanged: widget.onPreferencesChanged,
             ),
           );
@@ -524,10 +575,7 @@ class AuraPlayerState extends State<AuraPlayer>
         _volume = _controller?.value.volume ?? _volume;
       });
       _startControlsTimer();
-      // 从全屏无缝平滑切回竖屏后，若视频仍处于播放状态，维持屏幕常亮
-      if (_controller?.value.isPlaying ?? false) {
-        _updateWakelock(true);
-      }
+      _updateWakelock(_controller?.value.isPlaying ?? false);
     }
   }
 
@@ -581,7 +629,7 @@ class AuraPlayerState extends State<AuraPlayer>
           },
         ),
 
-        // 7. 手势浮层：长按 2.0x 快速播放中微胶囊
+        // 7. 手势浮层：长按加速中微胶囊（含当前倍数）
         if (_isFastForwarding) _buildFastForwardCapsule(),
 
         // 8. 断点续播提醒气泡
@@ -591,7 +639,15 @@ class AuraPlayerState extends State<AuraPlayer>
         if (_isInitialized) _buildControlOverlays(),
 
         // 11. 浮动锁屏按钮 (仅全屏模式出现、加宽左边距、支持单锁显隐)
-        if (_isInitialized) _buildLockButton(),
+        if (_isInitialized && _isFullScreen)
+          PlayerLockButton(
+            // 锁定态由 _showLockIcon 决定（点击屏幕唤醒，5.0 秒后自动隐去），
+            // 未锁定态跟随控制栏 _showControls
+            visible: _isLocked ? _showLockIcon : _showControls,
+            isLocked: _isLocked,
+            left: _fullscreenLeftPadding,
+            onToggle: _onToggleLock,
+          ),
 
         // 12. 小屏底边常驻微型流光进度条 (控制条隐藏时无缝接替)
         _buildBottomMiniProgress(),
@@ -773,6 +829,7 @@ class AuraPlayerState extends State<AuraPlayer>
             _isSeekingTo = true;
           });
           _seekPreviewTick.value++;
+          _syncShimmerTicker();
           _controller!.seekTo(_seekTarget).then((_) {
             if (mounted) {
               if (_wasPlayingBeforeDrag) {
@@ -784,6 +841,7 @@ class AuraPlayerState extends State<AuraPlayer>
                   setState(() {
                     _isSeekingTo = false;
                   });
+                  _syncShimmerTicker();
                 }
               });
             }
@@ -830,8 +888,9 @@ class AuraPlayerState extends State<AuraPlayer>
     );
   }
 
-  /// 长按瞬时加速顶部微胶囊 (纯净无文字版，仅展示高斯毛玻璃翡翠快进图标，视线无遮挡)
-  Widget _buildFastForwardCapsule() => const PlayerFastForwardCapsule();
+  /// 长按瞬时加速顶部微胶囊（毛玻璃翡翠图标 + 当前倍数）
+  Widget _buildFastForwardCapsule() =>
+      PlayerFastForwardCapsule(speed: _longPressSpeed);
 
   /// 断点续播提醒气泡（渲染见 [PlayerResumeTip]）
   Widget _buildResumeTip() {
@@ -882,61 +941,6 @@ class AuraPlayerState extends State<AuraPlayer>
   double get _fullscreenRightPadding {
     final safeRight = MediaQuery.of(context).padding.right;
     return safeRight > 0 ? safeRight + 24.0 : 40.0;
-  }
-
-  /// 浮动锁屏按钮 (仅全屏模式出现、垂直居中、左边缘与底栏进度条及播放键严丝合缝对齐)
-  Widget _buildLockButton() {
-    // 锁定图标仅在全屏状态下出现
-    if (!_isFullScreen) {
-      return const SizedBox.shrink();
-    }
-
-    // 判断锁图标当前是否应该显示：
-    // - 锁定态下由 _showLockIcon 决定 (点击屏幕唤醒，5.0 秒后自动隐去)
-    // - 未锁定态下跟随控制栏 _showControls 决定
-    final bool shouldShow = _isLocked ? _showLockIcon : _showControls;
-    final double leftPosition = _fullscreenLeftPadding;
-
-    return Positioned(
-      left: leftPosition,
-      top: 0,
-      bottom: 0,
-      child: Center(
-        child: IgnorePointer(
-          ignoring: !shouldShow,
-          child: AnimatedOpacity(
-            opacity: shouldShow ? 1.0 : 0.0,
-            duration: const Duration(milliseconds: 240),
-            curve: Curves.easeOutCubic,
-            child: AnimatedScale(
-              scale: shouldShow ? 1.0 : 0.82,
-              duration: const Duration(milliseconds: 240),
-              curve: Curves.easeOutCubic,
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: _onToggleLock,
-                child: Container(
-                  width: 38,
-                  height: 38,
-                  alignment: Alignment.centerLeft, // 图标左边缘与基准线严格同轴对齐
-                  child: Icon(_isLocked ? Ionicons.lockClosedOutline : Ionicons.lockOpenOutline,
-                    color: Colors.white, // 关闭锁定状态去掉颜色，保持纯白通透质感
-                    size: 24,
-                    shadows: const [
-                      Shadow(
-                        color: Colors.black87,
-                        blurRadius: 8,
-                        offset: Offset(0, 1),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
   }
 
   /// 小屏控制条隐藏时的常驻微型极光进度条
@@ -1126,6 +1130,7 @@ class AuraPlayerState extends State<AuraPlayer>
                 setState(() {
                   _isSeekingTo = true;
                 });
+                _syncShimmerTicker();
                 _controller!.seekTo(Duration(milliseconds: (val * totalMs).round())).then((_) {
                   if (mounted) {
                     if (_wasPlayingBeforeDrag) {
@@ -1137,6 +1142,7 @@ class AuraPlayerState extends State<AuraPlayer>
                         setState(() {
                           _isSeekingTo = false;
                         });
+                        _syncShimmerTicker();
                       }
                     });
                   }
@@ -1177,11 +1183,15 @@ class AuraPlayerState extends State<AuraPlayer>
       isMirrored: _isMirrored,
       isLooping: _isLooping,
       videoFit: _videoFit,
-      preferences: widget.preferences,
+      preferences: _preferences,
       onMirroredChanged: (val) => setState(() => _isMirrored = val),
       onLoopingChanged: (val) => setState(() => _isLooping = val),
       onVideoFitChanged: (val) => setState(() => _videoFit = val),
-      onPreferencesChanged: widget.onPreferencesChanged,
+      onPreferencesChanged: (next) {
+        // 先本地生效（全屏路由不随宿主重建），再上抛宿主持久化
+        setState(() => _preferences = next);
+        widget.onPreferencesChanged?.call(next);
+      },
     );
   }
 
