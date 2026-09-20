@@ -22,7 +22,7 @@ class PlayerControlBar extends StatelessWidget {
     required this.currentPosition,
     required this.duration,
     required this.playbackSpeed,
-    required this.seekPreviewTick,
+    required this.positionTick,
     required this.formatDuration,
     required this.progressSlider,
     required this.onTogglePlay,
@@ -37,14 +37,16 @@ class PlayerControlBar extends StatelessWidget {
 
   final bool isPlaying;
 
-  /// 用 getter 而非值：时间文本要在手势预览的局部重建中拿到**最新**进度
+  /// 用 getter 而非值：时间文本要在位置心跳的局部重建中拿到**最新**进度
   final ValueGetter<Duration> currentPosition;
 
   final Duration duration;
   final double playbackSpeed;
 
-  /// 手势预览刷新信号（滑动寻道时时间文本与进度条同步跟手）
-  final ValueListenable<int> seekPreviewTick;
+  /// 位置刷新心跳（正常播放帧、滑动寻道、拖拽进度条均会递增）
+  ///
+  /// 时间文本订阅它局部重建，因此播放期无需上层整树 `setState` 即可逐帧跟手。
+  final ValueListenable<int> positionTick;
 
   final String Function(Duration) formatDuration;
   final PlayerProgressSliderBuilder progressSlider;
@@ -82,7 +84,7 @@ class PlayerControlBar extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             ValueListenableBuilder<int>(
-              valueListenable: seekPreviewTick,
+              valueListenable: positionTick,
               builder: (context, _, _) =>
                   _timeText(formatDuration(currentPosition()), primary: true),
             ),
@@ -154,7 +156,7 @@ class PlayerControlBar extends StatelessWidget {
           const SizedBox(width: 6),
           // 小屏空间紧凑，起止时间合并为「当前/总长」等宽数字单段文本
           ValueListenableBuilder<int>(
-            valueListenable: seekPreviewTick,
+            valueListenable: positionTick,
             builder: (context, _, _) => _timeText(
               '${formatDuration(currentPosition())}/${formatDuration(duration)}',
               primary: true,

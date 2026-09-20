@@ -39,24 +39,22 @@ FluxForge 的核心在于其**沙箱 JavaScript 动态规则引擎**。如同“
 | **移动端 (App)** | **移动端本地离线沙箱**（`flutter_js` QuickJS 引擎，无服务器独立运行规则） | ✅ | QuickJS 沙箱流水线 |
 | **移动端 (App)** | **主框架与发现/搜索**（毛玻璃防重叠导航、全局多源检索、单源测试流） | ✅ | GoRouter + Riverpod |
 | **移动端 (App)** | **内置安全浏览器**（广告拦截引擎、Android 全屏媒体自适应、原生返回拦截） | ✅ | `webview_flutter` |
-| **移动端 (App)** | **自研现代播放器 (`AuraPlayer`)**（手势调光/音量/快进、长按2x震动倍速、断点续播、彻底弃用 Chewie） | ⏳ 即将落地 | [`APP_DEV_SPEC.md`](./docs/APP_DEV_SPEC.md) |
-| **移动端 (App)** | **规则健康巡检与毫秒级测速**（并发探测源站延迟，三色指示灯，一键清理失效源） | ⏳ 规划中 | [`APP_DEV_SPEC.md`](./docs/APP_DEV_SPEC.md) |
-| **移动端 (App)** | **纯净小说阅读引擎 (`FluxReader`)**（仿真/滚动翻页、排版色盘、预加载） | ⏳ 规划中 | [`APP_DEV_SPEC.md`](./docs/APP_DEV_SPEC.md) |
-| **移动端 (App)** | **漫画与图集查看器 (`FluxGallery`)**（瀑布流/条漫长图、双指平滑缩放） | ⏳ 规划中 | [`APP_DEV_SPEC.md`](./docs/APP_DEV_SPEC.md) |
-| **移动端 (App)** | **本地数据全量备份/还原**（单文件 JSON 导出分享，无需第三方网盘） | ⏳ 规划中 | [`APP_DEV_SPEC.md`](./docs/APP_DEV_SPEC.md) |
-| **移动端 (App)** | **统一收藏系统与智能追更红点**（追剧/追更书架，源站集数探测更新提醒） | ⏳ 规划中 | [`APP_DEV_SPEC.md`](./docs/APP_DEV_SPEC.md) |
-| **移动端 (App)** | **全局偏好与系统设置**（播放手势/倍速偏好、阅读排版、沙箱超时 15s/30s/60s、细分深度清理） | ⏳ 规划中 | [`APP_DEV_SPEC.md`](./docs/APP_DEV_SPEC.md) |
+| **移动端 (App)** | **自研现代播放器 (`AuraPlayer`)**（手势调光/音量/快进、长按2x震动倍速、断点续播、彻底弃用 Chewie） | ✅ | [`app/README.md`](./app/README.md) |
+| **移动端 (App)** | **规则健康巡检与毫秒级测速**（并发探测源站延迟，三色指示灯，一键清理失效源） | ✅ | [`app/README.md`](./app/README.md) |
+| **移动端 (App)** | **纯净小说阅读引擎 (`FluxReader`)**（仿真/滚动翻页、排版色盘、预加载） | ✅ | [`app/README.md`](./app/README.md) |
+| **移动端 (App)** | **漫画与图集查看器 (`FluxGallery`)**（瀑布流/条漫长图、双指平滑缩放） | ✅ | [`app/README.md`](./app/README.md) |
+| **移动端 (App)** | **本地数据全量备份/还原**（单文件 JSON 导出分享，无需第三方网盘） | ✅ | [`app/README.md`](./app/README.md) |
+| **移动端 (App)** | **统一收藏系统与智能追更红点**（追剧/追更书架，源站集数探测更新提醒） | ✅ | [`app/README.md`](./app/README.md) |
+| **移动端 (App)** | **全局偏好与系统设置**（播放手势/倍速偏好、阅读排版、沙箱超时 15s/30s/60s、细分深度清理） | ✅ | [`app/README.md`](./app/README.md) |
 
 ---
 
 ## 📚 官方文档中心导引
 
-完整的架构白皮书、生命周期标准与移动端技术开发规范已整理至 `docs/` 目录：
+规则契约与移动端待办清单已整理至 `docs/` 目录：
 
 - 📖 [**规则引擎与生命周期契约白皮书 (RULE_SPECIFICATION.md)**](./docs/RULE_SPECIFICATION.md)：编写规则必读，四大生命周期输入输出定义与 `items` 统一模型；
-- 🛠️ [**移动端核心功能技术开发规范 (APP_DEV_SPEC.md)**](./docs/APP_DEV_SPEC.md)：移动端开发者与 AI 助手必读，自研 `AuraPlayer`、阅读器、测速、备份等技术实现规格；
 - 🚀 [**移动端待优化与已知问题清单 (APP_TODO.md)**](./docs/APP_TODO.md)：已确认待处理的技术问题与优化项，按收益 / 风险分级并附候选方案；
-- 🏗️ [**跨端系统架构设计规范 (SYSTEM_ARCHITECTURE.md)**](./docs/SYSTEM_ARCHITECTURE.md)：全栈拓扑、色彩设计哲学与数据流图解；
 - 📝 [**系统演进与变更日志 (CHANGELOG.md)**](./docs/CHANGELOG.md)：记录项目版本演进与关键功能重构明细。
 
 ## 📁 目录结构
@@ -76,7 +74,7 @@ fluxforge/
 │   └── package.json
 ├── api/                   # Vercel Serverless Function 入口
 │   └── index.ts
-├── docs/                  # 跨端架构白皮书与规则引擎契约标准
+├── docs/                  # 规则引擎契约标准、移动端待办清单与变更日志
 ├── vite.config.ts         # 根目录一体化全栈配置文件 (内嵌 Hono API 与 Vite SPA)
 ├── vercel.json            # Vercel 云端部署配置
 ├── package.json           # Monorepo 根节点 Workspace 配置文件

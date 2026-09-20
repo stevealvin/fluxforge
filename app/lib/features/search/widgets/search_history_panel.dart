@@ -4,6 +4,14 @@ import 'package:ionicons/ionicons.dart';
 
 import 'package:fluxforge/app/theme/app_colors.dart';
 
+/// 探索推荐热门词
+///
+/// 属本面板自身的展示内容，就近定义于此（原先定义在 `SearchPage` 中、再经入参传入）——
+/// 宿主无需为一个纯静态常量多维护一个参数。
+const List<String> _hotSuggestions = [
+  '电影', '番剧', '动漫', '电视剧', '科幻', '悬疑', '动作', '经典',
+];
+
 /// 搜索历史与探索推荐词面板
 ///
 /// 未发起检索时的默认视图；顶部在无可用规则源时给出引导卡片。
@@ -14,7 +22,6 @@ class SearchHistoryPanel extends StatelessWidget {
     required this.isDark,
     required this.hasActiveRules,
     required this.historyList,
-    required this.hotSuggestions,
     required this.onPick,
     required this.onRemove,
     required this.onClearAll,
@@ -27,9 +34,6 @@ class SearchHistoryPanel extends StatelessWidget {
   final bool hasActiveRules;
 
   final List<String> historyList;
-
-  /// 推荐热门探测词
-  final List<String> hotSuggestions;
 
   /// 选中某个历史词 / 推荐词
   final ValueChanged<String> onPick;
@@ -185,7 +189,7 @@ class SearchHistoryPanel extends StatelessWidget {
         Wrap(
           spacing: 8,
           runSpacing: 8,
-          children: hotSuggestions.map((text) {
+          children: _hotSuggestions.map((text) {
             return ActionChip(
               label: Text(
                 text,

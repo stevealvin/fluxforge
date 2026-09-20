@@ -10,7 +10,7 @@ import 'dart:io';
 /// dart run tool/guardrails/check_architecture.dart --update    # 重写存量白名单基线
 /// ```
 ///
-/// 四条硬性规则（对应 docs/APP_STRUCTURE_REWORK.md 中的验收标准）：
+/// 四条硬性规则（本文件即为这些约束的唯一可执行出处）：
 /// 1. `lib/domain/**` 严禁出现任何 Flutter 依赖（domain 层必须与 UI 框架彻底解耦）；
 /// 2. `lib/shared/**` 严禁反向依赖 `lib/features/**`（依赖只能单向向下流动）；
 /// 3. `lib/` 下的 UI 文件（含 Widget 或位于 pages/ widgets/ views/）不得超过 300 行；

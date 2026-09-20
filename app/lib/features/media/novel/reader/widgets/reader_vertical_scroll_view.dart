@@ -42,6 +42,7 @@ class ReaderVerticalScrollView extends StatelessWidget {
     required this.lineHeight,
     required this.contentOf,
     required this.hasMore,
+    required this.onScrollEnd,
   });
 
   /// 连续阅读的章节索引序列（升序、连续；首端可被向上前插，末端可被向下追加）
@@ -74,6 +75,9 @@ class ReaderVerticalScrollView extends StatelessWidget {
 
   /// 下方是否仍有可续载章节（决定底部占位与「已是最后一章」提示）
   final bool hasMore;
+
+  /// 滚动停止回调：上层滚动中的屏中线同步是降频的，停止时靠它补一次精确同步
+  final VoidCallback onScrollEnd;
 
   @override
   Widget build(BuildContext context) {
@@ -145,7 +149,15 @@ class ReaderVerticalScrollView extends StatelessWidget {
       ],
     );
 
-    return SelectionArea(child: scrollView);
+    return SelectionArea(
+      child: NotificationListener<ScrollEndNotification>(
+        onNotification: (_) {
+          onScrollEnd();
+          return false;
+        },
+        child: scrollView,
+      ),
+    );
   }
 
   /// 单个章节块：居中标题 + 正文 + 可选的**尾部**章节分隔

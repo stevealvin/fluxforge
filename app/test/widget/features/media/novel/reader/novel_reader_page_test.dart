@@ -30,8 +30,12 @@ void main() {
     );
     await tester.pump(const Duration(milliseconds: 300));
 
-    // 1. 验证包含了 SelectableText (保证文本可长按划词自由选区复制)
-    expect(find.byType(SelectableText), findsWidgets);
+    // 1. 验证包含 SelectionArea (保证文本可长按划词自由选区复制)
+    expect(find.byType(SelectionArea), findsWidgets);
+
+    // 横向分页与纵向长卷已统一选择实现：外层一个 SelectionArea + 内部纯 Text，
+    // 不再逐页创建 SelectableText（每页都会建立独立的 EditableText 与选择容器）
+    expect(find.byType(SelectableText), findsNothing);
 
     // 2. 验证章节标题和内容切片已正常展示，且不是“正在加载”
     expect(find.text('第1章 宇宙闪烁'), findsOneWidget);
@@ -54,6 +58,32 @@ void main() {
     expect(find.text('第2章 科学边界'), findsWidgets);
     expect(find.byIcon(Ionicons.cloudDownloadOutline), findsWidgets);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('连续跨章翻页多次后仍能正确渲染（分页切片按滑窗裁剪不影响阅读）', (WidgetTester tester) async {
+    // 每章正文很短 → 一章一页，点击右侧区域即跨一章，便于稳定地连续换章
+    final chapters = List<NovelChapter>.generate(
+      8,
+      (i) => NovelChapter(title: '第${i + 1}章', content: '第${i + 1}章正文内容。'),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: NovelReaderPage(bookTitle: '滑窗切片裁剪测试', chapters: chapters),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // 连续向前读 5 章：渲染窗口不断右移，最早的分页切片会被裁剪
+    for (int i = 0; i < 5; i++) {
+      await tester.tapAt(const Offset(700, 300));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+    }
+
+    expect(tester.takeException(), isNull);
+    // 裁剪后仍必须能渲染正文 —— 若误伤当前章切片，会退化成「正文排版中...」占位
+    expect(find.textContaining('正文内容'), findsWidgets);
   });
 
   testWidgets('NovelReaderPage renders empty state instead of sample chapters when no chapters provided', (WidgetTester tester) async {

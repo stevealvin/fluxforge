@@ -48,6 +48,33 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('AuraPlayer active 切换不抛异常（全屏期间的休眠 / 唤醒）', (WidgetTester tester) async {
+    Future<void> pumpWithActive(bool active) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: AuraPlayer(
+              playUrl: '',
+              title: '活动状态测试',
+              active: active,
+            ),
+          ),
+        ),
+      );
+    }
+
+    await pumpWithActive(true);
+    expect(find.byType(AuraPlayer), findsOneWidget);
+
+    // 进入全屏：宿主把被遮挡的小屏实例切为不活动（交还常亮、停掉扫光）
+    await pumpWithActive(false);
+    expect(tester.takeException(), isNull);
+
+    // 退出全屏：唤醒（按当前播放态重新断言常亮）
+    await pumpWithActive(true);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('AuraPlayer does not pause on internal popup dialog, drawer or fullscreen transitions', (WidgetTester tester) async {
     late BuildContext currentContext;
 

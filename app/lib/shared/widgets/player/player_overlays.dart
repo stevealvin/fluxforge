@@ -312,7 +312,7 @@ class PlayerBottomMiniProgress extends StatelessWidget {
   const PlayerBottomMiniProgress({
     super.key,
     required this.visible,
-    required this.seekPreviewTick,
+    required this.positionTick,
     required this.currentPosition,
     required this.totalMilliseconds,
   });
@@ -320,8 +320,8 @@ class PlayerBottomMiniProgress extends StatelessWidget {
   /// 控制条收起时才显示（收起时无缝淡入）
   final bool visible;
 
-  /// 手势预览信号：滑动寻道时进度实时跟手，且不触发整树重建
-  final ValueListenable<int> seekPreviewTick;
+  /// 位置刷新心跳：播放 / 滑动寻道 / 拖拽进度条时进度实时跟手，且不触发整树重建
+  final ValueListenable<int> positionTick;
 
   /// 用 getter 而非值，保证局部重建时拿到最新进度
   final ValueGetter<Duration> currentPosition;
@@ -340,7 +340,7 @@ class PlayerBottomMiniProgress extends StatelessWidget {
           duration: const Duration(milliseconds: 200),
           curve: Curves.easeOut,
           child: ValueListenableBuilder<int>(
-            valueListenable: seekPreviewTick,
+            valueListenable: positionTick,
             builder: (context, _, _) {
               final progressRatio = totalMilliseconds > 0
                   ? (currentPosition().inMilliseconds / totalMilliseconds)

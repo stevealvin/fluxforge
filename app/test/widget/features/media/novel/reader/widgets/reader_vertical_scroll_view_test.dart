@@ -18,6 +18,7 @@ void main() {
     required GlobalKey centerKey,
     required Map<int, GlobalKey> blockKeys,
     required ScrollController controller,
+    VoidCallback? onScrollEnd,
   }) {
     return MaterialApp(
       home: Scaffold(
@@ -33,6 +34,7 @@ void main() {
           lineHeight: 1.6,
           contentOf: (index) => chapters[index].content,
           hasMore: false,
+          onScrollEnd: onScrollEnd ?? () {},
         ),
       ),
     );
@@ -170,5 +172,32 @@ void main() {
 
     // 锚点下方的章节布局与锚点同属一个坐标区，完全不受向上插入影响
     expect(tester.getTopLeft(find.text('第5章')).dy, equals(nextTopBefore));
+  });
+
+  testWidgets('滚动停止时回调 onScrollEnd（供上层精确同步屏中线与窗口裁剪）', (WidgetTester tester) async {
+    final controller = ScrollController();
+    final centerKey = GlobalKey();
+    final blockKeys = <int, GlobalKey>{};
+    var endedCount = 0;
+
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(buildView(
+      sequence: <int>[1, 2, 3, 4, 5, 6],
+      anchorIndex: 3,
+      centerKey: centerKey,
+      blockKeys: blockKeys,
+      controller: controller,
+      onScrollEnd: () => endedCount++,
+    ));
+    await tester.pumpAndSettle();
+
+    // 前置条件：锚点上方有内容 → 可向负方向滚动（否则下面的 jumpTo 不会产生滚动通知）
+    expect(controller.position.minScrollExtent, lessThan(0.0));
+
+    controller.jumpTo(controller.position.minScrollExtent);
+    await tester.pumpAndSettle();
+
+    expect(endedCount, greaterThan(0), reason: '滚动停止必须上报一次，用于补齐降频同步');
   });
 }

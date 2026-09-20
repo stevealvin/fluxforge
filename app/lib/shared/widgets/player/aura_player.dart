@@ -6,17 +6,19 @@ import 'package:ionicons/ionicons.dart';
 import 'package:video_player/video_player.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
-import 'package:fluxforge/app/theme/app_colors.dart';
 import 'package:fluxforge/shared/widgets/player/player_capsules.dart';
+import 'package:fluxforge/shared/widgets/player/player_completion_engine.dart';
 import 'package:fluxforge/shared/widgets/player/player_control_bar.dart';
+import 'package:fluxforge/shared/widgets/player/player_fullscreen_route.dart';
 import 'package:fluxforge/shared/widgets/player/player_gesture_engine.dart';
 import 'package:fluxforge/shared/widgets/player/player_gesture_layer.dart';
 import 'package:fluxforge/shared/widgets/player/player_overlays.dart';
 import 'package:fluxforge/shared/widgets/player/player_settings_sheets.dart';
 import 'package:fluxforge/shared/widgets/player/player_top_bar.dart';
 import 'package:fluxforge/shared/widgets/player/player_video_surface.dart';
-import 'package:fluxforge/shared/widgets/player/player_track_shape.dart';
 import 'package:fluxforge/shared/widgets/player/player_preferences.dart';
+import 'package:fluxforge/shared/widgets/player/player_progress_slider.dart';
+import 'package:fluxforge/shared/widgets/player/player_refresh_engine.dart';
 
 /// 现代视频播放器核心引擎 (AuraPlayer)
 /// 
@@ -28,6 +30,7 @@ class AuraPlayer extends StatefulWidget {
     required this.playUrl,
     this.controller,
     this.isFullScreenMode = false,
+    this.active = true,
     this.httpHeaders = const {},
     this.title = '',
     this.coverUrl,
@@ -51,6 +54,14 @@ class AuraPlayer extends StatefulWidget {
 
   /// 是否运行于全屏独占沉浸路由模式下
   final bool isFullScreenMode;
+
+  /// 本实例是否处于活动状态（宿主被全屏路由遮挡期间传 `false`）
+  ///
+  /// 小屏实例不能卸载 —— 控制器由它创建并持有，卸载会连带销毁全屏正在使用的控制器。
+  /// 置为不活动后：不重建、不驱动扫光、交还常亮、**不触发 [onEnded]**
+  /// （两实例共用控制器，都回调会让宿主跳集跳两集）；
+  /// 但保留 [onProgress] 上报，宿主的续播进度不能在全屏期间断档。
+  final bool active;
 
   /// 自定义防盗链与鉴权请求头 (如 Referer, User-Agent)
   final Map<String, String> httpHeaders;
@@ -170,11 +181,22 @@ class AuraPlayerState extends State<AuraPlayer>
   /// 仅在渲染时取整，滑动即可完全跟手。
   double _seekDeltaRawSeconds = 0.0;
 
-  /// 手势预览刷新信号 (自增计数)
+  /// 位置刷新心跳（自增计数）
   ///
-  /// 左右滑动寻道期间只更新该 notifier，让中央胶囊、进度条与时间文本局部重建，
-  /// 不再调用 setState 重建整棵播放器树，从根本上消除滑动掉帧。
-  final ValueNotifier<int> _seekPreviewTick = ValueNotifier<int>(0);
+  /// 位置类 UI（快进胶囊、进度条、时间文本、迷你进度条）订阅它局部重建，
+  /// 帧回调只递增心跳、不 setState；状态变化才整树重建（见 [_onControllerUpdate]）。
+  /// 手势寻道与进度条拖拽同样递增它。
+  final ValueNotifier<int> _positionTick = ValueNotifier<int>(0);
+
+  /// 帧回调刷新策略：区分「状态变化（整树重建一次）」与「位置推进（心跳局部刷新）」
+  final PlayerRefreshEngine _refreshEngine = PlayerRefreshEngine();
+
+  /// 播完判定：以平台 completed 事件为主判据 + 每轮播放只上报一次的闩锁
+  final PlayerCompletionEngine _completionEngine = PlayerCompletionEngine();
+
+  /// 手势数值刷新心跳（亮度 / 音量）：亮度遮罩与两个胶囊订阅它局部重建，
+  /// 滑动过程不 setState；胶囊显隐翻转仍走 setState（会改变 Stack 节点结构）。
+  final ValueNotifier<int> _gestureTick = ValueNotifier<int>(0);
 
   // 长按瞬时加速 (倍率与开关均实时读取当前生效偏好)
   bool _isFastForwarding = false;
@@ -259,7 +281,8 @@ class AuraPlayerState extends State<AuraPlayer>
       _isInitialized = _controller!.value.isInitialized;
       _volume = _controller!.value.volume;
       _controller!.addListener(_onControllerUpdate);
-      if (_controller!.value.isPlaying) {
+      // 休眠实例（宿主被全屏遮挡期间）不申请屏幕常亮，由全屏实例接管
+      if (widget.active && _controller!.value.isPlaying) {
         _updateWakelock(true);
       }
       _startControlsTimer();
@@ -299,6 +322,27 @@ class AuraPlayerState extends State<AuraPlayer>
             !mapEquals(oldWidget.httpHeaders, widget.httpHeaders))) {
       _initializePlayer();
     }
+    // 全屏路由进入 / 退出时切换活动状态（休眠 / 唤醒本实例）
+    if (widget.active != oldWidget.active) {
+      _onActiveChanged();
+    }
+  }
+
+  /// 活动状态切换：休眠时让出常亮与 ticker，唤醒时按真实播放态重新断言
+  ///
+  /// 常亮是全局需求计数：休眠实例不交还，全屏内暂停后屏幕仍常亮；
+  /// 唤醒时不重新断言，退出全屏后播放中屏幕会熄灭。
+  void _onActiveChanged() {
+    if (!widget.active) {
+      _updateWakelock(false);
+      if (_shimmerController.isAnimating) _shimmerController.stop();
+      return;
+    }
+    _syncShimmerTicker();
+    final value = _controller?.value;
+    _updateWakelock(
+      value != null && value.isInitialized && value.isPlaying && !value.hasError,
+    );
   }
 
   @override
@@ -332,7 +376,8 @@ class AuraPlayerState extends State<AuraPlayer>
     _volumeCapsuleTimer?.cancel();
     _brightnessCapsuleTimer?.cancel();
     _resumeTipTimer?.cancel();
-    _seekPreviewTick.dispose();
+    _positionTick.dispose();
+    _gestureTick.dispose();
 
     // 退出全屏时恢复竖屏
     if (_isFullScreen) {
@@ -349,8 +394,12 @@ class AuraPlayerState extends State<AuraPlayer>
     super.dispose();
   }
 
-  /// 初始化原生播放器控制器
+  /// 初始化自建控制器
+  ///
+  /// 外部托管控制器不在此列：否则全屏界面的「重试加载」会接管并销毁宿主的控制器。
   Future<void> _initializePlayer() async {
+    if (widget.controller != null) return;
+
     if (widget.playUrl.trim().isEmpty) {
       _updateWakelock(false);
       setState(() {
@@ -371,40 +420,52 @@ class AuraPlayerState extends State<AuraPlayer>
       _hasError = false;
       _errorMessage = '';
     });
+    // 新控制器的状态与上一份快照无关，清空以保证首帧必定重建一次
+    _refreshEngine.reset();
+    _completionEngine.reset();
     _syncShimmerTicker();
 
+    // 记录本次初始化所创建的控制器，供 catch 判断「这次初始化是否已被更新的一轮取代」
+    VideoPlayerController? pending;
     try {
       final url = widget.playUrl.trim();
       // 本地已下载的视频走 file:// URI：Android 侧 ExoPlayer 直接支持，
       // 不引入 dart:io（避免破坏 web 构建路径，下载能力在 web 上本就不可用）
       final isLocal =
           !url.startsWith('http://') && !url.startsWith('https://');
-      if (isLocal) {
-        final normalized = url.startsWith('file://') ? url : 'file://$url';
-        _controller = VideoPlayerController.contentUri(Uri.parse(normalized));
-      } else {
-        _controller = VideoPlayerController.networkUrl(
-          Uri.parse(url),
-          httpHeaders: widget.httpHeaders,
-        );
-      }
 
-      await _controller!.initialize();
+      // 全程持局部引用：await 期间 playUrl 可能变化并触发新一轮初始化，
+      // 若回头读 `_controller` 字段，会把监听挂到新控制器上（两份监听 → 结束回调两次），
+      // 或用旧集的断点去 seek 新集。
+      final controller = isLocal
+          ? VideoPlayerController.contentUri(
+              Uri.parse(url.startsWith('file://') ? url : 'file://$url'),
+            )
+          : VideoPlayerController.networkUrl(
+              Uri.parse(url),
+              httpHeaders: widget.httpHeaders,
+            );
+      pending = controller;
+      _controller = controller;
 
-      if (!mounted) return;
+      await controller.initialize();
 
-      _controller!.addListener(_onControllerUpdate);
-      _controller!.setVolume(_volume);
-      _controller!.setPlaybackSpeed(_normalSpeed);
-      _controller!.play();
+      // 已被新一轮初始化取代（或已卸载）→ 丢弃结果。
+      // 不再 dispose：新一轮入口已销毁过旧控制器，重销会二次释放。
+      if (!mounted || !identical(controller, _controller)) return;
+
+      controller.addListener(_onControllerUpdate);
+      controller.setVolume(_volume);
+      controller.setPlaybackSpeed(_normalSpeed);
+      controller.play();
 
       // 判断断点续播逻辑
       if (widget.initialPosition.inSeconds > 5 &&
-          widget.initialPosition < _controller!.value.duration) {
+          widget.initialPosition < controller.value.duration) {
         // 「直接跳转」策略：静默 seek 到上次进度，交由用户自行决定是否回退
         if (widget.autoResume) {
-          await _controller!.seekTo(widget.initialPosition);
-          if (!mounted) return;
+          await controller.seekTo(widget.initialPosition);
+          if (!mounted || !identical(controller, _controller)) return;
         }
         setState(() {
           _showResumeTip = true;
@@ -426,6 +487,8 @@ class AuraPlayerState extends State<AuraPlayer>
       _startControlsTimer();
     } catch (e) {
       if (!mounted) return;
+      // 已被新一轮初始化取代 → 本次失败无需展示（旧控制器被主动销毁也走这里）
+      if (pending != null && !identical(pending, _controller)) return;
       _updateWakelock(false);
       setState(() {
         _hasError = true;
@@ -435,10 +498,22 @@ class AuraPlayerState extends State<AuraPlayer>
     }
   }
 
-  /// 视频播放器帧状态监听
+  /// 视频播放器帧状态监听（约 60 次/秒）
+  ///
+  /// 按「数据变化频率」分流：位置类走 [_positionTick] 局部重建；
+  /// 状态类（播放/暂停、缓冲、倍速、总时长）与快照比对，仅真变化时 `setState`。
   void _onControllerUpdate() {
     if (!mounted || _controller == null) return;
     final value = _controller!.value;
+
+    // 播放进度通知上层（不活动实例同样上报：宿主「继续观看」进度不能在全屏期间断档）
+    if (value.isInitialized && !_isDraggingProgress && !_isSeeking) {
+      widget.onProgress?.call(value.position, value.duration);
+    }
+
+    // 不活动实例（被全屏路由遮挡的宿主播放器）：只上报进度，其余全部跳过 ——
+    // 不重建、不驱动扫光、不管常亮、不触发播完回调（播完由全屏实例唯一驱动）。
+    if (!widget.active) return;
 
     // 同步常亮：播放中常亮，其余解除
     final isPlaying = value.isInitialized && value.isPlaying && !value.hasError;
@@ -446,15 +521,17 @@ class AuraPlayerState extends State<AuraPlayer>
 
     _syncShimmerTicker();
 
-    // 播放进度通知上层
-    if (value.isInitialized && !_isDraggingProgress && !_isSeeking) {
-      widget.onProgress?.call(value.position, value.duration);
-    }
-
     // 播放结束判定 (支持单视频循环播放)
-    if (value.isInitialized &&
-        value.position >= value.duration &&
-        value.duration > Duration.zero) {
+    //
+    // 判据与「同一轮播放只上报一次」的闩锁见 [PlayerCompletionEngine]：
+    // 库在收到平台完成事件后会自行 pause + seekTo(duration)，此后完成条件**持续为真**，
+    // 不做闩锁就会逐帧重复回调，宿主侧表现为「自动跳集一次跳两集」。
+    if (_completionEngine.shouldReport(
+      isInitialized: value.isInitialized,
+      isCompleted: value.isCompleted,
+      position: value.position,
+      duration: value.duration,
+    )) {
       if (_isLooping) {
         _controller?.seekTo(Duration.zero);
         _controller?.play();
@@ -464,12 +541,21 @@ class AuraPlayerState extends State<AuraPlayer>
       }
     }
 
-    // 水平滑动寻道进行中：进度显示由 _seekPreviewTick 驱动局部刷新，
-    // 此处跳过整树刷新，避免「播放帧回调 + 手势回调」双重重建导致掉帧
-    if (_isSeeking) return;
+    // 状态类字段仅在其变化时整树重建：
+    // 播放/暂停键（_effectiveIsPlaying）、缓冲转圈与扫光、倍速文本、总时长文本依赖它们。
+    // 判断逻辑见 [PlayerRefreshEngine]（已由纯 Dart 单测锁定「状态不变则不重建」）。
+    if (_refreshEngine.submit(
+      isPlaying: value.isPlaying,
+      isBuffering: value.isBuffering,
+      playbackSpeed: value.playbackSpeed,
+      duration: value.duration,
+      isInitialized: value.isInitialized,
+    )) {
+      setState(() {});
+    }
 
-    // 触发刷新时间显示
-    setState(() {});
+    // 位置类 UI 局部刷新；滑动寻道期间由手势回调递增，此处跳过避免重复
+    if (!_isSeeking) _positionTick.value++;
   }
 
   /// 启动无操作 5.0 秒后自动隐藏控制栏的计时器 (时长延长，操作从容舒展)
@@ -509,6 +595,9 @@ class AuraPlayerState extends State<AuraPlayer>
   }
 
   /// 切换横竖屏全屏模式 (自闭环驱动独立全屏路由)
+  ///
+  /// 横竖屏与系统 UI 模式切换、路由推入与退出恢复的编排见 [pushPlayerFullscreen]，
+  /// 这里只表达「何时进入 / 退出」以及全屏实例的构造。
   Future<void> _toggleFullScreen() async {
     // 1. 如果当前已在全屏路由模式中，触发退出全屏路由
     if (widget.isFullScreenMode) {
@@ -524,59 +613,39 @@ class AuraPlayerState extends State<AuraPlayer>
 
     widget.onFullScreenChanged?.call(true);
 
-    // 2. 设置横屏与全屏沉浸模式
-    await SystemChrome.setPreferredOrientations([
-      DeviceOrientation.landscapeLeft,
-      DeviceOrientation.landscapeRight,
-    ]);
-    await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
-
-    if (!mounted) return;
-
-    // 3. 通过 rootNavigator 独立路由推入全屏播放界面，直接全屏铺满覆盖宿主所有的 AppBar/BottomBar/Scaffold
-    await Navigator.of(context, rootNavigator: true).push(
-      PageRouteBuilder(
-        opaque: true,
-        fullscreenDialog: true,
-        pageBuilder: (fullscreenContext, animation, secondaryAnimation) {
-          return Scaffold(
-            backgroundColor: Colors.black,
-            body: AuraPlayer(
-              playUrl: widget.playUrl,
-              controller: _controller,
-              title: widget.title,
-              coverUrl: widget.coverUrl,
-              httpHeaders: widget.httpHeaders,
-              isFullScreenMode: true,
-              onBack: () => Navigator.of(fullscreenContext).pop(),
-              onEnded: widget.onEnded,
-              extraActions: widget.extraActions,
-              // 用本地副本而非 widget 参数：宿主尚未回灌时也要带上最新偏好
-              preferences: _preferences,
-              onPreferencesChanged: widget.onPreferencesChanged,
-            ),
-          );
-        },
-        transitionsBuilder: (context, animation, secondaryAnimation, child) {
-          return FadeTransition(opacity: animation, child: child);
-        },
+    // 2. 推入全屏路由（横屏 / 沉浸 / 退出后恢复竖屏由编排层统一处理）
+    await pushPlayerFullscreen(
+      context: context,
+      builder: (fullscreenContext) => Scaffold(
+        backgroundColor: Colors.black,
+        body: AuraPlayer(
+          playUrl: widget.playUrl,
+          // 复用宿主控制器：全屏实例不持有其生命周期（见 [_initializePlayer] 的守卫）
+          controller: _controller,
+          title: widget.title,
+          coverUrl: widget.coverUrl,
+          httpHeaders: widget.httpHeaders,
+          isFullScreenMode: true,
+          onBack: () => Navigator.of(fullscreenContext).pop(),
+          onEnded: widget.onEnded,
+          extraActions: widget.extraActions,
+          // 用本地副本而非 widget 参数：宿主尚未回灌时也要带上最新偏好
+          preferences: _preferences,
+          onPreferencesChanged: widget.onPreferencesChanged,
+        ),
       ),
+      // 3. 退出全屏后的收尾（编排层已恢复竖屏，且保证宿主仍挂载）
+      onExited: () {
+        widget.onFullScreenChanged?.call(false);
+        if (!mounted) return;
+        setState(() {
+          _isFullScreen = false;
+          _volume = _controller?.value.volume ?? _volume;
+        });
+        _startControlsTimer();
+        _updateWakelock(_controller?.value.isPlaying ?? false);
+      },
     );
-
-    // 4. 退出全屏路由后，自动恢复竖屏与 edgeToEdge
-    await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
-    await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-
-    widget.onFullScreenChanged?.call(false);
-
-    if (mounted) {
-      setState(() {
-        _isFullScreen = false;
-        _volume = _controller?.value.volume ?? _volume;
-      });
-      _startControlsTimer();
-      _updateWakelock(_controller?.value.isPlaying ?? false);
-    }
   }
 
   /// 格式化 Duration 为 00:00 样式文本
@@ -603,9 +672,13 @@ class AuraPlayerState extends State<AuraPlayer>
         _buildVideoSurface(),
 
         // 2. 屏幕应用内微调暗度遮罩 (实现无权限亮度调节)
+        //    订阅手势心跳：滑动调光时只重建这一层，不触及整棵播放器树
         IgnorePointer(
-          child: Container(
-            color: Colors.black.withValues(alpha: (1.0 - _brightness) * 0.75),
+          child: ValueListenableBuilder<int>(
+            valueListenable: _gestureTick,
+            builder: (context, _, _) => Container(
+              color: Colors.black.withValues(alpha: (1.0 - _brightness) * 0.75),
+            ),
           ),
         ),
 
@@ -622,7 +695,7 @@ class AuraPlayerState extends State<AuraPlayer>
         // 6. 手势浮层：居中快进/快退毛玻璃胶囊
         //    仅该浮层随手势局部重建，拖动过程不触及整棵播放器树
         ValueListenableBuilder<int>(
-          valueListenable: _seekPreviewTick,
+          valueListenable: _positionTick,
           builder: (context, _, _) {
             if (!_isSeeking) return const SizedBox.shrink();
             return _buildSeekingCapsule();
@@ -751,15 +824,18 @@ class AuraPlayerState extends State<AuraPlayer>
       // 垂直滑动：左 35% 亮度 / 右 35% 音量（分区已由手势层判定）
       onVerticalDragUpdate: (zone, deltaRatio) {
         if (zone == PlayerGestureZone.brightness) {
-          setState(() {
-            _brightness = PlayerGestureEngine.applyVerticalDrag(
-              current: _brightness,
-              deltaRatio: deltaRatio,
-              min: 0.15,
-              max: 1.0,
-            );
-            _showBrightnessCapsule = true;
-          });
+          _brightness = PlayerGestureEngine.applyVerticalDrag(
+            current: _brightness,
+            deltaRatio: deltaRatio,
+            min: 0.15,
+            max: 1.0,
+          );
+          // 胶囊首次出现属于结构变化，需要建树；此后逐帧只递增心跳刷数值
+          if (!_showBrightnessCapsule) {
+            setState(() => _showBrightnessCapsule = true);
+          } else {
+            _gestureTick.value++;
+          }
           _brightnessCapsuleTimer?.cancel();
           _brightnessCapsuleTimer = Timer(const Duration(seconds: 1), () {
             if (mounted) {
@@ -769,16 +845,19 @@ class AuraPlayerState extends State<AuraPlayer>
             }
           });
         } else if (zone == PlayerGestureZone.volume) {
-          setState(() {
-            _volume = PlayerGestureEngine.applyVerticalDrag(
-              current: _volume,
-              deltaRatio: deltaRatio,
-              min: 0.0,
-              max: 1.0,
-            );
-            _controller?.setVolume(_volume);
-            _showVolumeCapsule = true;
-          });
+          _volume = PlayerGestureEngine.applyVerticalDrag(
+            current: _volume,
+            deltaRatio: deltaRatio,
+            min: 0.0,
+            max: 1.0,
+          );
+          _controller?.setVolume(_volume);
+          // 胶囊首次出现属于结构变化，需要建树；此后逐帧只递增心跳刷数值
+          if (!_showVolumeCapsule) {
+            setState(() => _showVolumeCapsule = true);
+          } else {
+            _gestureTick.value++;
+          }
           _volumeCapsuleTimer?.cancel();
           _volumeCapsuleTimer = Timer(const Duration(seconds: 1), () {
             if (mounted) {
@@ -800,7 +879,7 @@ class AuraPlayerState extends State<AuraPlayer>
           _seekTarget = _seekStartPos;
           _seekDeltaSeconds = 0;
         });
-        _seekPreviewTick.value++;
+        _positionTick.value++;
       },
       onHorizontalDragUpdate: (deltaRatio) {
         if (!_isSeeking) return;
@@ -820,7 +899,7 @@ class AuraPlayerState extends State<AuraPlayer>
             PlayerGestureEngine.displayDeltaSeconds(resolved.accumulatedSeconds);
 
         // 只刷新手势浮层与进度显示，不触发整树重建
-        _seekPreviewTick.value++;
+        _positionTick.value++;
       },
       onHorizontalDragEnd: () {
         if (_isSeeking && _controller != null) {
@@ -828,7 +907,7 @@ class AuraPlayerState extends State<AuraPlayer>
             _isSeeking = false;
             _isSeekingTo = true;
           });
-          _seekPreviewTick.value++;
+          _positionTick.value++;
           _syncShimmerTicker();
           _controller!.seekTo(_seekTarget).then((_) {
             if (mounted) {
@@ -852,29 +931,38 @@ class AuraPlayerState extends State<AuraPlayer>
     );
   }
 
-  /// 左侧垂直胶囊亮度指示条
+  /// 左侧垂直胶囊亮度指示条（订阅手势心跳：滑动期间只重建本组件）
   Widget _buildBrightnessCapsule() {
-    return PlayerVerticalIndicatorCapsule(
-      side: PlayerCapsuleSide.left,
-      // 全屏下避让左侧控制区，偏移更大
-      offset: _isFullScreen ? 68 : 16,
-      icon: Ionicons.sunnyOutline,
-      value: _brightness,
+    return ValueListenableBuilder<int>(
+      valueListenable: _gestureTick,
+      builder: (context, _, _) => PlayerVerticalIndicatorCapsule(
+        side: PlayerCapsuleSide.left,
+        // 全屏下避让左侧控制区，偏移更大
+        offset: _isFullScreen ? 68 : 16,
+        icon: Ionicons.sunnyOutline,
+        value: _brightness,
+      ),
     );
   }
 
-  /// 右侧垂直胶囊音量指示条
+  /// 右侧垂直胶囊音量指示条（订阅手势心跳：滑动期间只重建本组件）
   Widget _buildVolumeCapsule() {
-    return PlayerVerticalIndicatorCapsule(
-      side: PlayerCapsuleSide.right,
-      offset: 20,
-      // 静音 / 低音量 / 高音量三态图标由页面按业务语义决定
-      icon: _volume == 0
-          ? Ionicons.volumeMuteOutline
-          : (_volume > 0.5
-              ? Ionicons.volumeHighOutline
-              : Ionicons.volumeLowOutline),
-      value: _volume,
+    return ValueListenableBuilder<int>(
+      valueListenable: _gestureTick,
+      builder: (context, _, _) {
+        // 静音 / 低音量 / 高音量三态图标由页面按业务语义决定
+        final volume = _volume;
+        return PlayerVerticalIndicatorCapsule(
+          side: PlayerCapsuleSide.right,
+          offset: 20,
+          icon: volume == 0
+              ? Ionicons.volumeMuteOutline
+              : (volume > 0.5
+                  ? Ionicons.volumeHighOutline
+                  : Ionicons.volumeLowOutline),
+          value: volume,
+        );
+      },
     );
   }
 
@@ -953,7 +1041,7 @@ class AuraPlayerState extends State<AuraPlayer>
 
     return PlayerBottomMiniProgress(
       visible: !_showControls,
-      seekPreviewTick: _seekPreviewTick,
+      positionTick: _positionTick,
       currentPosition: () => _currentPosition,
       totalMilliseconds: _controller?.value.duration.inMilliseconds ?? 0,
     );
@@ -1036,7 +1124,7 @@ class AuraPlayerState extends State<AuraPlayer>
       currentPosition: () => _currentPosition,
       duration: _controller?.value.duration ?? Duration.zero,
       playbackSpeed: _controller?.value.playbackSpeed ?? 1.0,
-      seekPreviewTick: _seekPreviewTick,
+      positionTick: _positionTick,
       formatDuration: _formatDuration,
       progressSlider: ({required bool compact}) =>
           _buildProgressSlider(compact: compact),
@@ -1053,8 +1141,19 @@ class AuraPlayerState extends State<AuraPlayer>
     );
   }
 
-  /// 极光翡翠流光进度条 (集成缓冲进度、统一粗细与加载流光扫光动画)
+  /// 极光翡翠流光进度条（视觉见 [PlayerProgressSlider]，这里只取值与接线）
+  ///
+  /// 整体订阅位置心跳：总时长 / 缓冲比例 / 缓冲态 / 播放位置都在心跳内重算，
+  /// 因此播放期不必整树 `setState` 也能与播放帧同步。
   Widget _buildProgressSlider({bool compact = false}) {
+    return ValueListenableBuilder<int>(
+      valueListenable: _positionTick,
+      builder: (context, _, _) => _buildProgressSliderBody(compact: compact),
+    );
+  }
+
+  /// 进度条主体 (拆分为独立方法，便于随位置心跳局部重建)
+  Widget _buildProgressSliderBody({required bool compact}) {
     final totalMs = _controller?.value.duration.inMilliseconds ?? 0;
 
     // 计算已加载缓冲比例
@@ -1066,98 +1165,61 @@ class AuraPlayerState extends State<AuraPlayer>
 
     final isBuffering = !_isInitialized || (_controller?.value.isBuffering == true) || _isSeekingTo;
 
-    // 订阅手势预览信号：滑动寻道时滑块实时跟手，且只重建进度条自身
-    return ValueListenableBuilder<int>(
-      valueListenable: _seekPreviewTick,
-      builder: (context, _, _) => _buildProgressSliderBody(
-        compact: compact,
-        totalMs: totalMs,
-        bufferedFraction: bufferedFraction,
-        isBuffering: isBuffering,
-      ),
-    );
-  }
-
-  /// 进度条主体 (拆分为独立方法，便于随手势预览信号局部重建)
-  Widget _buildProgressSliderBody({
-    required bool compact,
-    required int totalMs,
-    required double bufferedFraction,
-    required bool isBuffering,
-  }) {
     final progressRatio = totalMs > 0
         ? (_currentPosition.inMilliseconds / totalMs).clamp(0.0, 1.0)
         : 0.0;
 
-    return AnimatedBuilder(
-      animation: _shimmerController,
-      builder: (context, child) {
-        return SizedBox(
-          height: compact ? 18 : 22,
-          child: SliderTheme(
-            data: SliderTheme.of(context).copyWith(
-              trackShape: AuraSliderTrackShape(
-                bufferedFraction: bufferedFraction,
-                isBuffering: isBuffering,
-                shimmerProgress: _shimmerController.value,
-              ),
-              trackHeight: compact ? 2.5 : 3.5,
-              thumbShape: RoundSliderThumbShape(
-                enabledThumbRadius: _isDraggingProgress
-                    ? (compact ? 6.0 : 7.0)
-                    : (compact ? 4.5 : 5.5),
-              ),
-              overlayShape: RoundSliderOverlayShape(overlayRadius: compact ? 10 : 12),
-              activeTrackColor: AppColors.primary,
-              inactiveTrackColor: Colors.white24,
-              thumbColor: AppColors.primary,
-              overlayColor: AppColors.primary.withValues(alpha: 0.2),
-            ),
-          child: Slider(
-            value: progressRatio,
-            onChanged: (val) {
-              if (!_isDraggingProgress) {
-                _wasPlayingBeforeDrag = _controller?.value.isPlaying ?? false;
+    return PlayerProgressSlider(
+      compact: compact,
+      progressRatio: progressRatio,
+      bufferedFraction: bufferedFraction,
+      isBuffering: isBuffering,
+      isDragging: _isDraggingProgress,
+      shimmerAnimation: _shimmerController,
+      onChanged: (val) {
+        // 拖拽起点：翻转拖拽标记需要整树重建一次（缩略块尺寸、播放意图判定依赖它）
+        final startsDragging = !_isDraggingProgress;
+        if (startsDragging) {
+          _wasPlayingBeforeDrag = _controller?.value.isPlaying ?? false;
+        }
+        _dragProgressValue = val;
+        if (startsDragging) {
+          setState(() => _isDraggingProgress = true);
+        } else {
+          // 拖拽过程只递增位置心跳：进度条与时间文本局部重建，不再每帧重建整棵树
+          _positionTick.value++;
+        }
+        _controlsTimer?.cancel();
+      },
+      onChangeEnd: (val) {
+        if (_controller != null && totalMs > 0) {
+          setState(() {
+            _isSeekingTo = true;
+          });
+          _syncShimmerTicker();
+          _controller!.seekTo(Duration(milliseconds: (val * totalMs).round())).then((_) {
+            if (mounted) {
+              if (_wasPlayingBeforeDrag) {
+                _controller?.play();
               }
-              setState(() {
-                _isDraggingProgress = true;
-                _dragProgressValue = val;
+              _seekToDebounceTimer?.cancel();
+              _seekToDebounceTimer = Timer(const Duration(milliseconds: 350), () {
+                if (mounted) {
+                  setState(() {
+                    _isSeekingTo = false;
+                  });
+                  _syncShimmerTicker();
+                }
               });
-              _controlsTimer?.cancel();
-            },
-            onChangeEnd: (val) {
-              if (_controller != null && totalMs > 0) {
-                setState(() {
-                  _isSeekingTo = true;
-                });
-                _syncShimmerTicker();
-                _controller!.seekTo(Duration(milliseconds: (val * totalMs).round())).then((_) {
-                  if (mounted) {
-                    if (_wasPlayingBeforeDrag) {
-                      _controller?.play();
-                    }
-                    _seekToDebounceTimer?.cancel();
-                    _seekToDebounceTimer = Timer(const Duration(milliseconds: 350), () {
-                      if (mounted) {
-                        setState(() {
-                          _isSeekingTo = false;
-                        });
-                        _syncShimmerTicker();
-                      }
-                    });
-                  }
-                });
-              }
-              setState(() {
-                _isDraggingProgress = false;
-              });
-              _startControlsTimer();
-            },
-          ),
-        ),
-      );
-    },
-  );
+            }
+          });
+        }
+        setState(() {
+          _isDraggingProgress = false;
+        });
+        _startControlsTimer();
+      },
+    );
   }
 
   /// 从右侧滑出全屏半透明倍速选择抽屉面板 (腾讯视频/B站全屏流媒体范式)
@@ -1167,6 +1229,7 @@ class AuraPlayerState extends State<AuraPlayer>
       context: context,
       currentSpeed: _controller?.value.playbackSpeed ?? 1.0,
       onSpeedSelected: (speed) {
+        if (!mounted) return;
         _controller?.setPlaybackSpeed(speed);
         _normalSpeed = speed;
         setState(() {});
@@ -1184,12 +1247,18 @@ class AuraPlayerState extends State<AuraPlayer>
       isLooping: _isLooping,
       videoFit: _videoFit,
       preferences: _preferences,
-      onMirroredChanged: (val) => setState(() => _isMirrored = val),
-      onLoopingChanged: (val) => setState(() => _isLooping = val),
-      onVideoFitChanged: (val) => setState(() => _videoFit = val),
+      onMirroredChanged: (val) {
+        if (mounted) setState(() => _isMirrored = val);
+      },
+      onLoopingChanged: (val) {
+        if (mounted) setState(() => _isLooping = val);
+      },
+      onVideoFitChanged: (val) {
+        if (mounted) setState(() => _videoFit = val);
+      },
       onPreferencesChanged: (next) {
         // 先本地生效（全屏路由不随宿主重建），再上抛宿主持久化
-        setState(() => _preferences = next);
+        if (mounted) setState(() => _preferences = next);
         widget.onPreferencesChanged?.call(next);
       },
     );

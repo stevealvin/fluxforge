@@ -29,7 +29,7 @@ import 'package:fluxforge/features/media/novel/reader/widgets/reader_vertical_sc
 /// 纯净小说阅读引擎 (FluxReader)
 /// 
 /// 支持按需异步调度沙箱 parse 抓取正文、智能排版切片分页、
-/// SelectableText 长按划词自由选区复制、后台预取与跨章无缝续读、
+/// SelectionArea 长按划词自由选区复制（横向 / 纵向统一）、后台预取与跨章无缝续读、
 /// 四大经典护眼底色、字号行距无级微调，以及左侧目录抽屉（自动定位当前章 + 缓存状态标识）
 
 class NovelReaderPage extends StatefulWidget {
@@ -62,7 +62,8 @@ class NovelReaderPage extends StatefulWidget {
   State<NovelReaderPage> createState() => _NovelReaderPageState();
 }
 
-class _NovelReaderPageState extends State<NovelReaderPage> {
+class _NovelReaderPageState extends State<NovelReaderPage>
+    with WidgetsBindingObserver {
   // 章节与数据
   late List<NovelChapter> _chapters;
   late int _currentChapterIndex;
@@ -70,11 +71,18 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
   // 正文异步沙箱加载状态与缓存
   bool _isLoadingContent = false;
   String? _contentError;
+  /// 正文缓存的保留半径（章）：略大于渲染窗口，作为回看缓冲
+  ///
+  /// 顺读时它基本不被访问，挡的是回看 / 跳章时的重新分页开销
+  /// （实测单章分页 ~71ms，而重新读盘仅 ~0.3ms），取 ±15 保持内存恒定。
+  static const int _cacheWindowRadius = 15;
+
   /// 章节正文会话缓存（阅读期加速层，退出阅读器即释放）
   ///
-  /// 与「离线下载」（沙盒持久化、断网可读）是两层不同机制，详见 [ChapterCache]；
-  /// 内置访问序 LRU，超出容量时淘汰最久未使用的章节。
-  final ChapterCache _contentCache = ChapterCache();
+  /// 与「离线下载」（沙盒落盘、断网可读）是两层机制，详见 [ChapterCache]；
+  /// 分页切片（[_chapterSlices]）与该缓存同生共死，见 [_applyCacheEviction]。
+  final ChapterCache _contentCache =
+      ChapterCache(capacity: _cacheWindowRadius * 2 + 1);
 
   /// 章节正文获取管道（三级来源 + 后台预取 / 落盘调度）
   ///
@@ -135,6 +143,12 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
   /// 纵向模式各章节块定位 Key（用于识别当前正在阅读的章节）
   final Map<int, GlobalKey> _verticalBlockKeys = {};
 
+  /// 屏中线同步的降频计数（章号最多滞后 3 帧，滚动停止时补一次）
+  int _verticalSyncFrame = 0;
+
+  /// 屏中线同步降频间隔（帧）
+  static const int _verticalSyncFrameInterval = 4;
+
   /// 纵向续载失败的章节索引（避免滚动过程中对失败章节反复发起请求）
   final Set<int> _verticalFailed = {};
 
@@ -166,6 +180,8 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
   @override
   void initState() {
     super.initState();
+    // 监听系统内存告警，收到后主动释放不在屏上的章节正文
+    WidgetsBinding.instance.addObserver(this);
     _currentChapterIndex = widget.initialChapterIndex;
     _setupChapters();
     _loadUserPreferences();
@@ -191,10 +207,21 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _pageController?.dispose();
     _scrollController.dispose();
     _catalogScrollController?.dispose();
     super.dispose();
+  }
+
+  /// 系统内存告警（Android `onTrimMemory` / iOS `didReceiveMemoryWarning`）
+  ///
+  /// 长会话下章节内存镜像是唯一会持续增长的部分，收到告警即主动让路：
+  /// 释放不在屏上的章节正文，避免整页被系统回收（重读一次本地文件即可恢复）。
+  @override
+  void didHaveMemoryPressure() {
+    super.didHaveMemoryPressure();
+    _releaseCacheOnMemoryPressure();
   }
 
   /// 准备章节数据并初始化缓存
@@ -402,7 +429,16 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
         intent == VerticalLoadIntent.both) {
       _prependPrevVerticalChapter();
     }
-    _syncVerticalCurrentChapter();
+
+    // 屏中线同步（findRenderObject）降频到每 N 帧一次，滚动停止时再由
+    // [_onVerticalScrollEnd] 精确补一次；窗口裁剪同样跟着降频执行。
+    if (++_verticalSyncFrame >= _verticalSyncFrameInterval) {
+      _verticalSyncFrame = 0;
+      _syncVerticalCurrentChapter();
+      // 锚点漂移过大时先重设锚点，否则「锚点与当前章之间」的中间区段无法被窗口裁掉
+      _reanchorVerticalFlowIfNeeded();
+      _trimVerticalWindow();
+    }
 
     // 控制栏展开时节流刷新章内进度条（避免滚动过程中每帧 setState）
     if (_showControls) {
@@ -516,6 +552,72 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
     }
   }
 
+  /// 滚动停止：补齐一次精确的屏中线同步与窗口裁剪
+  ///
+  /// 延到帧末执行：`ScrollEndNotification` 可能在布局阶段派发（那时 setState 会抛异常），
+  /// 且裁剪本身会改变内容尺寸、可能再派发一次结束通知。
+  void _onVerticalScrollEnd() {
+    if (_pageMode != PageTurnMode.verticalScroll) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _pageMode != PageTurnMode.verticalScroll) return;
+      _verticalSyncFrame = 0;
+      _syncVerticalCurrentChapter();
+      _reanchorVerticalFlowIfNeeded();
+      _trimVerticalWindow();
+    });
+  }
+
+  /// 锚点漂移过大时重设锚点（原因见 [VerticalFlowEngine.needsReanchor]）
+  ///
+  /// 锚点是 Viewport 坐标原点，变更后 `pixels` 含义随之改变，
+  /// 故须跳转到当前章内的阅读位置（`pixels - 章块顶部偏移`，见 [ChapterMetrics.top]）；
+  /// 跳转与 setState 在同一同步块内完成，本帧尚未布局，因此无中间态。
+  void _reanchorVerticalFlowIfNeeded() {
+    if (_pageMode != PageTurnMode.verticalScroll) return;
+    if (!_scrollController.hasClients) return;
+
+    if (!VerticalFlowEngine.needsReanchor(
+      currentChapterIndex: _currentChapterIndex,
+      anchorChapterIndex: _verticalAnchorIndex,
+    )) {
+      return;
+    }
+
+    // 当前章块几何不可测（尚未布局）→ 下一帧再试，绝不盲目跳转
+    final metrics = _verticalChapterMetrics();
+    if (metrics == null) return;
+
+    final inChapterOffset =
+        (_scrollController.offset - metrics.top).clamp(0.0, double.infinity);
+
+    setState(() => _verticalAnchorIndex = _currentChapterIndex);
+    _scrollController.jumpTo(inChapterOffset);
+  }
+
+  /// 长卷窗口化：摘除远离当前章的章节（锚点章节永不摘除，见引擎）
+  ///
+  /// 序列收缩后保护集合随之变小，正文缓存才真正受容量上限约束。
+  void _trimVerticalWindow() {
+    if (_pageMode != PageTurnMode.verticalScroll) return;
+
+    final trim = VerticalFlowEngine.resolveWindowTrim(
+      sequence: _verticalSequence,
+      currentChapterIndex: _currentChapterIndex,
+      anchorChapterIndex: _verticalAnchorIndex,
+    );
+    if (trim.isEmpty) return;
+
+    final dropped = trim.all;
+    setState(() {
+      _verticalSequence.removeWhere(dropped.contains);
+      // 一并释放各块的定位 Key，避免反复进出窗口时 Key 表持续增长
+      _verticalBlockKeys.removeWhere((index, _) => dropped.contains(index));
+    });
+
+    // 序列变小 → 保护集合变小 → 按容量上限回收不在窗口内的正文
+    _evictChapterCacheIfNeeded();
+  }
+
   /// 写入会话缓存，并按容量上限回收最久未使用的章节
   void _cacheChapterContent(int index, String content) {
     _contentCache[index] = content;
@@ -536,27 +638,45 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
     unawaited(_pipeline.persistOffline(index, content));
   }
 
-  /// 按容量上限回收内存缓存
+  /// 缓存保护集合：这些章节在任何淘汰路径下都不回收
   ///
-  /// 保护集合覆盖「纵向长卷正在渲染的章节」「当前章」「预取 / 下载中的章节」，
-  /// 以及**没有远程地址的章节**（如详情页直传的单章正文）——
-  /// 后者一旦被淘汰，正文将永久无法重新获取。
+  /// 长卷正在渲染的章节（回收会出空白块）、当前章、预取 / 下载中章节，
+  /// 以及**无远程地址的章节**（详情页直传正文，回收即永久丢失）。
+  Set<int> _cacheProtectSet() => <int>{
+        ..._verticalSequence,
+        _currentChapterIndex,
+        ..._prefetching,
+        ..._downloadingChapters,
+        for (int i = 0; i < _chapters.length; i++)
+          if ((_chapters[i].url ?? '').isEmpty) i,
+      };
+
+  /// 按容量上限回收内存缓存（常规路径：控制会话内存增长）
   void _evictChapterCacheIfNeeded() {
-    final protect = <int>{
-      ..._verticalSequence,
-      _currentChapterIndex,
-      ..._prefetching,
-      ..._downloadingChapters,
-      for (int i = 0; i < _chapters.length; i++)
-        if ((_chapters[i].url ?? '').isEmpty) i,
-    };
+    _applyCacheEviction(
+      _contentCache.evictOverflow(protect: _cacheProtectSet()),
+    );
+  }
 
-    final evicted = _contentCache.evictOverflow(protect: protect);
+  /// 内存告警下的主动释放：不做数量判断，保护集合之外一律释放
+  ///
+  /// 正文已统一「加载到即落盘」，重读不会丢内容，代价只是一次本地 IO。
+  void _releaseCacheOnMemoryPressure() {
+    final evicted = _contentCache.evictAllExcept(_cacheProtectSet());
+    _applyCacheEviction(evicted);
+    // 控制栏「已缓存章节数」等展示需要跟随刷新
+    if (evicted.isNotEmpty && mounted) setState(() {});
+  }
+
+  /// 淘汰收尾：清空章节模型中的正文引用与分页切片
+  ///
+  /// 必须清 `_chapters[i].content`，否则 String 仍被 [NovelChapter] 持有、内存不释放。
+  /// 切片与正文是同一段文本的两份表示，必须同生共死（命中正文即命中切片）。
+  void _applyCacheEviction(Set<int> evicted) {
     if (evicted.isEmpty) return;
-
-    // 同步清空章节模型中的正文引用：否则 String 仍被 _chapters 持有，内存不会真正释放
     for (final index in evicted) {
       _chapters[index] = _chapters[index].copyWith(content: '');
+      _chapterSlices.remove(index);
     }
   }
 
@@ -1007,6 +1127,24 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
     _ensureChapterSliced(_currentChapterIndex + 1);
   }
 
+  /// 邻居分片是否已排入帧末任务（合并同一帧内的重复请求）
+  bool _neighborSlicesScheduled = false;
+
+  /// 邻居章分片推迟到帧末：分页约 71ms/章，三章同帧补齐会卡住切章那一帧；
+  /// 而邻居只需在翻到之前就绪（读一页至少几百毫秒）。
+  void _scheduleNeighborSlices() {
+    if (_neighborSlicesScheduled) return;
+    _neighborSlicesScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _neighborSlicesScheduled = false;
+      if (!mounted || _pageMode != PageTurnMode.horizontal) return;
+      final before = _horizontalTotalPages;
+      _ensureNeighborSlices();
+      // 占位页 → 真实页数会改变滑窗总页数，需要重建才能生效
+      if (_horizontalTotalPages != before) setState(() {});
+    });
+  }
+
   /// 文本分页算法已抽取至 `PaginationEngine.sliceIntoPages`（纯函数，可独立单测）
 
   /// 计算当前章分页；[invalidateAll] 置真时（视口/排版变化）所有章分片一并作废
@@ -1056,8 +1194,8 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
       _currentPageIndex = _currentPageIndex.clamp(0, math.max(0, _pageSlices.length - 1));
     }
 
-    // 顺带补齐滑窗邻居分片，保证跨章翻页不出现占位页
-    _ensureNeighborSlices();
+    // 邻居分片推迟到帧末：当前章同步分片保证本帧可渲染，邻居只需在翻到之前就绪
+    _scheduleNeighborSlices();
   }
 
   /// 切换章节 (toLastPage: 是否直接定位到该章最后一页，用于从下一章倒序回溯)
@@ -1211,7 +1349,7 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
 
   /// PageView 页码反解为 (章, 章内页)；跨章时平移滑窗（视觉零跳变）
   void _onHorizontalPageChanged(int rawIndex) {
-    _ensureNeighborSlices();
+    _scheduleNeighborSlices();
 
     final (chapter, pageInChapter) = _resolveFlatPage(rawIndex);
     final wasChapter = _currentChapterIndex;
@@ -1287,6 +1425,9 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
   ///
   /// 支持滚动接近底部时静默续载下一章并追加到同一滚动流，实现真正的无缝长卷阅读；
   /// 同时依据屏幕中线自动同步当前阅读章节，保证进度记录与目录高亮准确。
+  ///
+  /// 滚动停止由 [ReaderVerticalScrollView.onScrollEnd] 回调上来：屏中线同步已降频，
+  /// 停止时补一次精确同步并触发窗口裁剪（见 [_onVerticalScrollEnd]）。
   Widget _buildVerticalScrollView() {
     // 兜底：确保连续阅读序列至少包含当前章
     if (_verticalSequence.isEmpty) {
@@ -1312,6 +1453,7 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
         failed: _verticalFailed,
         chapterCount: _chapters.length,
       ),
+      onScrollEnd: _onVerticalScrollEnd,
     );
   }
 

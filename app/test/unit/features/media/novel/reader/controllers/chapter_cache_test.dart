@@ -141,4 +141,42 @@ void main() {
       expect(cache.length, 50);
     });
   });
+
+  group('evictAllExcept（系统内存告警下的主动释放）', () {
+    test('释放 keep 之外的全部条目，且不受容量上限约束', () {
+      final cache = ChapterCache(capacity: 100);
+      for (int i = 0; i < 8; i++) {
+        cache[i] = '第 $i 章';
+      }
+
+      final evicted = cache.evictAllExcept({3, 4});
+
+      expect(evicted, {0, 1, 2, 5, 6, 7});
+      expect(cache.length, 2, reason: '内存告警时不看容量，只保 keep');
+      expect(cache.containsKey(3), isTrue);
+      expect(cache.containsKey(4), isTrue);
+    });
+
+    test('keep 覆盖全部条目时不释放任何内容', () {
+      final cache = ChapterCache();
+      cache[0] = 'A';
+      cache[1] = 'B';
+
+      expect(cache.evictAllExcept({0, 1}), isEmpty);
+      expect(cache.length, 2);
+    });
+
+    test('keep 为空集合时释放全部条目', () {
+      final cache = ChapterCache();
+      cache[0] = 'A';
+      cache[1] = 'B';
+
+      expect(cache.evictAllExcept(const {}), {0, 1});
+      expect(cache.length, 0);
+    });
+
+    test('空缓存调用返回空集合', () {
+      expect(ChapterCache().evictAllExcept({0}), isEmpty);
+    });
+  });
 }

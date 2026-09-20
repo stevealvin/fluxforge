@@ -18,10 +18,10 @@ import 'package:fluxforge/features/media/novel/reader/models/novel_chapter.dart'
 class ChapterCache {
   ChapterCache({this.capacity = defaultCapacity});
 
-  /// 默认容量上限
+  /// 默认容量上限（兜底值，单章约 6 KB → 200 章约 1.2 MB）
   ///
-  /// 按「单章正文约 6 KB（Dart String 为 UTF-16）」估算，200 章约 1.2 MB ——
-  /// 足以覆盖纵向长卷的邻近窗口，又能在极长会话中兜住内存增长。
+  /// 阅读器不使用该默认值：顺读时大容量缓存收益接近于零，
+  /// 它改传「回看缓冲」口径（见 `NovelReaderPage._cacheWindowRadius`）。
   static const int defaultCapacity = 200;
 
   /// 容量上限（`<= 0` 表示不限制）
@@ -79,6 +79,21 @@ class ChapterCache {
       if (_entries.length <= capacity) break;
       // 受保护章节即使超容也不淘汰：宁可暂时超出，也不能让正在阅读的内容出错
       if (protect.contains(index)) continue;
+      _entries.remove(index);
+      evicted.add(index);
+    }
+    return evicted;
+  }
+
+  /// 释放除 [keep] 之外的全部条目（内存告警时主动让路）
+  ///
+  /// 与 [evictOverflow] 的区别：不受 [capacity] 约束。调用方须把「正在渲染 / 正在下载 /
+  /// **无远程地址可重新获取**」的章节放进 [keep]，否则会出现空白块或正文永久丢失。
+  /// 返回被释放的索引集合，供调用方同步清理章节模型中的正文引用。
+  Set<int> evictAllExcept(Set<int> keep) {
+    final evicted = <int>{};
+    for (final index in _entries.keys.toList(growable: false)) {
+      if (keep.contains(index)) continue;
       _entries.remove(index);
       evicted.add(index);
     }

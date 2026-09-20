@@ -51,11 +51,6 @@ class _SearchPageState extends State<SearchPage> {
   /// 是否展示历史/推荐面板
   bool _showHistory = true;
 
-  /// 推荐热门探测词
-  static const List<String> _hotSuggestions = [
-    '电影', '番剧', '动漫', '电视剧', '科幻', '悬疑', '动作', '经典',
-  ];
-
   @override
   void initState() {
     super.initState();
@@ -283,7 +278,6 @@ class _SearchPageState extends State<SearchPage> {
                       isDark: isDark,
                       hasActiveRules: _getEligibleRules().isNotEmpty,
                       historyList: _historyList,
-                      hotSuggestions: _hotSuggestions,
                       onPick: (text) {
                         _controller.text = text;
                         _performSearch(text);

@@ -18,7 +18,6 @@ enum ResumeBehavior {
 /// 全局偏好设置配置模型 (AppSettings)
 class AppSettings {
   // 1. 播放视听偏好
-  final bool enablePlayerGestures;
   final bool enableLongPress2x;
   final double longPressSpeed; // 长按瞬时加速倍率：2.0 | 3.0 | 5.0
   final double defaultPlaybackSpeed;
@@ -44,7 +43,6 @@ class AppSettings {
   final bool incognitoMode;
 
   const AppSettings({
-    this.enablePlayerGestures = true,
     this.enableLongPress2x = true,
     this.longPressSpeed = 3.0,
     this.defaultPlaybackSpeed = 1.0,
@@ -63,7 +61,6 @@ class AppSettings {
   });
 
   AppSettings copyWith({
-    bool? enablePlayerGestures,
     bool? enableLongPress2x,
     double? longPressSpeed,
     double? defaultPlaybackSpeed,
@@ -81,7 +78,6 @@ class AppSettings {
     bool? incognitoMode,
   }) {
     return AppSettings(
-      enablePlayerGestures: enablePlayerGestures ?? this.enablePlayerGestures,
       enableLongPress2x: enableLongPress2x ?? this.enableLongPress2x,
       longPressSpeed: longPressSpeed ?? this.longPressSpeed,
       defaultPlaybackSpeed: defaultPlaybackSpeed ?? this.defaultPlaybackSpeed,
@@ -135,7 +131,6 @@ class AppService {
   /// 从本地持久化存储加载所有偏好配置
   Future<void> _loadSettings() async {
     try {
-      final gestures = await AppStorage.getBool('pref_player_gestures') ?? true;
       final longPress2x = await AppStorage.getBool('pref_long_press_2x') ?? true;
       final longPressSpeed = await AppStorage.getDouble('pref_long_press_speed') ?? 3.0;
       final speed = await AppStorage.getDouble('pref_default_speed') ?? 1.0;
@@ -165,7 +160,6 @@ class AppService {
       if (resumeStr == 'disabled') resume = ResumeBehavior.disabled;
 
       settingsNotifier.value = AppSettings(
-        enablePlayerGestures: gestures,
         enableLongPress2x: longPress2x,
         longPressSpeed: longPressSpeed,
         defaultPlaybackSpeed: speed,
@@ -192,7 +186,6 @@ class AppService {
     settingsNotifier.value = newSettings;
     _themeModeNotifier.value = newSettings.themeMode;
 
-    await AppStorage.setBool('pref_player_gestures', newSettings.enablePlayerGestures);
     await AppStorage.setBool('pref_long_press_2x', newSettings.enableLongPress2x);
     await AppStorage.setDouble('pref_long_press_speed', newSettings.longPressSpeed);
     await AppStorage.setDouble('pref_default_speed', newSettings.defaultPlaybackSpeed);

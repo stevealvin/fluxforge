@@ -119,55 +119,60 @@ class ReaderHorizontalPageView extends StatelessWidget {
                 );
               }
 
-              return PageView.builder(
-                // key 不含章号：跨章不重建，动画保持连续
-                controller: pageController,
-                itemCount: totalCount,
-                onPageChanged: onPageChanged,
-                itemBuilder: (context, index) {
-                  var remaining = index;
-                  for (final chapter in windowChapters) {
-                    final slices = windowSlices[chapter];
-                    final count = (slices != null && slices.isNotEmpty)
-                        ? slices.length
-                        : 1;
-                    if (remaining >= count) {
-                      remaining -= count;
-                      continue;
-                    }
+              return SelectionArea(
+                // 与纵向长卷统一：外层一个 SelectionArea 承担长按划词与跨页选择，
+                // 内部用纯 Text 取代逐页 SelectableText —— 后者每页都会建立独立的
+                // EditableText 与选择容器，且自带 Scrollable（原先需靠
+                // NeverScrollableScrollPhysics 压制垂直手势冲突）。
+                child: PageView.builder(
+                  // key 不含章号：跨章不重建，动画保持连续
+                  controller: pageController,
+                  itemCount: totalCount,
+                  onPageChanged: onPageChanged,
+                  itemBuilder: (context, index) {
+                    var remaining = index;
+                    for (final chapter in windowChapters) {
+                      final slices = windowSlices[chapter];
+                      final count = (slices != null && slices.isNotEmpty)
+                          ? slices.length
+                          : 1;
+                      if (remaining >= count) {
+                        remaining -= count;
+                        continue;
+                      }
 
-                    // 未就绪章：渲染加载占位页（就绪后由上层补切片自动顶替）
-                    if (slices == null || slices.isEmpty) {
-                      return ReaderChapterBridge(
-                        key: ValueKey('bridge_$chapter'),
-                        chapterTitle: chapterTitleOf(chapter),
-                        readerTheme: readerTheme,
-                        isReady: false,
-                        heading: chapter < currentChapterIndex
-                            ? '正在加载上一章'
-                            : '正在进入下一章',
-                        readyHint: '正文已就绪，即将无缝续读',
-                        loadingHint: '正在加载正文...',
+                      // 未就绪章：渲染加载占位页（就绪后由上层补切片自动顶替）
+                      if (slices == null || slices.isEmpty) {
+                        return ReaderChapterBridge(
+                          key: ValueKey('bridge_$chapter'),
+                          chapterTitle: chapterTitleOf(chapter),
+                          readerTheme: readerTheme,
+                          isReady: false,
+                          heading: chapter < currentChapterIndex
+                              ? '正在加载上一章'
+                              : '正在进入下一章',
+                          readyHint: '正文已就绪，即将无缝续读',
+                          loadingHint: '正在加载正文...',
+                        );
+                      }
+
+                      return Padding(
+                        key: ValueKey('chapter_${chapter}_page_$remaining'),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 20,
+                          vertical: 8,
+                        ),
+                        // 单击手势统一由上层的三区点击热层接管；
+                        // 长按划词与跨页选择由外层 SelectionArea 统一提供
+                        child: Text(
+                          slices[remaining],
+                          style: bodyTextStyle,
+                        ),
                       );
                     }
-
-                    return Padding(
-                      key: ValueKey('chapter_${chapter}_page_$remaining'),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 20,
-                        vertical: 8,
-                      ),
-                      // 单击手势统一由上层的三区点击热层接管（保留长按划词与拖动选择）
-                      child: SelectableText(
-                        slices[remaining],
-                        // 翻页模式下严格禁用垂直方向滚动物理特性，杜绝上下滑动导致翻页手势冲突
-                        scrollPhysics: const NeverScrollableScrollPhysics(),
-                        style: bodyTextStyle,
-                      ),
-                    );
-                  }
-                  return const SizedBox.shrink();
-                },
+                    return const SizedBox.shrink();
+                  },
+                ),
               );
             },
           ),

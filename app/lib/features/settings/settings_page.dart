@@ -433,17 +433,6 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
           ),
           SwitchListTile(
-            secondary: const Icon(Ionicons.optionsOutline, color: AppColors.primary, size: 20),
-            title: const Text('屏幕滑动手势调节', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-            subtitle: const Text('左侧滑动调节亮度、右侧应用内免权限音量调节', style: TextStyle(fontSize: 11)),
-            value: settings.enablePlayerGestures,
-            activeTrackColor: AppColors.primary,
-            onChanged: (val) {
-              appService.updateSettings(settings.copyWith(enablePlayerGestures: val));
-            },
-          ),
-          Divider(height: 1, indent: 56, color: isDark ? AppColors.darkBorder : AppColors.lightBorder),
-          SwitchListTile(
             secondary: const Icon(Ionicons.flashOutline, color: Colors.amber, size: 20),
             title: const Text('长按瞬时加速与触觉震动', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
             subtitle: Text(

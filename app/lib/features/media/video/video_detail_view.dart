@@ -63,6 +63,11 @@ class _VideoDetailViewState extends State<VideoDetailView> {
 
   int _selectedGroupIndex = 0;
   int _currentEpisodeIndex = 0;
+
+  /// 是否处于全屏独占路由中
+  ///
+  /// 小屏播放器不能卸载（控制器由它持有），只能切为不活动状态，见 [AuraPlayer.active]。
+  bool _isFullScreen = false;
   bool _isReversed = false;
   bool _isDescExpanded = false;
   String? _activePlayUrl;
@@ -286,6 +291,11 @@ class _VideoDetailViewState extends State<VideoDetailView> {
                     httpHeaders: _activeHeaders,
                     initialPosition: _resumePosition,
                     autoResume: _autoResume,
+                    // 全屏期间休眠本实例（不卸载：控制器由它持有）
+                    active: !_isFullScreen,
+                    onFullScreenChanged: (fullscreen) {
+                      setState(() => _isFullScreen = fullscreen);
+                    },
                     // 播放偏好由宿主注入（播放器已与设置仓储解耦，可复用于任意场景）
                     preferences: PlayerPreferences(
                       longPressBoostEnabled: appService.settings.enableLongPress2x,
