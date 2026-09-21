@@ -7,52 +7,6 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fluxforge/app/theme/app_colors.dart';
 import 'package:fluxforge/shared/widgets/app_loading.dart';
 
-/// 长按加速倍率选择胶囊
-///
-/// 注意：返回的是 [Expanded]，需直接置于 `Row` 中作为子项使用
-/// （原实现如此，以保证多个档位等宽平分）。
-class PlayerSpeedChip extends StatelessWidget {
-  const PlayerSpeedChip({
-    super.key,
-    required this.speed,
-    required this.isSelected,
-    required this.onTap,
-  });
-
-  /// 长按加速倍率（如 2.0 / 3.0）
-  final double speed;
-
-  final bool isSelected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      child: GestureDetector(
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 7),
-          decoration: BoxDecoration(
-            color: isSelected
-                ? AppColors.primary
-                : Colors.white.withValues(alpha: 0.08),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          alignment: Alignment.center,
-          child: Text(
-            '${speed.toInt()}X 快进',
-            style: TextStyle(
-              fontSize: 11.5,
-              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-              color: isSelected ? Colors.white : Colors.white70,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 /// 加载中 / 错误状态指示层
 ///
 /// 失败态给出可操作的「重试播放」入口，加载态仅展示极简载入提示，
@@ -110,123 +64,16 @@ class PlayerStateOverlay extends StatelessWidget {
     return Container(
       color: Colors.black54,
       child: const Center(
-        child: LoadingIndicator(message: '流媒体资源极速载入中...'),
-      ),
-    );
-  }
-}
-
-/// 播放设置抽屉中的单行开关
-///
-/// 纯展示 + 回调上抛：开关自身不持有状态，取消 / 选中的判定与持久化由调用方处理。
-class PlayerSettingSwitchRow extends StatelessWidget {
-  const PlayerSettingSwitchRow({
-    super.key,
-    required this.title,
-    required this.subtitle,
-    required this.value,
-    required this.onChanged,
-  });
-
-  final String title;
-  final String subtitle;
-  final bool value;
-  final ValueChanged<bool> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 13.5,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  subtitle,
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.5),
-                    fontSize: 10.5,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Transform.scale(
-            scale: 0.78,
-            child: Switch(
-              value: value,
-              activeThumbColor: AppColors.primary,
-              activeTrackColor: AppColors.primary.withValues(alpha: 0.35),
-              inactiveThumbColor: Colors.white60,
-              inactiveTrackColor: Colors.white12,
-              onChanged: onChanged,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// 播放设置抽屉中的画面比例胶囊
-///
-/// 注意：与原实现一致，返回 [Expanded]，需直接置于 `Row` 中作为子项使用。
-class PlayerFitChip extends StatelessWidget {
-  const PlayerFitChip({
-    super.key,
-    required this.label,
-    required this.isSelected,
-    required this.onTap,
-  });
-
-  final String label;
-  final bool isSelected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      child: GestureDetector(
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          decoration: BoxDecoration(
-            color: isSelected
-                ? AppColors.primary
-                : Colors.white.withValues(alpha: 0.08),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          alignment: Alignment.center,
-          child: Text(
-            label,
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-              color: isSelected ? Colors.white : Colors.white70,
-            ),
-          ),
-        ),
+        child: AppLoading(message: '流媒体资源极速载入中...'),
       ),
     );
   }
 }
 
 /// 控制条显隐动画：微位移与淡出同步播放，曲线统一自然
-class PlayerAnimatedBar extends StatelessWidget {
-  const PlayerAnimatedBar({
-    super.key,
+/// 仅供同文件内的迷你进度条使用，故不对外暴露
+class _PlayerAnimatedBar extends StatelessWidget {
+  const _PlayerAnimatedBar({
     required this.visible,
     required this.slideOffset,
     required this.child,
@@ -283,7 +130,7 @@ class PlayerControlOverlays extends StatelessWidget {
         if (topBar != null)
           Align(
             alignment: Alignment.topCenter,
-            child: PlayerAnimatedBar(
+            child: _PlayerAnimatedBar(
               visible: showControls,
               slideOffset: const Offset(0, -0.5),
               child: topBar!,
@@ -293,7 +140,7 @@ class PlayerControlOverlays extends StatelessWidget {
         // 底部控制条：隐藏时向下轻滑并淡出
         Align(
           alignment: Alignment.bottomCenter,
-          child: PlayerAnimatedBar(
+          child: _PlayerAnimatedBar(
             visible: showControls,
             slideOffset: const Offset(0, 0.5),
             child: bottomBar,

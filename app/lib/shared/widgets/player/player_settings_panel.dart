@@ -2,8 +2,161 @@ import 'package:flutter/services.dart' show HapticFeedback;
 import 'package:ionicons/ionicons.dart';
 import 'package:material_ui/material_ui.dart';
 
-import 'package:fluxforge/shared/widgets/player/player_overlays.dart';
+import 'package:fluxforge/app/theme/app_colors.dart';
 import 'package:fluxforge/shared/widgets/player/player_preferences.dart';
+
+/// 长按加速倍率选择胶囊
+///
+/// 注意：返回的是 [Expanded]，需直接置于 `Row` 中作为子项使用
+/// （原实现如此，以保证多个档位等宽平分）。
+class PlayerSpeedChip extends StatelessWidget {
+  const PlayerSpeedChip({
+    super.key,
+    required this.speed,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  /// 长按加速倍率（如 2.0 / 3.0）
+  final double speed;
+
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 7),
+          decoration: BoxDecoration(
+            color: isSelected
+                ? AppColors.primary
+                : Colors.white.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          alignment: Alignment.center,
+          child: Text(
+            '${speed.toInt()}X 快进',
+            style: TextStyle(
+              fontSize: 11.5,
+              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+              color: isSelected ? Colors.white : Colors.white70,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 播放设置抽屉中的单行开关
+///
+/// 纯展示 + 回调上抛：开关自身不持有状态，取消 / 选中的判定与持久化由调用方处理。
+class PlayerSettingSwitchRow extends StatelessWidget {
+  const PlayerSettingSwitchRow({
+    super.key,
+    required this.title,
+    required this.subtitle,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final String title;
+  final String subtitle;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.5),
+                    fontSize: 10.5,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Transform.scale(
+            scale: 0.78,
+            child: Switch(
+              value: value,
+              activeThumbColor: AppColors.primary,
+              activeTrackColor: AppColors.primary.withValues(alpha: 0.35),
+              inactiveThumbColor: Colors.white60,
+              inactiveTrackColor: Colors.white12,
+              onChanged: onChanged,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 播放设置抽屉中的画面比例胶囊
+///
+/// 注意：与原实现一致，返回 [Expanded]，需直接置于 `Row` 中作为子项使用。
+class PlayerFitChip extends StatelessWidget {
+  const PlayerFitChip({
+    super.key,
+    required this.label,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          decoration: BoxDecoration(
+            color: isSelected
+                ? AppColors.primary
+                : Colors.white.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          alignment: Alignment.center,
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+              color: isSelected ? Colors.white : Colors.white70,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
 
 /// 播放设置抽屉的内容体
 ///

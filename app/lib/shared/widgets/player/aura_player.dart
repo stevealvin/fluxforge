@@ -2,7 +2,6 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
-import 'package:ionicons/ionicons.dart';
 import 'package:video_player/video_player.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
@@ -16,6 +15,7 @@ import 'package:fluxforge/shared/widgets/player/player_overlays.dart';
 import 'package:fluxforge/shared/widgets/player/player_settings_sheets.dart';
 import 'package:fluxforge/shared/widgets/player/player_top_bar.dart';
 import 'package:fluxforge/shared/widgets/player/player_video_surface.dart';
+import 'package:fluxforge/shared/widgets/player/player_gesture_feedback_layer.dart';
 import 'package:fluxforge/shared/widgets/player/player_preferences.dart';
 import 'package:fluxforge/shared/widgets/player/player_progress_slider.dart';
 import 'package:fluxforge/shared/widgets/player/player_refresh_engine.dart';
@@ -159,14 +159,13 @@ class AuraPlayerState extends State<AuraPlayer>
   bool _isFullScreen = false;
 
   // 应用内免权限音量调节 (0.0 ~ 1.0)
+  //
+  // 数值与其**显示**已分离：这里只保留「设备效果」的权威值（写进控制器），
+  // 浮层外观（胶囊 / 变暗遮罩 / 定时隐藏）由 PlayerGestureFeedbackLayer 自己持有。
   double _volume = 1.0;
-  bool _showVolumeCapsule = false;
-  Timer? _volumeCapsuleTimer;
 
-  // 应用内无侵入遮罩亮度调节 (0.0 最暗 ~ 1.0 最亮，内部通过 0.0~0.75 纯黑遮罩实现)
+  // 应用内无侵入遮罩亮度调节 (0.0 最暗 ~ 1.0 最亮，遮罩由浮层按该值压暗)
   double _brightness = 1.0;
-  bool _showBrightnessCapsule = false;
-  Timer? _brightnessCapsuleTimer;
 
   // 水平快进/快退手势
   bool _isSeeking = false;
@@ -194,9 +193,13 @@ class AuraPlayerState extends State<AuraPlayer>
   /// 播完判定：以平台 completed 事件为主判据 + 每轮播放只上报一次的闩锁
   final PlayerCompletionEngine _completionEngine = PlayerCompletionEngine();
 
-  /// 手势数值刷新心跳（亮度 / 音量）：亮度遮罩与两个胶囊订阅它局部重建，
-  /// 滑动过程不 setState；胶囊显隐翻转仍走 setState（会改变 Stack 节点结构）。
-  final ValueNotifier<int> _gestureTick = ValueNotifier<int>(0);
+  /// 亮度 / 音量浮层的状态入口
+  ///
+  /// 数值由本页算好后推入（见 [_buildGestureLayer]）：浮层自己管可见性、定时隐藏
+  /// 与内部刷新心跳，因此浮层显隐与逐帧数值更新都不再 setState 到本页 ——
+  /// 原先每次显隐都会重建整棵播放器树。
+  final GlobalKey<PlayerGestureFeedbackLayerState> _feedbackKey =
+      GlobalKey<PlayerGestureFeedbackLayerState>();
 
   // 长按瞬时加速 (倍率与开关均实时读取当前生效偏好)
   bool _isFastForwarding = false;
@@ -373,11 +376,10 @@ class AuraPlayerState extends State<AuraPlayer>
     _updateWakelock(false);
     _controlsTimer?.cancel();
     _lockIconTimer?.cancel();
-    _volumeCapsuleTimer?.cancel();
-    _brightnessCapsuleTimer?.cancel();
+    // 亮度 / 音量浮层的两个定时器已随状态下沉至 PlayerGestureFeedbackLayer，
+    // 由该组件自己的 dispose 取消
     _resumeTipTimer?.cancel();
     _positionTick.dispose();
-    _gestureTick.dispose();
 
     // 退出全屏时恢复竖屏
     if (_isFullScreen) {
@@ -671,28 +673,18 @@ class AuraPlayerState extends State<AuraPlayer>
         // 1. 核心视频画面渲染层
         _buildVideoSurface(),
 
-        // 2. 屏幕应用内微调暗度遮罩 (实现无权限亮度调节)
-        //    订阅手势心跳：滑动调光时只重建这一层，不触及整棵播放器树
-        IgnorePointer(
-          child: ValueListenableBuilder<int>(
-            valueListenable: _gestureTick,
-            builder: (context, _, _) => Container(
-              color: Colors.black.withValues(alpha: (1.0 - _brightness) * 0.75),
-            ),
-          ),
+        // 2. 手势浮层：变暗遮罩 + 亮度 / 音量胶囊（自带状态）
+        //    数值由本页推入，可见性与定时隐藏由它自己管 —— 滑动时不再 setState 到本页
+        PlayerGestureFeedbackLayer(
+          key: _feedbackKey,
+          isFullScreen: _isFullScreen,
         ),
 
         // 3. 全局手势交互捕获层 (未锁定时支持滑动手势，锁定时仅响应单击呼出锁图标)
         if (_isInitialized)
           _isLocked ? _buildLockedGestureLayer() : _buildGestureLayer(),
 
-        // 4. 手势浮层：左侧亮度微胶囊
-        if (_showBrightnessCapsule) _buildBrightnessCapsule(),
-
-        // 5. 手势浮层：右侧音量微胶囊
-        if (_showVolumeCapsule) _buildVolumeCapsule(),
-
-        // 6. 手势浮层：居中快进/快退毛玻璃胶囊
+        // 手势浮层：居中快进/快退毛玻璃胶囊
         //    仅该浮层随手势局部重建，拖动过程不触及整棵播放器树
         ValueListenableBuilder<int>(
           valueListenable: _positionTick,
@@ -830,20 +822,9 @@ class AuraPlayerState extends State<AuraPlayer>
             min: 0.15,
             max: 1.0,
           );
-          // 胶囊首次出现属于结构变化，需要建树；此后逐帧只递增心跳刷数值
-          if (!_showBrightnessCapsule) {
-            setState(() => _showBrightnessCapsule = true);
-          } else {
-            _gestureTick.value++;
-          }
-          _brightnessCapsuleTimer?.cancel();
-          _brightnessCapsuleTimer = Timer(const Duration(seconds: 1), () {
-            if (mounted) {
-              setState(() {
-                _showBrightnessCapsule = false;
-              });
-            }
-          });
+          // 显示交给浮层：首次出现只在浮层内建树，逐帧只递增它的心跳，
+          // 本页不再为此 setState（原先浮层每次显隐都会重建整棵播放器树）
+          _feedbackKey.currentState?.showBrightness(_brightness);
         } else if (zone == PlayerGestureZone.volume) {
           _volume = PlayerGestureEngine.applyVerticalDrag(
             current: _volume,
@@ -852,20 +833,7 @@ class AuraPlayerState extends State<AuraPlayer>
             max: 1.0,
           );
           _controller?.setVolume(_volume);
-          // 胶囊首次出现属于结构变化，需要建树；此后逐帧只递增心跳刷数值
-          if (!_showVolumeCapsule) {
-            setState(() => _showVolumeCapsule = true);
-          } else {
-            _gestureTick.value++;
-          }
-          _volumeCapsuleTimer?.cancel();
-          _volumeCapsuleTimer = Timer(const Duration(seconds: 1), () {
-            if (mounted) {
-              setState(() {
-                _showVolumeCapsule = false;
-              });
-            }
-          });
+          _feedbackKey.currentState?.showVolume(_volume);
         }
       },
       onHorizontalDragStart: () {
@@ -927,41 +895,6 @@ class AuraPlayerState extends State<AuraPlayer>
           });
           _startControlsTimer();
         }
-      },
-    );
-  }
-
-  /// 左侧垂直胶囊亮度指示条（订阅手势心跳：滑动期间只重建本组件）
-  Widget _buildBrightnessCapsule() {
-    return ValueListenableBuilder<int>(
-      valueListenable: _gestureTick,
-      builder: (context, _, _) => PlayerVerticalIndicatorCapsule(
-        side: PlayerCapsuleSide.left,
-        // 全屏下避让左侧控制区，偏移更大
-        offset: _isFullScreen ? 68 : 16,
-        icon: Ionicons.sunnyOutline,
-        value: _brightness,
-      ),
-    );
-  }
-
-  /// 右侧垂直胶囊音量指示条（订阅手势心跳：滑动期间只重建本组件）
-  Widget _buildVolumeCapsule() {
-    return ValueListenableBuilder<int>(
-      valueListenable: _gestureTick,
-      builder: (context, _, _) {
-        // 静音 / 低音量 / 高音量三态图标由页面按业务语义决定
-        final volume = _volume;
-        return PlayerVerticalIndicatorCapsule(
-          side: PlayerCapsuleSide.right,
-          offset: 20,
-          icon: volume == 0
-              ? Ionicons.volumeMuteOutline
-              : (volume > 0.5
-                  ? Ionicons.volumeHighOutline
-                  : Ionicons.volumeLowOutline),
-          value: volume,
-        );
       },
     );
   }
