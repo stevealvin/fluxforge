@@ -1,4 +1,4 @@
-import 'package:cached_network_image/cached_network_image.dart';
+import 'package:fluxforge/shared/widgets/app_image.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:fluxforge/app/router/app_navigator.dart';
 import 'package:ionicons/ionicons.dart';
@@ -229,18 +229,14 @@ class _DiscoverPageState extends State<DiscoverPage> with AutomaticKeepAliveClie
                     child: Stack(
                       fit: StackFit.expand,
                       children: [
-                        CachedNetworkImage(
+                        AppImage(
                           imageUrl: cover,
-                          fit: BoxFit.cover,
-                          httpHeaders: {
+                          // 与详情页同口径：Referer 取规则 baseUrl；发现页另带固定 UA
+                          headers: {
                             'referer': currentRule.baseUrl,
                             'user-agent':
                                 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1',
                           },
-                          errorWidget: (_, _, _) => Container(
-                            color: Colors.grey.withValues(alpha: 0.15),
-                            child: const Icon(Icons.broken_image_rounded, color: Colors.grey),
-                          ),
                         ),
                         Positioned(
                           left: 0,
@@ -325,18 +321,14 @@ class _DiscoverPageState extends State<DiscoverPage> with AutomaticKeepAliveClie
               children: [
                 ClipRRect(
                   borderRadius: BorderRadius.circular(12),
-                  child: CachedNetworkImage(
+                  child: AppImage(
                     imageUrl: cover,
-                    fit: BoxFit.cover,
-                    httpHeaders: {
+                    // 与详情页同口径：Referer 取规则 baseUrl；发现页另带固定 UA
+                    headers: {
                       'referer': currentRule.baseUrl,
                       'user-agent':
                           'Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1',
                     },
-                    errorWidget: (_, _, _) => Container(
-                      color: Colors.grey.withValues(alpha: 0.15),
-                      child: const Icon(Icons.broken_image_rounded, color: Colors.grey),
-                    ),
                   ),
                 ),
                 Positioned.fill(
@@ -568,7 +560,7 @@ class _DiscoverPageState extends State<DiscoverPage> with AutomaticKeepAliveClie
                       if (_loading)
                         const SliverFillRemaining(
                           child: Center(
-                            child: LoadingIndicator(message: '正在调用沙箱加载发现内容...'),
+                            child: AppLoading(message: '正在调用沙箱加载发现内容...'),
                           ),
                         )
                       else if (_error != null)

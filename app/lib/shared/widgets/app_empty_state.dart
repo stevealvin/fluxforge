@@ -4,8 +4,8 @@ import 'package:fluxforge/app/theme/app_colors.dart';
 /// FluxForge 全局现代通用空状态展示组件
 /// 
 /// 支持主图标、主副标题阐述与交互引导操作，自适应深浅双主题
-class EmptyState extends StatelessWidget {
-  const EmptyState({
+class AppEmptyState extends StatelessWidget {
+  const AppEmptyState({
     super.key,
     this.icon,
     this.title = '暂无内容',
@@ -94,6 +94,3 @@ class EmptyState extends StatelessWidget {
     );
   }
 }
-
-/// 语义化统一类型别名
-typedef AppEmptyState = EmptyState;

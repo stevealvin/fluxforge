@@ -171,7 +171,7 @@ class _MarketPageState extends State<MarketPage> {
         builder: (context, localRules, _) {
           if (_loading) {
             return const Center(
-              child: LoadingIndicator(
+              child: AppLoading(
                 message: '正在连接公共规则市场...',
               ),
             );

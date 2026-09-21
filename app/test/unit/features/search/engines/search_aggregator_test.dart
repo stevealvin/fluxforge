@@ -185,5 +185,22 @@ void main() {
       expect(SearchAggregator.finishedRatio({}), equals(0.0));
       expect(SearchAggregator.searchingCount(statusMap), equals(1));
     });
+
+    test('完成源数与进度条同源：finishedCount 与 finishedRatio 恒一致', () {
+      final statusMap = {
+        '1': RuleSearchStatus(rule: sourceA, isSearching: false),
+        '2': RuleSearchStatus(rule: sourceB, isSearching: false),
+        '3': RuleSearchStatus(rule: sourceA, isSearching: true),
+        '4': RuleSearchStatus(rule: sourceB, isSearching: true),
+      };
+      // 等待态文案（源数）与顶部进度条（比例）必须表达同一件事，
+      // 否则同一概念两处各算一遍，日后极易口径漂移
+      expect(SearchAggregator.finishedCount(statusMap), equals(2));
+      expect(
+        SearchAggregator.finishedCount(statusMap) / statusMap.length,
+        closeTo(SearchAggregator.finishedRatio(statusMap), 0.001),
+      );
+      expect(SearchAggregator.finishedCount({}), equals(0));
+    });
   });
 }

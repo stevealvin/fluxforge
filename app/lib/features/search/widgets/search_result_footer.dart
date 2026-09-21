@@ -29,7 +29,7 @@ class SearchResultFooter extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const LoadingIndicator.compact(size: 14, strokeWidth: 1.8),
+              const AppLoading.compact(size: 14, strokeWidth: 1.8),
               const SizedBox(width: 8),
               Text(
                 loadingLabel,

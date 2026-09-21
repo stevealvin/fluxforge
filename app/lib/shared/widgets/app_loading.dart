@@ -5,8 +5,8 @@ import 'package:fluxforge/app/theme/app_colors.dart';
 /// 全局统一极光流光加载指示器组件 (Aurora Flow Loading Indicator)
 /// 零外部依赖，基于原生 Canvas CustomPainter 与 Ticker 极速流光绘制，
 /// 完美适配「曜夜极光翡翠 / 纯净星暮白」现代科技双主题。
-class LoadingIndicator extends StatefulWidget {
-  const LoadingIndicator({
+class AppLoading extends StatefulWidget {
+  const AppLoading({
     super.key,
     this.message,
     this.size = 42.0,
@@ -21,7 +21,7 @@ class LoadingIndicator extends StatefulWidget {
         isPulseOnly = false;
 
   /// 紧凑轻量态：专为按钮内、封面占位、列表触底等极小场景设计
-  const LoadingIndicator.compact({
+  const AppLoading.compact({
     super.key,
     this.size = 18.0,
     this.strokeWidth = 2.0,
@@ -36,7 +36,7 @@ class LoadingIndicator extends StatefulWidget {
         isPulseOnly = false;
 
   /// 卡片悬浮态：带有微光渐变圆角卡片背景的加载态
-  const LoadingIndicator.card({
+  const AppLoading.card({
     super.key,
     this.message,
     this.size = 38.0,
@@ -51,7 +51,7 @@ class LoadingIndicator extends StatefulWidget {
         isPulseOnly = false;
 
   /// 呼吸脉冲徽标态：极光核心能量律动，适用于轻量级同步与占位提示
-  const LoadingIndicator.pulse({
+  const AppLoading.pulse({
     super.key,
     this.message,
     this.size = 32.0,
@@ -99,10 +99,10 @@ class LoadingIndicator extends StatefulWidget {
   final bool isPulseOnly;
 
   @override
-  State<LoadingIndicator> createState() => _LoadingIndicatorState();
+  State<AppLoading> createState() => _AppLoadingState();
 }
 
-class _LoadingIndicatorState extends State<LoadingIndicator>
+class _AppLoadingState extends State<AppLoading>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
 
@@ -428,6 +428,3 @@ class _PulseLoadingPainter extends CustomPainter {
         oldDelegate.isDark != isDark;
   }
 }
-
-/// 语义化统一类型别名
-typedef AppLoading = LoadingIndicator;

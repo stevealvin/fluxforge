@@ -113,6 +113,8 @@ class _RuleTesterPageState extends State<RuleTesterPage> {
   }
 
   void _onLogsUpdated() {
+    // 日志已变 → 过滤缓存失效；此处只置脏（O(1)），不做扫描
+    _filteredLogsDirty = true;
     if (mounted && _isTesting) {
       setState(() {});
       // 控制台自动滚到底部
@@ -146,6 +148,8 @@ class _RuleTesterPageState extends State<RuleTesterPage> {
     setState(() {
       _isTesting = true;
       _testStartTime = DateTime.now();
+      // 过滤结果依赖本轮起始时间，起始时间一变缓存必须失效
+      _filteredLogsDirty = true;
       for (final step in _steps) {
         step.reset();
       }
@@ -192,13 +196,32 @@ class _RuleTesterPageState extends State<RuleTesterPage> {
     );
   }
 
-  /// 过滤获取与当前规则相关的沙箱控制台日志
+  /// 本规则相关日志的缓存快照（惰性重算）
+  List<LogEntry>? _filteredLogsCache;
+
+  /// 缓存是否已失效
+  bool _filteredLogsDirty = true;
+
+  /// 过滤获取与当前规则相关的沙箱控制台日志（带缓存）
+  ///
+  /// 过滤是一次 O(全部日志) 的扫描（`AppLogger.getLogs()` 还会先拷贝一份不可变列表），
+  /// 而控制台在每次重建时都要读它 —— 原先直接在 `build()` 里现算，
+  /// 日志量大时等于「每次重建都做一次全量扫描」。
+  ///
+  /// 现改为惰性缓存：日志变化 / 本轮起始时间变化时只置脏标记（O(1)），
+  /// 真正的扫描推迟到**下一次读取**（且一帧内多处读取只算一次）。
   List<LogEntry> _getFilteredLogs() {
-    return RuleTestLogFilter.forRule(
+    final cached = _filteredLogsCache;
+    if (!_filteredLogsDirty && cached != null) return cached;
+
+    final filtered = RuleTestLogFilter.forRule(
       AppLogger.getLogs(),
       ruleTag: 'Rule: ${widget.rule.name}',
       startTime: _testStartTime,
     );
+    _filteredLogsCache = filtered;
+    _filteredLogsDirty = false;
+    return filtered;
   }
 
   @override

@@ -28,7 +28,7 @@ dependencies:
   webview_flutter: ^4.14.1
   webview_flutter_android: ^4.14.1
   # 图片
-  cached_network_image: ^4.0.0
+  extended_image: ^10.1.0
   path: ^1.9.1
   path_provider: ^2.1.6
   # 存储
@@ -53,7 +53,6 @@ dependencies:
   flutter_hooks: ^0.21.3+1
   # 依赖管理
   get_it: ^9.2.0
-  extended_image: ^10.1.0
   # 图标
   ionicons: ^0.2.3
   # 保持屏幕唤醒

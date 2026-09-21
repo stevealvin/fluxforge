@@ -4,7 +4,7 @@ import 'package:fluxforge/app/theme/app_colors.dart';
 import 'package:fluxforge/features/search/engines/search_aggregator.dart';
 import 'package:fluxforge/features/search/models/search_result.dart';
 import 'package:fluxforge/shared/widgets/app_card.dart';
-import 'package:fluxforge/shared/widgets/app_net_image.dart';
+import 'package:fluxforge/shared/widgets/app_image.dart';
 
 /// 网格模式卡片分发器
 ///
@@ -62,7 +62,7 @@ class SearchVideoGridCard extends StatelessWidget {
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  NetImage(
+                  AppImage(
                     imageUrl: item.cover,
                     fit: BoxFit.cover,
                     headers: item.baseUrl.isNotEmpty ? {'referer': item.baseUrl} : null,
@@ -191,7 +191,7 @@ class SearchPosterGridCard extends StatelessWidget {
         fit: StackFit.expand,
         children: [
           // 海报全幅背景
-          NetImage(
+          AppImage(
             imageUrl: item.cover,
             fit: BoxFit.cover,
             headers: item.baseUrl.isNotEmpty ? {'referer': item.baseUrl} : null,

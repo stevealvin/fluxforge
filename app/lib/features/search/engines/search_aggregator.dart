@@ -104,11 +104,18 @@ class SearchAggregator {
     return statusMap.values.any((s) => s.hasMore);
   }
 
+  /// 已完成的源数量（`isSearching == false` 即视为完成，含成功、失败与超时）
+  ///
+  /// 与 [finishedRatio] 同源：进度条（比例）与等待态文案（源数）都走这里，
+  /// 避免同一概念在页面与视图里各算一遍、日后口径漂移。
+  static int finishedCount(Map<String, RuleSearchStatus> statusMap) {
+    return statusMap.values.where((s) => !s.isSearching).length;
+  }
+
   /// 本轮检索的完成进度（0.0 ~ 1.0），用于顶部进度条
   static double finishedRatio(Map<String, RuleSearchStatus> statusMap) {
     if (statusMap.isEmpty) return 0.0;
-    final finished = statusMap.values.where((s) => !s.isSearching).length;
-    return (finished / statusMap.length).clamp(0.0, 1.0);
+    return (finishedCount(statusMap) / statusMap.length).clamp(0.0, 1.0);
   }
 
   /// 仍在检索中的源数量

@@ -45,7 +45,7 @@ class RuleTestStepCard extends StatelessWidget {
   static Widget statusIconOf(RuleTestStepStatus status) {
     switch (status) {
       case RuleTestStepStatus.running:
-        return const LoadingIndicator.compact(size: 14, strokeWidth: 2);
+        return const AppLoading.compact(size: 14, strokeWidth: 2);
       case RuleTestStepStatus.success:
         return const Icon(Icons.check_rounded, size: 16, color: Color(0xFF10B981));
       case RuleTestStepStatus.failed:

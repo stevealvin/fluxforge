@@ -8,7 +8,7 @@ import 'package:fluxforge/core/sandbox/rule_engine.dart';
 import 'package:fluxforge/shared/widgets/app_card.dart';
 import 'package:fluxforge/shared/widgets/app_empty_state.dart';
 import 'package:fluxforge/shared/widgets/app_loading.dart';
-import 'package:fluxforge/shared/widgets/app_net_image.dart';
+import 'package:fluxforge/shared/widgets/app_image.dart';
 
 /// 规范化的媒体条目模型（严格遵循固定契约）
 class _MediaItem {
@@ -567,13 +567,13 @@ class _RuleCatalogPageState extends State<RuleCatalogPage> {
   Widget _buildBody(bool isDark) {
     if (_loading && _items.isEmpty) {
       return const Center(
-        child: LoadingIndicator(message: '正在调用沙箱加载发现内容...'),
+        child: AppLoading(message: '正在调用沙箱加载发现内容...'),
       );
     }
 
     if (_error != null && _items.isEmpty) {
       return Center(
-        child: EmptyState(
+        child: AppEmptyState(
           icon: Ionicons.warningOutline,
           title: '发现流加载失败',
           description: _error,
@@ -585,7 +585,7 @@ class _RuleCatalogPageState extends State<RuleCatalogPage> {
 
     if (_items.isEmpty) {
       return Center(
-        child: EmptyState(
+        child: AppEmptyState(
           icon: Ionicons.fileTrayOutline,
           title: '暂无发现内容',
           description: '当前规则未返回任何推荐项目',
@@ -683,7 +683,7 @@ class _RuleCatalogPageState extends State<RuleCatalogPage> {
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  NetImage(
+                  AppImage(
                     imageUrl: item.cover,
                     fit: BoxFit.cover,
                     headers: widget.rule.baseUrl.isNotEmpty ? {'referer': widget.rule.baseUrl} : null,
@@ -781,7 +781,7 @@ class _RuleCatalogPageState extends State<RuleCatalogPage> {
         fit: StackFit.expand,
         children: [
             // 海报封面
-            NetImage(
+            AppImage(
               imageUrl: item.cover,
               fit: BoxFit.cover,
               headers: widget.rule.baseUrl.isNotEmpty ? {'referer': widget.rule.baseUrl} : null,
@@ -880,7 +880,7 @@ class _RuleCatalogPageState extends State<RuleCatalogPage> {
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  NetImage(
+                  AppImage(
                     imageUrl: item.cover,
                     fit: BoxFit.cover,
                     headers: widget.rule.baseUrl.isNotEmpty ? {'referer': widget.rule.baseUrl} : null,
@@ -988,7 +988,7 @@ class _RuleCatalogPageState extends State<RuleCatalogPage> {
                 child: SizedBox(
                   width: 90,
                   height: 120,
-                  child: NetImage(
+                  child: AppImage(
                     imageUrl: item.cover,
                     fit: BoxFit.cover,
                     headers: widget.rule.baseUrl.isNotEmpty ? {'referer': widget.rule.baseUrl} : null,
@@ -1061,7 +1061,7 @@ class _RuleCatalogPageState extends State<RuleCatalogPage> {
       return const Padding(
         padding: EdgeInsets.symmetric(vertical: 16),
         child: Center(
-          child: LoadingIndicator.compact(size: 20),
+          child: AppLoading.compact(size: 20),
         ),
       );
     }
@@ -1088,6 +1088,3 @@ class _RuleCatalogPageState extends State<RuleCatalogPage> {
     return const SizedBox.shrink();
   }
 }
-
-/// 规则目录分类与资源发现统一语义别名
-typedef RuleDiscoveryPage = RuleCatalogPage;

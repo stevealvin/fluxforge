@@ -3,8 +3,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:shared_preferences_platform_interface/in_memory_shared_preferences_async.dart';
 import 'package:shared_preferences_platform_interface/shared_preferences_async_platform_interface.dart';
+import 'package:fluxforge/core/logging/app_logger.dart';
 import 'package:fluxforge/domain/rule/rule.dart';
+import 'package:fluxforge/features/rules/engines/rule_test_log_filter.dart';
 import 'package:fluxforge/features/rules/pages/rule_tester_page.dart';
+import 'package:fluxforge/features/rules/widgets/rule_test_console.dart';
 import 'package:fluxforge/app/theme/app_theme.dart';
 import 'package:fluxforge/app/di/di.dart';
 import 'package:fluxforge/data/settings/app_service.dart';
@@ -116,6 +119,44 @@ void main() {
 
       // 验证控制台日志面板存在（包含屏幕外懒加载区域）
       expect(find.text('沙箱实时控制台 (Console)', skipOffstage: false), findsOneWidget);
+    });
+
+    testWidgets('控制台日志过滤缓存：空闲期新增日志后，下一次重建必须读到最新结果',
+        (WidgetTester tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.lightTheme,
+          darkTheme: AppTheme.darkTheme,
+          home: RuleTesterPage(rule: sampleVideoRule),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // 追加一条属于本规则的日志：空闲期页面不会因日志变化而 setState
+      AppLogger.addLog(
+        level: 'INFO',
+        tag: 'Rule: ${sampleVideoRule.name}',
+        message: '缓存失效回归标记',
+      );
+
+      // 触发一次普通重建（关键词输入会走 setState）
+      await tester.enterText(find.byType(TextField, skipOffstage: false), '回归关键词');
+      await tester.pumpAndSettle();
+
+      final expectedCount = RuleTestLogFilter.forRule(
+        AppLogger.getLogs(),
+        ruleTag: 'Rule: ${sampleVideoRule.name}',
+      ).length;
+
+      // 控制台标题旁的条数徽标直接反映过滤结果：若缓存未失效，这里会是旧值
+      expect(
+        find.descendant(
+          of: find.byType(RuleTestConsolePanel, skipOffstage: false),
+          matching: find.text('$expectedCount', skipOffstage: false),
+        ),
+        findsOneWidget,
+        reason: '重建后控制台条数必须与最新日志一致（过滤缓存已失效）',
+      );
     });
   });
 }

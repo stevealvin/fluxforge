@@ -26,7 +26,8 @@ class SearchPendingView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final total = statusMap.length;
-    final finished = total - SearchAggregator.searchingCount(statusMap);
+    // 完成源数由聚合器统一给出（与顶部进度条同一口径），不再自算
+    final finished = SearchAggregator.finishedCount(statusMap);
 
     return Center(
       child: Padding(
@@ -34,7 +35,7 @@ class SearchPendingView extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const LoadingIndicator.compact(size: 28, strokeWidth: 2.5),
+            const AppLoading.compact(size: 28, strokeWidth: 2.5),
             const SizedBox(height: 16),
             Text(
               '全网流式聚合检索中...',
@@ -104,7 +105,7 @@ class SearchEmptyView extends StatelessWidget {
     if (targetStatus != null && targetStatus.hasError) {
       final errorMessage = targetStatus.errorMessage;
       return Center(
-        child: EmptyState(
+        child: AppEmptyState(
           icon: Icons.error_outline_rounded,
           title: '规则「${targetRule!.name}」检索异常',
           description: errorMessage != null && errorMessage.isNotEmpty
@@ -117,7 +118,7 @@ class SearchEmptyView extends StatelessWidget {
     }
 
     return Center(
-      child: EmptyState(
+      child: AppEmptyState(
         icon: Ionicons.searchOutline,
         title: '未检索到相关内容',
         description: targetRule != null

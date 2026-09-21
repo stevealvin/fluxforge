@@ -205,7 +205,7 @@ class AppButton extends StatelessWidget {
     // 3. 图标与 Loading 转圈处理
     Widget? effectiveIcon;
     if (loading) {
-      effectiveIcon = LoadingIndicator.compact(
+      effectiveIcon = AppLoading.compact(
         size: iconSize,
         strokeWidth: 1.8,
         color: effectiveFg,

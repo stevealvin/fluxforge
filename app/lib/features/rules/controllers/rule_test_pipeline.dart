@@ -1,6 +1,6 @@
 import 'package:fluxforge/core/logging/app_logger.dart';
-import 'package:fluxforge/core/sandbox/rule_engine.dart';
 import 'package:fluxforge/domain/rule/rule.dart';
+import 'package:fluxforge/features/rules/engines/rule_test_actions.dart';
 import 'package:fluxforge/features/rules/engines/rule_test_report.dart';
 import 'package:fluxforge/features/rules/models/rule_test_step.dart';
 
@@ -14,6 +14,7 @@ class RuleTestPipeline {
     required this.rule,
     required this.steps,
     required this.onStepChanged,
+    this.actions = const RuleTestActions(),
   });
 
   final Rule rule;
@@ -24,19 +25,34 @@ class RuleTestPipeline {
   /// 阶段状态变化通知（宿主内部自行处理 mounted 判定与 setState）
   final void Function() onStepChanged;
 
+  /// 沙箱动作入口（默认走真实 `RuleEngine`，单测可注入可控假实现）
+  final RuleTestActions actions;
+
   bool _isCancelled = false;
+
+  /// 运行轮次：每次 [run] 递增，[cancel] 也递增
+  ///
+  /// 沙箱调用是 FFI 阻塞式的，**无法真正打断**，所以这里只能保证「结果不落地」：
+  /// 在途阶段返回时若轮次已变（被中止，或被新一轮测试顶替），一律丢弃结果 ——
+  /// 不写共享的 [steps]、也不再通知宿主。否则「取消后立刻重开」时，
+  /// 旧一轮的迟到结果会盖掉新一轮刚写好的阶段状态。
+  int _generation = 0;
 
   /// 本轮测试是否已被用户中止
   bool get isCancelled => _isCancelled;
 
-  /// 中止本轮测试（后续阶段不再执行）
+  /// 中止本轮测试（在途阶段的结果随之作废，后续阶段不再执行）
   void cancel() {
     _isCancelled = true;
+    _generation++;
   }
 
   /// 执行完整四阶段接力测试
   Future<void> run(String keyword) async {
     _isCancelled = false;
+    // 本轮的唯一标识：一旦被中止或被新一轮顶替，本轮所有在途结果一律作废
+    final generation = ++_generation;
+    bool isStale() => _isCancelled || generation != _generation;
 
     AppLogger.addLog(
       level: 'INFO',
@@ -54,7 +70,7 @@ class RuleTestPipeline {
     // ----------------------------------------------------
     // 阶段 1: 发现页测试 (Discovery)
     // ----------------------------------------------------
-    if (!_isCancelled) {
+    if (!isStale()) {
       final step = steps[0];
       step.status = RuleTestStepStatus.running;
       step.requestParams = {'page': 1, 'baseUrl': rule.baseUrl};
@@ -62,7 +78,9 @@ class RuleTestPipeline {
 
       final sw = Stopwatch()..start();
       try {
-        final res = await RuleEngine.discovery(rule, page: 1);
+        final res = await actions.discovery(rule);
+        // 在途期间被中止 / 被新一轮顶替：结果作废，不写入阶段状态
+        if (isStale()) return;
         sw.stop();
         step.elapsedMs = sw.elapsedMilliseconds;
         step.rawResponse = res;
@@ -101,6 +119,8 @@ class RuleTestPipeline {
           step.status = RuleTestStepStatus.failed;
         }
       } catch (e) {
+        // 异常也可能来自已作废的那一轮（例如中止之后才抛出的超时）
+        if (isStale()) return;
         sw.stop();
         step.elapsedMs = sw.elapsedMilliseconds;
         step.status = RuleTestStepStatus.failed;
@@ -113,7 +133,7 @@ class RuleTestPipeline {
     // ----------------------------------------------------
     // 阶段 2: 搜索测试 (Search)
     // ----------------------------------------------------
-    if (!_isCancelled) {
+    if (!isStale()) {
       final step = steps[1];
       step.status = RuleTestStepStatus.running;
       step.requestParams = {'keyword': keyword, 'page': 1, 'baseUrl': rule.baseUrl};
@@ -121,7 +141,9 @@ class RuleTestPipeline {
 
       final sw = Stopwatch()..start();
       try {
-        final res = await RuleEngine.search(rule, keyword, page: 1);
+        final res = await actions.search(rule, keyword);
+        // 在途期间被中止 / 被新一轮顶替：结果作废，不写入阶段状态
+        if (isStale()) return;
         sw.stop();
         step.elapsedMs = sw.elapsedMilliseconds;
         step.rawResponse = res;
@@ -154,6 +176,7 @@ class RuleTestPipeline {
           step.errorMessage = '返回列表为空，建议更换常用测试关键词重试';
         }
       } catch (e) {
+        if (isStale()) return;
         sw.stop();
         step.elapsedMs = sw.elapsedMilliseconds;
         step.status = RuleTestStepStatus.failed;
@@ -175,7 +198,7 @@ class RuleTestPipeline {
     // ----------------------------------------------------
     // 阶段 3: 详情与选集测试 (Detail)
     // ----------------------------------------------------
-    if (!_isCancelled) {
+    if (!isStale()) {
       final step = steps[2];
       if (candidateDetailUrl == null || candidateDetailUrl.isEmpty) {
         step.status = RuleTestStepStatus.skipped;
@@ -191,11 +214,13 @@ class RuleTestPipeline {
 
         final sw = Stopwatch()..start();
         try {
-          final res = await RuleEngine.detail(
+          final res = await actions.detail(
             rule,
             candidateDetailUrl,
             item: candidateDetailItem,
           );
+          // 在途期间被中止 / 被新一轮顶替：结果作废，不写入阶段状态
+          if (isStale()) return;
           sw.stop();
           step.elapsedMs = sw.elapsedMilliseconds;
           step.rawResponse = res;
@@ -231,6 +256,7 @@ class RuleTestPipeline {
             step.status = RuleTestStepStatus.failed;
           }
         } catch (e) {
+          if (isStale()) return;
           sw.stop();
           step.elapsedMs = sw.elapsedMilliseconds;
           step.status = RuleTestStepStatus.failed;
@@ -244,7 +270,7 @@ class RuleTestPipeline {
     // ----------------------------------------------------
     // 阶段 4: 直链解析/正文提取测试 (Parse)
     // ----------------------------------------------------
-    if (!_isCancelled) {
+    if (!isStale()) {
       final step = steps[3];
       if (candidateChapterUrl == null || candidateChapterUrl.isEmpty) {
         step.status = RuleTestStepStatus.skipped;
@@ -259,7 +285,9 @@ class RuleTestPipeline {
 
         final sw = Stopwatch()..start();
         try {
-          final res = await RuleEngine.parse(rule, candidateChapterUrl);
+          final res = await actions.parse(rule, candidateChapterUrl);
+          // 在途期间被中止 / 被新一轮顶替：结果作废，不写入阶段状态
+          if (isStale()) return;
           sw.stop();
           step.elapsedMs = sw.elapsedMilliseconds;
           step.rawResponse = res;
@@ -299,6 +327,7 @@ class RuleTestPipeline {
             step.status = RuleTestStepStatus.failed;
           }
         } catch (e) {
+          if (isStale()) return;
           sw.stop();
           step.elapsedMs = sw.elapsedMilliseconds;
           step.status = RuleTestStepStatus.failed;

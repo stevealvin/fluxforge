@@ -81,7 +81,7 @@ class SearchSourceFilterBar extends StatelessWidget {
                   },
                   showCheckmark: false,
                   avatar: activeSearchingCount > 0
-                      ? const LoadingIndicator.compact(size: 12, strokeWidth: 1.5)
+                      ? const AppLoading.compact(size: 12, strokeWidth: 1.5)
                       : null,
                   selectedColor: AppColors.primary.withValues(alpha: 0.16),
                   checkmarkColor: AppColors.primary,
@@ -116,7 +116,7 @@ class SearchSourceFilterBar extends StatelessWidget {
                       },
                       showCheckmark: false,
                       avatar: status.isSearching
-                          ? const LoadingIndicator.compact(size: 12, strokeWidth: 1.5)
+                          ? const AppLoading.compact(size: 12, strokeWidth: 1.5)
                           : status.hasError
                               ? const Icon(Icons.error_outline_rounded,
                                   size: 14, color: Colors.orangeAccent)

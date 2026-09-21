@@ -2,7 +2,6 @@ import 'package:fluxforge/app/router/app_navigator.dart';
 import 'package:ionicons/ionicons.dart';
 import 'package:material_ui/material_ui.dart';
 
-import 'package:fluxforge/core/storage/app_storage.dart';
 import 'package:fluxforge/app/theme/app_colors.dart';
 import 'package:fluxforge/domain/rule/rule.dart';
 import 'package:fluxforge/app/di/di.dart';
@@ -10,74 +9,13 @@ import 'package:fluxforge/shared/widgets/app_card.dart';
 
 /// 「我的」页顶部身份 Hero 卡 (ProfileHero)
 ///
-/// 承载个人身份（可编辑昵称）、沙箱运行状态、主题三态快捷切换与设置唯一入口，
+/// 承载身份标题、沙箱运行状态、主题三态快捷切换与设置唯一入口，
 /// 替代旧版页面中重复出现的设置按钮与静态假数据。
-class ProfileHero extends StatefulWidget {
+///
+/// 说明：原「点击修改昵称」功能已移除 —— 昵称的读取与持久化落在组件内属于越界
+/// （组件直接读写 `AppStorage`），且该页与设置页将重新设计。因此本卡不再持有任何本地状态。
+class ProfileHero extends StatelessWidget {
   const ProfileHero({super.key});
-
-  @override
-  State<ProfileHero> createState() => _ProfileHeroState();
-}
-
-class _ProfileHeroState extends State<ProfileHero> {
-  /// 昵称本地持久化键
-  static const String _nicknameKey = 'profile_nickname';
-
-  String _nickname = 'FluxForge 探索者';
-
-  @override
-  void initState() {
-    super.initState();
-    _loadNickname();
-  }
-
-  /// 加载本地昵称
-  Future<void> _loadNickname() async {
-    final saved = await AppStorage.getString(_nicknameKey);
-    if (saved != null && saved.trim().isNotEmpty && mounted) {
-      setState(() => _nickname = saved.trim());
-    }
-  }
-
-  /// 弹出昵称编辑对话框
-  Future<void> _editNickname() async {
-    final controller = TextEditingController(text: _nickname);
-    final result = await showDialog<String>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('修改昵称'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          maxLength: 16,
-          decoration: const InputDecoration(
-            hintText: '请输入昵称',
-            border: OutlineInputBorder(),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: AppColors.primary),
-            onPressed: () => Navigator.pop(dialogContext, controller.text.trim()),
-            child: const Text('保存'),
-          ),
-        ],
-      ),
-    );
-    controller.dispose();
-
-    if (result == null || result.isEmpty || !mounted) return;
-    setState(() => _nickname = result);
-    await AppStorage.setString(_nicknameKey, result);
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('昵称已更新')),
-    );
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -104,62 +42,45 @@ class _ProfileHeroState extends State<ProfileHero> {
             children: [
               Row(
                 children: [
-                  // 极光渐变品牌头像（点击可修改昵称）
-                  GestureDetector(
-                    onTap: _editNickname,
-                    child: Container(
-                      width: 54,
-                      height: 54,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        gradient: const LinearGradient(
-                          colors: [AppColors.primaryLight, AppColors.primary],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
+                  // 极光渐变品牌头像
+                  Container(
+                    width: 54,
+                    height: 54,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: const LinearGradient(
+                        colors: [AppColors.primaryLight, AppColors.primary],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: AppColors.primaryLight.withValues(alpha: 0.35),
+                          blurRadius: 12,
+                          offset: const Offset(0, 4),
                         ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: AppColors.primaryLight.withValues(alpha: 0.35),
-                            blurRadius: 12,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
-                      ),
-                      child: const Center(
-                        child: Icon(Ionicons.compassOutline, color: Colors.white, size: 28),
-                      ),
+                      ],
+                    ),
+                    child: const Center(
+                      child: Icon(Ionicons.compassOutline, color: Colors.white, size: 28),
                     ),
                   ),
                   const SizedBox(width: 14),
 
-                  // 昵称与沙箱运行状态
+                  // 身份标题与沙箱运行状态
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        GestureDetector(
-                          onTap: _editNickname,
-                          child: Row(
-                            children: [
-                              Flexible(
-                                child: Text(
-                                  _nickname,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    fontSize: 17,
-                                    fontWeight: FontWeight.bold,
-                                    color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 6),
-                              Icon(
-                                Ionicons.createOutline,
-                                size: 13,
-                                color: isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted,
-                              ),
-                            ],
+                        // 身份标题（原「点击修改昵称」已移除，该页将重新设计）
+                        Text(
+                          'FluxForge 探索者',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 17,
+                            fontWeight: FontWeight.bold,
+                            color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
                           ),
                         ),
                         const SizedBox(height: 5),
