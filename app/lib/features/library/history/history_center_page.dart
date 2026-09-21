@@ -11,7 +11,8 @@ import 'package:fluxforge/domain/rule/rule.dart';
 import 'package:fluxforge/app/di/di.dart';
 import 'package:fluxforge/data/library/play_history_service.dart';
 import 'package:fluxforge/shared/widgets/app_card.dart';
-import 'package:fluxforge/shared/widgets/app_net_image.dart';
+import 'package:fluxforge/shared/widgets/app_confirm_dialog.dart';
+import 'package:fluxforge/shared/widgets/app_image.dart';
 
 /// 打开消费记录对应的媒体详情页
 ///
@@ -68,25 +69,13 @@ class _HistoryCenterPageState extends State<HistoryCenterPage> {
 
   /// 清空全部历史（二次确认后同时清空消费历史与搜索足迹）
   Future<void> _confirmClearAll() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('清空全部历史'),
-        content: const Text('将同时清空「观看/阅读历史」与「搜索足迹」，该操作不可撤销。'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: AppColors.danger),
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('确认清空'),
-          ),
-        ],
-      ),
+    final confirmed = await showAppConfirmDialog(
+      context,
+      title: '清空全部历史',
+      message: '将同时清空「观看/阅读历史」与「搜索足迹」，该操作不可撤销。',
+      confirmText: '确认清空',
     );
-    if (confirmed != true) return;
+    if (!confirmed) return;
 
     await playHistoryService.clear();
     await historyService.clearHistory();
@@ -269,7 +258,7 @@ class _HistoryCenterPageState extends State<HistoryCenterPage> {
             child: SizedBox(
               width: 56,
               height: 74,
-              child: NetImage(
+              child: AppImage(
                 imageUrl: record.cover,
                 fit: BoxFit.cover,
               ),

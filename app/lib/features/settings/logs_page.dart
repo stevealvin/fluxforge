@@ -6,6 +6,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:fluxforge/app/theme/app_colors.dart';
 import 'package:fluxforge/core/logging/app_logger.dart';
 import 'package:fluxforge/shared/widgets/app_card.dart';
+import 'package:fluxforge/shared/widgets/app_confirm_dialog.dart';
 
 /// 客户端全链路沙箱与系统日志中心页面
 ///
@@ -157,34 +158,20 @@ class _LogsPageState extends State<LogsPage> {
     );
   }
 
-  /// 弹出清空日志确认弹窗
-  void _confirmClearLogs(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('清空诊断日志'),
-        content: const Text('确定要清空内存中的所有运行日志与本地错误缓存吗？该操作不可撤销。'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Colors.redAccent),
-            onPressed: () async {
-              final messenger = ScaffoldMessenger.of(context);
-              final navigator = Navigator.of(ctx);
-              await AppLogger.clear();
-              if (!mounted) return;
-              navigator.pop();
-              messenger.showSnackBar(
-                const SnackBar(content: Text('已清空全部日志记录')),
-              );
-            },
-            child: const Text('确定清空'),
-          ),
-        ],
-      ),
+  /// 弹出清空日志确认弹窗（弹窗只采集结论，清空动作由本方法在确认后执行）
+  Future<void> _confirmClearLogs(BuildContext context) async {
+    final confirmed = await showAppConfirmDialog(
+      context,
+      title: '清空诊断日志',
+      message: '将清空内存中的所有运行日志与本地错误缓存，该操作不可撤销。',
+      confirmText: '确认清空',
+    );
+    if (!confirmed || !context.mounted) return;
+
+    await AppLogger.clear();
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('已清空全部日志记录')),
     );
   }
 

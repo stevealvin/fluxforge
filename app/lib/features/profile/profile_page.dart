@@ -5,7 +5,9 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:fluxforge/app/theme/app_colors.dart';
 import 'package:fluxforge/app/di/di.dart';
+import 'package:fluxforge/shared/widgets/app_confirm_dialog.dart';
 import 'package:fluxforge/shared/widgets/setting_tile.dart';
+import 'package:fluxforge/features/media/shared/media_favorite_actions.dart';
 import 'package:fluxforge/features/profile/widgets/continue_watching_row.dart';
 import 'package:fluxforge/features/profile/widgets/profile_asset_grid.dart';
 import 'package:fluxforge/features/profile/widgets/profile_hero.dart';
@@ -55,7 +57,10 @@ class _ProfilePageState extends State<ProfilePage> {
   /// 下拉刷新：追更检测 + 缓存重算（移动端高频入口一体化）
   Future<void> _refreshAll() async {
     HapticFeedback.lightImpact();
-    final updates = await favoriteService.checkUpdates();
+    final updates = await favoriteService.checkUpdates(
+      probe: MediaFavoriteActions.probeLatest,
+      progressOf: MediaFavoriteActions.progressOf,
+    );
     await _fetchCacheSize();
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -71,25 +76,15 @@ class _ProfilePageState extends State<ProfilePage> {
   Future<void> _cleanCacheOnly() async {
     if (_isCleaning) return;
 
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('清理临时缓存'),
-        content: const Text('将清空临时目录中的网络图片与文件缓存，不影响收藏、规则与历史记录。'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: AppColors.primary),
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('立即清理'),
-          ),
-        ],
-      ),
+    // 仅清缓存不破坏用户资产，按「非破坏性确认」呈现（主色强调，无触觉警示）
+    final confirmed = await showAppConfirmDialog(
+      context,
+      title: '清理临时缓存',
+      message: '将清空临时目录中的网络图片与文件缓存，不影响收藏、规则与历史记录。',
+      confirmText: '立即清理',
+      destructive: false,
     );
-    if (confirmed != true || !mounted) return;
+    if (!confirmed || !mounted) return;
 
     HapticFeedback.lightImpact();
     setState(() => _isCleaning = true);
@@ -97,9 +92,8 @@ class _ProfilePageState extends State<ProfilePage> {
     await _fetchCacheSize();
     if (!mounted) return;
     setState(() => _isCleaning = false);
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('已清理临时与网络缓存')),
-    );
+    ScaffoldMessenger.of(context)
+        .showSnackBar(const SnackBar(content: Text('已清理临时与网络缓存')));
   }
 
   @override
@@ -113,15 +107,21 @@ class _ProfilePageState extends State<ProfilePage> {
           onRefresh: _refreshAll,
           color: AppColors.primary,
           child: ListView(
-            physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
+            physics: const AlwaysScrollableScrollPhysics(
+              parent: BouncingScrollPhysics(),
+            ),
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
             children: [
               // ① 身份 Hero
               const ProfileHero(),
               const SizedBox(height: 18),
 
-              // ② 继续观看（断点续播横滑流）
-              const ContinueWatchingRow(),
+              // ② 继续观看（断点续播横滑流）—— 订阅归宿主，组件只吃「记录数据」这一份入参
+              ValueListenableBuilder(
+                valueListenable: playHistoryService.recordsNotifier,
+                builder: (context, records, _) =>
+                    ContinueWatchingRow(records: records),
+              ),
               const SizedBox(height: 18),
 
               // ③ 我的资产（2×2 资产卡网格）
@@ -159,7 +159,10 @@ class _ProfilePageState extends State<ProfilePage> {
                             onPressed: _cleanCacheOnly,
                             child: const Text(
                               '清理',
-                              style: TextStyle(fontSize: 12, color: AppColors.primary),
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: AppColors.primary,
+                              ),
                             ),
                           ),
                   ),
@@ -173,7 +176,9 @@ class _ProfilePageState extends State<ProfilePage> {
                   'FluxForge v${appService.packageInfo?.version ?? "1.0.0"} · 极光微内核沙箱',
                   style: TextStyle(
                     fontSize: 11,
-                    color: isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted,
+                    color: isDark
+                        ? AppColors.darkTextMuted
+                        : AppColors.lightTextMuted,
                   ),
                 ),
               ),

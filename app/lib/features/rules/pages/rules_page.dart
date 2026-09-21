@@ -8,6 +8,7 @@ import 'package:fluxforge/domain/rule/rule.dart';
 import 'package:fluxforge/app/di/di.dart';
 import 'package:fluxforge/data/rule/rule_service.dart';
 import 'package:fluxforge/shared/widgets/app_card.dart';
+import 'package:fluxforge/shared/widgets/app_confirm_dialog.dart';
 import 'package:fluxforge/shared/widgets/app_loading.dart';
 
 /// 客户端本地规则管理页面
@@ -273,7 +274,7 @@ class _RulesPageState extends State<RulesPage> {
                               }
                             },
                       child: isSubmitting
-                          ? const LoadingIndicator.compact(size: 20, color: Colors.white)
+                          ? const AppLoading.compact(size: 20, color: Colors.white)
                           : const Text('立即导入', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
                     ),
                   ],
@@ -286,35 +287,20 @@ class _RulesPageState extends State<RulesPage> {
     );
   }
 
-  /// 删除规则确认
-  void _confirmDeleteRule(BuildContext context, Rule rule) {
-    showDialog(
-      context: context,
-      builder: (dialogCtx) {
-        return AlertDialog(
-          title: const Text('删除规则'),
-          content: Text('确定要删除规则「${rule.name}」吗？此操作无法撤销。'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogCtx),
-              child: const Text('取消'),
-            ),
-            FilledButton(
-              style: FilledButton.styleFrom(backgroundColor: Colors.redAccent),
-              onPressed: () async {
-                await _ruleService.removeRule(rule.id);
-                if (dialogCtx.mounted) Navigator.pop(dialogCtx);
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('已删除规则「${rule.name}」')),
-                  );
-                }
-              },
-              child: const Text('删除'),
-            ),
-          ],
-        );
-      },
+  /// 删除规则确认（弹窗只采集结论，删除动作由本方法在确认后执行）
+  Future<void> _confirmDeleteRule(BuildContext context, Rule rule) async {
+    final confirmed = await showAppConfirmDialog(
+      context,
+      title: '删除规则',
+      message: '将删除规则「${rule.name}」，该操作不可撤销。',
+      confirmText: '删除',
+    );
+    if (!confirmed || !context.mounted) return;
+
+    await _ruleService.removeRule(rule.id);
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('已删除规则「${rule.name}」')),
     );
   }
 

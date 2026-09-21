@@ -7,8 +7,9 @@ import 'package:fluxforge/app/theme/app_colors.dart';
 import 'package:fluxforge/app/di/di.dart';
 import 'package:fluxforge/data/download/download_service.dart';
 import 'package:fluxforge/shared/widgets/app_card.dart';
+import 'package:fluxforge/shared/widgets/app_confirm_dialog.dart';
 import 'package:fluxforge/shared/widgets/app_empty_state.dart';
-import 'package:fluxforge/shared/widgets/app_net_image.dart';
+import 'package:fluxforge/shared/widgets/app_image.dart';
 
 /// 离线下载管理页（DownloadManagerPage）
 ///
@@ -47,25 +48,13 @@ class _DownloadManagerPageState extends State<DownloadManagerPage> {
 
   /// 清理全部下载（二次确认）
   Future<void> _confirmClearAll() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('清空全部离线内容'),
-        content: const Text('将删除所有已下载的小说章节与漫画图片，该操作不可撤销。'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: AppColors.danger),
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('确认清空'),
-          ),
-        ],
-      ),
+    final confirmed = await showAppConfirmDialog(
+      context,
+      title: '清空全部离线内容',
+      message: '将删除所有已下载的小说章节与漫画图片，该操作不可撤销。',
+      confirmText: '确认清空',
     );
-    if (confirmed != true) return;
+    if (!confirmed) return;
 
     await downloadService.clearAll();
     await _refreshSize();
@@ -77,25 +66,13 @@ class _DownloadManagerPageState extends State<DownloadManagerPage> {
 
   /// 删除单个任务（连带本地文件）
   Future<void> _removeTask(DownloadTask task) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text('删除《${task.title}》离线内容'),
-        content: const Text('将删除该书已下载的本地文件，该操作不可撤销。'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: AppColors.danger),
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('删除'),
-          ),
-        ],
-      ),
+    final confirmed = await showAppConfirmDialog(
+      context,
+      title: '删除《${task.title}》离线内容',
+      message: '将删除该书已下载的本地文件，该操作不可撤销。',
+      confirmText: '删除',
     );
-    if (confirmed != true) return;
+    if (!confirmed) return;
 
     await downloadService.remove(task.id);
     await _refreshSize();
@@ -137,7 +114,7 @@ class _DownloadManagerPageState extends State<DownloadManagerPage> {
         valueListenable: downloadService.tasksNotifier,
         builder: (context, tasks, _) {
           if (tasks.isEmpty) {
-            return const EmptyState(
+            return const AppEmptyState(
               icon: Ionicons.cloudDownloadOutline,
               title: '暂无离线下载',
               description:
@@ -229,7 +206,7 @@ class _DownloadManagerPageState extends State<DownloadManagerPage> {
                 child: SizedBox(
                   width: 52,
                   height: 70,
-                  child: NetImage(imageUrl: task.cover, fit: BoxFit.cover),
+                  child: AppImage(imageUrl: task.cover, fit: BoxFit.cover),
                 ),
               ),
               const SizedBox(width: 12),
