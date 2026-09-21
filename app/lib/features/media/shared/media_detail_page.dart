@@ -1,15 +1,22 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:flutter/services.dart';
 import 'package:ionicons/ionicons.dart';
 
 import 'package:fluxforge/app/theme/app_colors.dart';
+import 'package:fluxforge/app/router/app_navigator.dart';
 import 'package:fluxforge/domain/rule/rule.dart';
 import 'package:fluxforge/app/di/di.dart';
 import 'package:fluxforge/core/sandbox/rule_engine.dart';
+import 'package:fluxforge/data/download/download_service.dart';
+import 'package:fluxforge/data/library/favorite_service.dart';
 import 'package:fluxforge/shared/widgets/app_empty_state.dart';
 import 'package:fluxforge/shared/widgets/app_loading.dart';
 import 'package:fluxforge/features/media/comic/comic_detail_view.dart';
 import 'package:fluxforge/domain/media/media.dart';
 import 'package:fluxforge/features/media/novel/novel_detail_view.dart';
+import 'package:fluxforge/features/media/shared/media_download_actions.dart';
+import 'package:fluxforge/features/media/shared/media_download_sheet.dart';
+import 'package:fluxforge/features/media/shared/media_favorite_actions.dart';
 import 'package:fluxforge/features/media/video/video_detail_view.dart';
 
 /// 跨媒体统一详情调度容器页面 (MediaDetailPage)
@@ -63,7 +70,10 @@ class _MediaDetailPageState extends State<MediaDetailPage> {
     if (_activeRule == null && ruleService.rules.isNotEmpty) {
       try {
         _activeRule = ruleService.rules.firstWhere(
-          (r) => widget.url.isNotEmpty && r.baseUrl.isNotEmpty && widget.url.contains(Uri.parse(r.baseUrl).host),
+          (r) =>
+              widget.url.isNotEmpty &&
+              r.baseUrl.isNotEmpty &&
+              widget.url.contains(Uri.parse(r.baseUrl).host),
           orElse: () => ruleService.rules.first,
         );
       } catch (_) {}
@@ -155,7 +165,9 @@ class _MediaDetailPageState extends State<MediaDetailPage> {
       }
 
       // 智能识别并注入默认防盗链 Referer：若规则未显式声明，默认回退注入详情页 URL 或规则 baseUrl
-      final hasReferer = parsedHeaders.keys.any((k) => k.toLowerCase() == 'referer');
+      final hasReferer = parsedHeaders.keys.any(
+        (k) => k.toLowerCase() == 'referer',
+      );
       if (!hasReferer) {
         if (widget.url.isNotEmpty) {
           parsedHeaders['Referer'] = widget.url;
@@ -174,7 +186,12 @@ class _MediaDetailPageState extends State<MediaDetailPage> {
       if (result['related'] is List) {
         for (final m in result['related']) {
           if (m is Map) {
-            parsedRelated.add(MediaRelatedItem.fromMap(Map<String, dynamic>.from(m), rule: _activeRule));
+            parsedRelated.add(
+              MediaRelatedItem.fromMap(
+                Map<String, dynamic>.from(m),
+                rule: _activeRule,
+              ),
+            );
           }
         }
       }
@@ -194,7 +211,10 @@ class _MediaDetailPageState extends State<MediaDetailPage> {
         for (int i = 0; i < rawItems.length; i++) {
           final it = rawItems[i];
           if (it is Map) {
-            final ep = MediaEpisode.fromMap(Map<String, dynamic>.from(it), fallbackIndex: i + 1);
+            final ep = MediaEpisode.fromMap(
+              Map<String, dynamic>.from(it),
+              fallbackIndex: i + 1,
+            );
             items.add(ep);
             chapters.add(ep);
           } else if (it is String) {
@@ -213,13 +233,17 @@ class _MediaDetailPageState extends State<MediaDetailPage> {
       textContent = result['content']?.toString();
     }
 
-    MediaType determinedType = MediaType.fromString(widget.type ?? _activeRule?.type);
+    MediaType determinedType = MediaType.fromString(
+      widget.type ?? _activeRule?.type,
+    );
     if (determinedType == MediaType.unknown) {
       if (imageList.isNotEmpty || comicGroups.isNotEmpty) {
         determinedType = MediaType.comic;
       } else if (textContent != null && textContent.length > 80) {
         determinedType = MediaType.novel;
-      } else if (playUrl != null || items.isNotEmpty || videoGroups.isNotEmpty) {
+      } else if (playUrl != null ||
+          items.isNotEmpty ||
+          videoGroups.isNotEmpty) {
         determinedType = MediaType.video;
       } else {
         determinedType = MediaType.video;
@@ -261,7 +285,9 @@ class _MediaDetailPageState extends State<MediaDetailPage> {
       if (u.startsWith('/')) {
         return '${baseUri.scheme}://${baseUri.host}${baseUri.hasPort ? ":${baseUri.port}" : ""}$u';
       }
-      return Uri.parse(base.endsWith('/') ? base : '$base/').resolve(u).toString();
+      return Uri.parse(base.endsWith('/') ? base : '$base/')
+          .resolve(u)
+          .toString();
     } catch (_) {
       return u;
     }
@@ -277,6 +303,48 @@ class _MediaDetailPageState extends State<MediaDetailPage> {
           rule: item.rule ?? _activeRule,
           type: item.type,
         ),
+      ),
+    );
+  }
+
+  /// 离线下载任务的唯一键（与动作层同源，保证「刚发起的任务查得到」）
+  String get _downloadTaskKey =>
+      MediaDownloadActions.taskKey(_data, widget.title);
+
+  /// 顶部栏下载入口：底部弹出下载面板
+  Future<void> _openDownloadSheet() {
+    return showMediaDownloadSheet(
+      context,
+      title: _data.title.isNotEmpty ? _data.title : widget.title,
+      bookId: _downloadTaskKey,
+      unitLabel: _data.mediaType == MediaType.comic ? '页' : '章',
+      tasks: downloadService.tasksNotifier,
+      taskOf: () => downloadService.taskOf(_downloadTaskKey),
+      onAction: (task) => MediaDownloadActions.handleTap(
+        data: _data,
+        rule: _activeRule,
+        task: task,
+        fallbackTitle: widget.title,
+        fallbackCover: widget.cover,
+      ),
+      onOpenDownloads: () => context.pushDownloads(),
+    );
+  }
+
+  /// 收藏 / 取消收藏：写入侧唯一入口（见 [MediaFavoriteActions]）
+  Future<void> _toggleFavorite() async {
+    HapticFeedback.lightImpact();
+    final message = await MediaFavoriteActions.toggle(
+      data: _data,
+      rule: _activeRule,
+      fallbackTitle: widget.title,
+      fallbackCover: widget.cover,
+    );
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        duration: const Duration(milliseconds: 1600),
       ),
     );
   }
@@ -309,10 +377,7 @@ class _MediaDetailPageState extends State<MediaDetailPage> {
           Expanded(
             child: Text(
               _data.title.isNotEmpty ? _data.title : widget.title,
-              style: const TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-              ),
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
@@ -325,6 +390,57 @@ class _MediaDetailPageState extends State<MediaDetailPage> {
             ),
             onPressed: _loadDetail,
           ),
+          // 收藏入口：与「离线下载」并列，图标随收藏状态切换
+          if (!_loading && _error == null)
+            ValueListenableBuilder<List<FavoriteItem>>(
+              valueListenable: favoriteService.favoritesNotifier,
+              builder: (context, _, _) {
+                final favorited = MediaFavoriteActions.isFavorited(
+                  _data,
+                  widget.title,
+                );
+                return IconButton(
+                  tooltip: favorited ? '取消收藏' : '收藏并开启追更',
+                  icon: Icon(
+                    favorited ? Ionicons.bookmark : Ionicons.bookmarkOutline,
+                    color: favorited
+                        ? AppColors.primary
+                        : (isDark
+                              ? Colors.white70
+                              : AppColors.lightTextSecondary),
+                    size: 20,
+                  ),
+                  onPressed: _toggleFavorite,
+                );
+              },
+            ),
+          // 离线下载入口：顶部栏右上角，点击后底部弹出下载面板
+          if (!_loading && _error == null)
+            ValueListenableBuilder<List<DownloadTask>>(
+              valueListenable: downloadService.tasksNotifier,
+              builder: (context, _, _) {
+                final task = downloadService.taskOf(_downloadTaskKey);
+                final isActive = task != null && task.isActive;
+                final isDone = task?.isFinished ?? false;
+                return IconButton(
+                  tooltip: isDone
+                      ? '已下载全本，点击查看'
+                      : (isActive ? '下载中，点击查看进度' : '离线下载'),
+                  icon: Icon(
+                    isDone
+                        ? Ionicons.cloudDoneOutline
+                        : Ionicons.cloudDownloadOutline,
+                    color: isDone || isActive
+                        ? AppColors.primary
+                        : (isDark
+                              ? Colors.white70
+                              : AppColors.lightTextSecondary),
+                    size: 20,
+                  ),
+                  onPressed: _openDownloadSheet,
+                );
+              },
+            ),
         ],
       ),
     );
@@ -367,7 +483,8 @@ class _MediaDetailPageState extends State<MediaDetailPage> {
     }
 
     // 视频类型：顶部吸顶常驻播放器，下方独立滚动流 (享受商业级吸顶视听体验)
-    if (_data.mediaType == MediaType.video || _data.mediaType == MediaType.unknown) {
+    if (_data.mediaType == MediaType.video ||
+        _data.mediaType == MediaType.unknown) {
       return VideoDetailView(
         data: _data,
         rule: _activeRule,

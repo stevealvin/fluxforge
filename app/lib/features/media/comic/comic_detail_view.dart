@@ -1,15 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:ionicons/ionicons.dart';
-import 'package:extended_image/extended_image.dart';
 
 import 'package:fluxforge/app/theme/app_colors.dart';
 import 'package:fluxforge/domain/rule/rule.dart';
+import 'package:fluxforge/shared/widgets/app_image.dart';
 import 'package:fluxforge/app/di/di.dart';
-import 'package:fluxforge/data/download/download_service.dart';
 import 'package:fluxforge/data/library/play_history_service.dart';
 import 'package:fluxforge/shared/widgets/app_card.dart';
-import 'package:fluxforge/features/library/downloads/widgets/download_bar.dart';
 import 'package:fluxforge/features/media/shared/media_meta_header.dart';
 import 'package:fluxforge/features/media/shared/media_related_grid.dart';
 import 'package:fluxforge/domain/media/media.dart';
@@ -142,81 +140,6 @@ class _ComicDetailViewState extends State<ComicDetailView> {
     );
   }
 
-  /// 收集本作可离线下载的全部图片地址（图集 + 各分组章节）
-  List<String> _collectDownloadUrls() {
-    final urls = <String>{};
-    for (final url in widget.data.imageList) {
-      if (url.trim().isNotEmpty) urls.add(url.trim());
-    }
-    for (final group in widget.data.comicGroups) {
-      for (final item in group.items) {
-        if (item.url.trim().isNotEmpty) urls.add(item.url.trim());
-      }
-    }
-    return urls.toList();
-  }
-
-  /// 统一轻提示
-  void _showSnack(String message) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), duration: const Duration(milliseconds: 1800)),
-    );
-  }
-
-  /// 点击下载条：按当前状态执行 暂停 / 继续 / 重试 / 新建
-  Future<void> _handleDownloadTap(DownloadTask? task) async {
-    final rule = widget.rule;
-    if (rule == null) {
-      _showSnack('未绑定解析规则，无法下载');
-      return;
-    }
-
-    final urls = _collectDownloadUrls();
-    if (urls.isEmpty) {
-      _showSnack('暂无可下载的图片');
-      return;
-    }
-
-    HapticFeedback.lightImpact();
-
-    // 1. 下载中 → 暂停
-    if (task != null && task.isActive) {
-      downloadService.pause(task.id);
-      _showSnack('已暂停下载');
-      return;
-    }
-
-    // 2. 已完成 → 提示
-    if (task != null && task.isFinished) {
-      _showSnack('该作品已完整下载到本地沙盒');
-      return;
-    }
-
-    // 3. 已暂停 / 部分失败 → 继续或重试
-    if (task != null) {
-      if (task.failed.isNotEmpty) {
-        downloadService.retryFailed(task.id);
-        _showSnack('已重新开始下载失败图片');
-      } else {
-        downloadService.resume(task.id);
-        _showSnack('已继续下载');
-      }
-      return;
-    }
-
-    // 4. 全新下载
-    await downloadService.startComicDownload(
-      rule: rule,
-      bookId: _mediaId,
-      title: widget.data.title.isNotEmpty ? widget.data.title : widget.fallbackTitle,
-      cover: widget.data.cover.isNotEmpty ? widget.data.cover : widget.fallbackCover,
-      imageUrls: urls,
-      headers: widget.data.customHeaders,
-    );
-    _showSnack('已加入下载队列，可在「我的 → 离线下载」查看进度');
-  }
-
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -232,16 +155,7 @@ class _ComicDetailViewState extends State<ComicDetailView> {
           onShareTap: widget.onShareTap,
         ),
 
-        // 离线下载入口（App 沙盒内整部保存，支持断点续传）
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16.0, 8.0, 16.0, 0.0),
-          child: DownloadBar(
-            bookId: _mediaId,
-            unitLabel: '页',
-            idleLabel: '下载本作（离线阅读，无网也能看）',
-            onTap: _handleDownloadTap,
-          ),
-        ),
+        // 离线下载入口已上移至顶部栏右上角图标（底部弹出下载面板）
 
         // 漫画分组切换 (使用 darkCard 实体底色与微边框)
         if (widget.data.comicGroups.length > 1) ...[
@@ -472,22 +386,16 @@ class _ComicDetailViewState extends State<ComicDetailView> {
                         ),
                         borderRadius: BorderRadius.circular(8),
                       ),
-                      child: ExtendedImage.network(
-                        imgUrl,
-                        fit: BoxFit.cover,
+                      child: AppImage(
+                        imageUrl: imgUrl,
                         headers: widget.data.customHeaders,
-                        loadStateChanged: (state) {
-                          if (state.extendedImageLoadState == LoadState.failed) {
-                            return Center(
-                              child: Icon(
-                                Icons.broken_image_rounded,
-                                size: 20,
-                                color: isDark ? AppColors.darkTextTertiary : AppColors.lightTextTertiary,
-                              ),
-                            );
-                          }
-                          return null;
-                        },
+                        // 3 列网格：单格约 120dp → 3x 屏取 360，避免按原图解码
+                        cacheWidth: 360,
+                        errorWidget: Icon(
+                          Ionicons.imageOutline,
+                          size: 20,
+                          color: isDark ? AppColors.darkTextTertiary : AppColors.lightTextTertiary,
+                        ),
                       ),
                     ),
                   ),
@@ -498,10 +406,11 @@ class _ComicDetailViewState extends State<ComicDetailView> {
           const SizedBox(height: 12),
         ],
 
-        // 相关推荐
+        // 相关推荐（同页共用详情解析出的请求头，避免"同页两套 Referer"）
         MediaRelatedGrid(
           related: widget.data.related,
           currentRule: widget.rule,
+          headers: widget.data.customHeaders,
           onItemTap: widget.onRelatedItemTap,
         ),
       ],

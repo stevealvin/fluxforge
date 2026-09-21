@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:ionicons/ionicons.dart';
-import 'package:extended_image/extended_image.dart';
 
 import 'package:fluxforge/app/theme/app_colors.dart';
 import 'package:fluxforge/domain/rule/rule.dart';
+import 'package:fluxforge/shared/widgets/app_image.dart';
 import 'package:fluxforge/shared/widgets/app_card.dart';
 import 'package:fluxforge/domain/media/media.dart';
 
@@ -108,21 +108,15 @@ class _MediaMetaHeaderState extends State<MediaMetaHeader> {
         ),
         clipBehavior: Clip.antiAlias,
         child: _displayCover.isNotEmpty
-            ? ExtendedImage.network(
-                _displayCover,
-                fit: BoxFit.cover,
+            ? AppImage(
+                imageUrl: _displayCover,
                 headers: widget.data.customHeaders,
-                loadStateChanged: (state) {
-                  if (state.extendedImageLoadState == LoadState.failed) {
-                    return Center(
-                      child: Icon(Ionicons.imageOutline,
-                        color: isDark ? AppColors.darkTextTertiary : AppColors.lightTextTertiary,
-                        size: 28,
-                      ),
-                    );
-                  }
-                  return null;
-                },
+                // 封面尺寸固定 104×144 → 按 3x 屏降采样，避免按原图解码
+                cacheWidth: 312,
+                errorWidget: Icon(Ionicons.imageOutline,
+                  color: isDark ? AppColors.darkTextTertiary : AppColors.lightTextTertiary,
+                  size: 28,
+                ),
               )
             : Center(
                 child: Icon(Ionicons.filmOutline,

@@ -5,10 +5,9 @@ import 'package:ionicons/ionicons.dart';
 import 'package:fluxforge/app/theme/app_colors.dart';
 import 'package:fluxforge/domain/rule/rule.dart';
 import 'package:fluxforge/app/di/di.dart';
-import 'package:fluxforge/data/download/download_service.dart';
 import 'package:fluxforge/data/library/play_history_service.dart';
 import 'package:fluxforge/shared/widgets/app_card.dart';
-import 'package:fluxforge/features/library/downloads/widgets/download_bar.dart';
+import 'package:fluxforge/features/media/shared/media_history_registrar.dart';
 import 'package:fluxforge/features/media/shared/media_meta_header.dart';
 import 'package:fluxforge/features/media/shared/media_related_grid.dart';
 import 'package:fluxforge/domain/media/media.dart';
@@ -68,22 +67,19 @@ class _NovelDetailViewState extends State<NovelDetailView> {
     _registerPlayRecord();
   }
 
-  /// 登记 / 更新当前书籍的消费记录 (保留既有阅读进度)
+  /// 登记 / 更新当前书籍的消费记录
+  ///
+  /// 小说沿用既有**章节位置**（打开详情页不应改变「读到第几章」），
+  /// 播放秒数按 [PlayRecord] 约定恒为 0 —— 规则由 [MediaHistoryRegistrar] 统一承载。
   void _registerPlayRecord() {
-    if (_mediaId.isEmpty) return;
-    final existing = playHistoryService.getById(_mediaId);
-    playHistoryService.upsert(
-      PlayRecord(
-        id: _mediaId,
-        title: widget.data.title.isNotEmpty ? widget.data.title : widget.fallbackTitle,
-        cover: widget.data.cover.isNotEmpty ? widget.data.cover : widget.fallbackCover,
-        mediaType: 'novel',
-        ruleId: widget.rule?.id?.toString() ?? '',
-        episodeName: existing?.episodeName ?? '',
-        episodeIndex: existing?.episodeIndex ?? 0,
-        totalEpisodes: widget.data.chapters.length,
-        updatedAt: DateTime.now(),
-      ),
+    MediaHistoryRegistrar.register(
+      id: _mediaId,
+      title: widget.data.title.isNotEmpty ? widget.data.title : widget.fallbackTitle,
+      cover: widget.data.cover.isNotEmpty ? widget.data.cover : widget.fallbackCover,
+      mediaType: 'novel',
+      ruleId: widget.rule?.id?.toString() ?? '',
+      totalEpisodes: widget.data.chapters.length,
+      preserveEpisode: true,
     );
   }
 
@@ -142,66 +138,6 @@ class _NovelDetailViewState extends State<NovelDetailView> {
     );
   }
 
-  /// 统一轻提示
-  void _showSnack(String message) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), duration: const Duration(milliseconds: 1800)),
-    );
-  }
-
-  /// 点击下载条：按当前状态执行 暂停 / 继续 / 重试 / 新建
-  Future<void> _handleDownloadTap(DownloadTask? task) async {
-    final rule = widget.rule;
-    if (rule == null) {
-      _showSnack('未绑定解析规则，无法下载');
-      return;
-    }
-
-    final chapters = widget.data.chapters;
-    if (chapters.isEmpty) {
-      _showSnack('暂无可下载的章节');
-      return;
-    }
-
-    HapticFeedback.lightImpact();
-
-    // 1. 下载中 → 暂停
-    if (task != null && task.isActive) {
-      downloadService.pause(task.id);
-      _showSnack('已暂停下载');
-      return;
-    }
-
-    // 2. 已完成 → 提示
-    if (task != null && task.isFinished) {
-      _showSnack('该作品已完整下载到本地沙盒');
-      return;
-    }
-
-    // 3. 已暂停 / 部分失败 → 继续或重试（沿用既有进度）
-    if (task != null) {
-      if (task.failed.isNotEmpty) {
-        downloadService.retryFailed(task.id);
-        _showSnack('已重新开始下载失败章节');
-      } else {
-        downloadService.resume(task.id);
-        _showSnack('已继续下载');
-      }
-      return;
-    }
-
-    // 4. 全新下载
-    await downloadService.startNovelDownload(
-      rule: rule,
-      bookId: _mediaId,
-      title: widget.data.title.isNotEmpty ? widget.data.title : widget.fallbackTitle,
-      cover: widget.data.cover.isNotEmpty ? widget.data.cover : widget.fallbackCover,
-      chapters: chapters,
-    );
-    _showSnack('已加入下载队列，可在「我的 → 离线下载」查看进度');
-  }
-
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -250,15 +186,7 @@ class _NovelDetailViewState extends State<NovelDetailView> {
           ),
         ),
 
-        // 2.5 离线下载入口（App 沙盒内保存全本，支持断点续传）
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16.0),
-          child: DownloadBar(
-            bookId: _mediaId,
-            unitLabel: '章',
-            onTap: _handleDownloadTap,
-          ),
-        ),
+        // 2.5 离线下载入口已上移至顶部栏右上角图标（底部弹出下载面板）
 
         // 3. 目录选章列表 (修复深色模式底色为 darkCard 实体材质与微光边框)
         if (chapters.isNotEmpty) ...[
@@ -389,6 +317,7 @@ class _NovelDetailViewState extends State<NovelDetailView> {
         MediaRelatedGrid(
           related: widget.data.related,
           currentRule: widget.rule,
+          headers: widget.data.customHeaders,
           onItemTap: widget.onRelatedItemTap,
         ),
       ],

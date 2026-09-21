@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:extended_image/extended_image.dart';
+import 'package:ionicons/ionicons.dart';
 
 import 'package:fluxforge/app/theme/app_colors.dart';
 import 'package:fluxforge/domain/rule/rule.dart';
 import 'package:fluxforge/domain/media/media.dart';
 import 'package:fluxforge/shared/widgets/app_card.dart';
+import 'package:fluxforge/shared/widgets/app_image.dart';
 
 /// 跨媒体通用相关推荐网格 (全面采用 AppCard.flat 平铺卡片，支持 16:9 影视宽屏与 1:1.34 漫画小说黄金竖版两种布局)
 class MediaRelatedGrid extends StatelessWidget {
@@ -12,6 +13,7 @@ class MediaRelatedGrid extends StatelessWidget {
     super.key,
     required this.related,
     this.currentRule,
+    this.headers,
     this.isWide = false,
     this.onItemTap,
   });
@@ -21,6 +23,11 @@ class MediaRelatedGrid extends StatelessWidget {
 
   /// 当前上下文所使用的规则 (用于继承沙箱解析环境与防盗链 Referer)
   final Rule? currentRule;
+
+  /// 详情解析得到的请求头（含 `detail` 返回的 Referer）
+  ///
+  /// 与同页封面 / 图集同源；缺省时才回退 [currentRule] 的 baseUrl。
+  final Map<String, String>? headers;
 
   /// 是否采用 16:9 宽屏双列展示 (影视视频推荐)，默认为 false (3列竖版海报)
   final bool isWide;
@@ -97,6 +104,13 @@ class MediaRelatedGrid extends StatelessWidget {
 
   /// 构建单张推荐卡片 (基于 AppCard.flat 平铺实体底色与防溢出圆角，内嵌暗部渐变与高清晰文本)
   Widget _buildCard(BuildContext context, MediaRelatedItem item, bool isDark) {
+    // 解码降采样：按「屏宽 / 列数 × devicePixelRatio」取目标像素宽 ——
+    // 一屏 6 张海报若都按原图解码，是长列表掉帧的主要来源
+    final coverCacheWidth = (MediaQuery.sizeOf(context).width /
+            (isWide ? 2 : 3) *
+            MediaQuery.devicePixelRatioOf(context))
+        .round();
+
     return AppCard.flat(
       padding: EdgeInsets.zero,
       borderRadius: 10,
@@ -115,24 +129,21 @@ class MediaRelatedGrid extends StatelessWidget {
               fit: StackFit.expand,
               children: [
                 item.cover.isNotEmpty
-                    ? ExtendedImage.network(
-                        item.cover,
-                        fit: BoxFit.cover,
-                        headers: {
-                          if (currentRule?.baseUrl.isNotEmpty == true) 'Referer': currentRule!.baseUrl,
-                        },
-                        loadStateChanged: (state) {
-                          if (state.extendedImageLoadState == LoadState.failed) {
-                            return Center(
-                              child: Icon(
-                                Icons.broken_image_rounded,
-                                color: isDark ? AppColors.darkTextTertiary : AppColors.lightTextTertiary,
-                                size: 20,
-                              ),
-                            );
-                          }
-                          return null;
-                        },
+                    ? AppImage(
+                        imageUrl: item.cover,
+                        // 与详情页同口径：优先用详情解析出的请求头（含 detail 返回的 Referer），
+                        // 缺省才回退 baseUrl —— 原先这里只读 baseUrl，是同页两套 Referer 的根源
+                        headers: headers ??
+                            {
+                              if (currentRule?.baseUrl.isNotEmpty == true)
+                                'Referer': currentRule!.baseUrl,
+                            },
+                        cacheWidth: coverCacheWidth,
+                        errorWidget: Icon(
+                          Ionicons.imageOutline,
+                          color: isDark ? AppColors.darkTextTertiary : AppColors.lightTextTertiary,
+                          size: 20,
+                        ),
                       )
                     : Center(
                         child: Icon(
