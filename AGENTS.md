@@ -34,6 +34,11 @@ flutter test                                           # 单元 + 组件测试�
 3. `lib/features/A/**` 不得依赖 `lib/features/B/**`（A ≠ B）。已确认存在的横向依赖：
    `shell → {discover, profile, rules, sites}`、`profile → library`、`settings → browser`、
    `library ↔ media`（双向，**待收敛**）。
+4. UI 一律 `import 'package:material_ui/material_ui.dart'`，**禁止** `package:flutter/material.dart`。
+   Flutter 3.47+ 起 Material 已解耦为**独立实现**，两套 `Theme` 是不同的类 —— 混用时
+   `Theme.of(context)` 查不到 `MaterialApp` 提供的主题，会**静默回落默认亮色**
+   （表现为暗色模式下卡片 / 文字仍是白底，且**不报编译错误**，只在真机暗色模式暴露）。
+   注意 `package:flutter/widgets.dart` 与 `package:flutter/services.dart` 仍可正常使用。
 文件行数不作约束：该不该拆取决于是否存在**可抽象的职责**，不由数字驱动。
 CI 工作流见 `.github/workflows/app-quality.yml`（仅静态分析 + 测试两关）。
 

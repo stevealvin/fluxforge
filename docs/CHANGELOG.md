@@ -4,6 +4,86 @@
 
 ## [2026-09-21]
 
+### 🌙 修复：详情页在暗色模式下简介卡 / 目录章节卡仍是白底（Material 库混用导致主题读不到）
+
+**现象**：暗黑模式下，小说详情页的「作品简介」卡与「目录选章」列表项仍是**纯白背景**，页面其余部分正常。
+
+**根因不是硬编码白色** —— 代码写的是 `isDark ? AppColors.darkCard : AppColors.lightSurface`，逻辑本身正确。
+真正的问题是 `isDark` **恒为 false**：
+
+| 事实 | 说明 |
+|---|---|
+| `material_ui` 是独立实现 | Flutter 3.47+ 把 Material 从核心解耦为 `package:material_ui`，它是自带 `library material_ui` + `src/theme.dart` 的**完整实现**，不是 `flutter/material.dart` 的再导出 |
+| 两套 `Theme` 是两个类 | App 的 `MaterialApp` 由 `material_ui` 构建；若组件用 `package:flutter/material.dart` 的 `Theme.of(context)`，查的是另一套 InheritedWidget → **查不到** → 回落默认亮色 `ThemeData` |
+| 于是 `isDark` 恒 false | `Theme.of(context).brightness` 得到 `light` → 卡片取 `lightSurface`（`Colors.white`）→ 白底 |
+
+受影响的是项目里**仅有的 6 个** `import 'package:flutter/material.dart'` 的文件：`novel_detail_view`、
+`media_meta_header`、`media_related_grid`、`video_detail_view`、`comic_detail_view`、`comic_reader_page`。
+这也解释了此前「小说详情页暗色下文字颜色发暗」的反馈 —— **同一个根因**（那些 `isDark` 分支同样失效）。
+
+**修复**：6 个文件统一改为 `import 'package:material_ui/material_ui.dart'`，与项目其余部分一致；
+并全仓扫描清理了测试代码里残留的 1 处同类混用（`pagination_engine_test`）——
+现 `app/` 下**已无任何 `package:flutter/material.dart` 引用**，规则固化进 `AGENTS.md` 架构约定第 4 条。
+
+**验收**：实测颜色从 `[白, 绿, 白, 白]` 变为 `[darkCard, 绿, darkCard, darkCard]`；
+新增回归测试 `novel_detail_view_test.dart`（断言简介卡与 2 个目录章节卡均为 `darkCard`，并**兜底扫描
+页面内所有实体背景**、不得出现亮色）；`flutter analyze` **0 问题**；`flutter test` **366/366 通过**。
+
+### 📖 阅读器：跨章连续翻页三处缺陷（已下载章卡占位页 / 松手跳回上一章 / 拖拽中被跳页）
+
+**现象**（真机反馈）：向前翻到上一章时，明明已下载（图标是勾）却停在「正文已就绪，即将无缝续读」
+占位页；按住不放来回滑动后松手，界面莫名跳回上一章最后一页；期间屏幕还会闪一下、像重新加载了一次。
+
+**根因三条（互不相关）**：
+
+| # | 根因 | 位置 |
+|---|---|---|
+| ① 已下载章无法渲染 | `downloadAdjacent` 对**已离线下载**的章直接跳过 → 正文从未进入内存镜像 → 永远分不了片；而占位页的就绪判定含离线来源，于是长期显示「已就绪」却不出正文 | `chapter_content_pipeline.dart` |
+| ② 松手跳回上一章 | 拖拽落点只在**跨章**时记录，「跨出去又滑回来」不会覆盖 → 松手仍消费最初那次跨章意图 | `_onHorizontalPageChanged` |
+| ③ 闪两次 | 松手落地平移窗口是一次重建；紧接着内容到达触发分片又是一次。且分片完成的重锚定 `jumpToPage` 会在**拖拽途中**打断手势（既改写手指下的位置，也伪造 `ScrollEnd` 提前消费落点） | `_onHorizontalPagesChanged` / `_syncPageController` |
+
+**修复**：
+
+- **① 新增静默预载通路**：`_preloadChapterContent` 调 `ChapterContentPipeline.ensureContent`
+  （命中沙盒即写内存镜像 → 触发帧末分片），补上「离线 → 内存 → 分片」这条通路；
+  触发节拍对齐 Legado 的 `loadInitialContent`：**当前章就绪后接力预载 ±1**，另在
+  「拖拽中落点指向某章」「章内翻到两端」「跨章落地后」三处补齐；
+- **② 意图跟随最新落点**：拖拽期间**每次**页码变化都覆盖 `_pendingHorizontalLanding`
+  （含章内落点），松手由既有的一致性守卫决定是否真的跳 —— 滑回原处即原地不动；
+- **③ 拖拽中冻结程序化定位**：新增 `_dragResyncPending`，页数变化的重锚定在拖拽期间只
+  重建不跳页，松手后一次性补做；拖拽中的章内落点也不再"即时落地"，与跨章统一为"松手落地"。
+
+**顺带修正**：`OfflineChapterStore` 增加 `downloadedCount`，`ChapterContentPipeline.downloadedCount`
+不再直连全局 `downloadService` —— 后者会让阅读器在未注册 DI 的测试环境里于**渲染期**抛异常，
+也破坏了该管道「可脱离沙盒单测」的设计前提。
+
+**验收**：新增 3 条组件测试（拖出再滑回必须停在当前章 / 已下载邻居章进入窗口即被预载且滑过去
+直接是正文 / 拖拽途中邻居正文到达不得打断手势或提前切章）；`flutter analyze` **0 问题**；
+`flutter test` **365/365 通过**。
+
+### 🎛️ 播放器：亮度 / 音量改为作用于真实设备（screen_brightness + volume_controller）
+
+**改造前**：亮度是「应用内叠一层半透明黑遮罩」（只压暗播放器画面，不碰屏幕背光）；
+音量写的是 `video_player` 的**播放器实例音量**（与系统音量形成两个各自独立的音量维度）。
+
+**改造后**：
+
+| 维度 | 实现 | 说明 |
+|---|---|---|
+| 亮度 | `screen_brightness` 的 `setApplicationScreenBrightness` | **应用级**（非系统级），官方明示「no permission is needed」；随应用生命周期自动重置；退出播放器时主动归还 |
+| 音量 | `volume_controller` 的 `setVolume` | 直接作用于**系统音量**；`showSystemUI = false` 由播放器自带胶囊反馈，避免系统音量条与胶囊双重提示 |
+
+**配套改动**：
+
+- **移除变暗遮罩**：亮度真实生效后再叠遮罩会双重压暗，`PlayerGestureFeedbackLayer` 只保留胶囊数值反馈；
+- **手势起点取系统当前值**：初始化与「退出全屏回到本实例」时读取系统音量 / 屏幕亮度（应用亮度未设置过返回负值，回落到系统亮度），避免休眠期间在另一实例上调整过导致数值跳变；
+- **实例间不再同步音量**：音量已系统级共享，删除退出全屏时的 `_volume` 回写与控制器 `setVolume`；
+- **生命周期**：应用亮度随生命周期重置，回到前台补写回用户调整过的值（用 `_brightnessAdjusted` 标记，未调整过则不无故改屏）；
+- **容错**：所有平台调用都带 `try/catch` 或 `catchError`，平台不支持 / 测试环境下只记日志，不影响手势与胶囊反馈。
+
+**验收**：`flutter analyze` 0 问题；`flutter test` **362/362 通过**
+（`player_gesture_feedback_layer_test` 的亮度用例由「断言变暗遮罩」改为「断言胶囊数值」）。
+
 ### 🧩 阅读器：跨章翻页「整屏加载顶替」与「回退落点漂移」两个缺陷
 
 **背景**：横向翻页跨章不平滑 —— ① 章节最后一页翻到下一章会「直接跳过去」；
