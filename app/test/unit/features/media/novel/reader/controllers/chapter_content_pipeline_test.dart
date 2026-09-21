@@ -29,6 +29,9 @@ class _FakeOfflineStore implements OfflineChapterStore {
   bool isDownloaded(String bookId, int index) => downloaded.contains(index);
 
   @override
+  int downloadedCount(String bookId) => downloaded.length;
+
+  @override
   Future<String?> read(String bookId, int index) async {
     readCalls++;
     if (throwOnRead) throw const FileSystemException('沙盒文件损坏');

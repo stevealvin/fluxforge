@@ -46,6 +46,7 @@ class NovelReaderPage extends StatefulWidget {
     this.onChapterChanged,
     this.offlineBookId,
     this.parseRule,
+    this.offlineStore,
   });
 
   final String bookTitle;
@@ -67,6 +68,12 @@ class NovelReaderPage extends StatefulWidget {
   /// 仅供「正文延迟到达」这类纯时序场景注入可控实现（测试用）；
   /// 正常调用方无需传入 —— 阅读器的三级来源与预取策略都不依赖它。
   final Future<Object?> Function(Rule rule, String url)? parseRule;
+
+  /// 离线章节存取实现（缺省接全局下载服务，见 [GlobalOfflineChapterStore]）
+  ///
+  /// 仅供测试注入内存替身：得以在无沙盒 / 无网络环境下构造「该章已离线下载」
+  /// 这一前置条件，验证「已下载的邻居章进入窗口即被预载、不再停在就绪占位页」。
+  final OfflineChapterStore? offlineStore;
 
   @override
   State<NovelReaderPage> createState() => _NovelReaderPageState();
@@ -259,6 +266,7 @@ class _NovelReaderPageState extends State<NovelReaderPage>
       prefetching: _prefetching,
       cacheWriter: _cacheChapterContent,
       parseRule: widget.parseRule,
+      offlineStore: widget.offlineStore,
       onPersisted: (index) {
         // 该章此前若在纵向续载中失败过，落盘成功后解除熔断标记
         _verticalFailed.remove(index);
@@ -382,8 +390,11 @@ class _NovelReaderPageState extends State<NovelReaderPage>
       _applyPendingLanding();
     });
     _syncPageController();
-    // 正文就绪即代表阅读顺畅，立即静默准备相邻章节（实现连续翻页零等待）
+    // 正文就绪即代表阅读顺畅，立即静默准备相邻章节（实现连续翻页零等待）：
+    // 落盘走 downloadAdjacent，进内存镜像走预载 —— 二者互补，
+    // 因为已下载的章会被 downloadAdjacent 直接跳过，只有预载能把它们变成可渲染分片
     _pipeline.downloadAdjacent(_currentChapterIndex);
+    _preloadNeighborContent();
   }
 
   // ==================== 后台预取、跨章连续与阅读位置保持 ====================
@@ -718,6 +729,8 @@ class _NovelReaderPageState extends State<NovelReaderPage>
     for (final index in evicted) {
       _chapters[index] = _chapters[index].copyWith(content: '');
       _chapterSlices.remove(index);
+      // 分片随正文一同消失 → 允许该章再次预载（否则重入窗口后永远停在占位页）
+      _preloadRequested.remove(index);
     }
   }
 
@@ -1192,6 +1205,34 @@ class _NovelReaderPageState extends State<NovelReaderPage>
     });
   }
 
+  /// 静默预载某章正文进内存镜像（不落盘 / 不碰落点 / 不动控制器 / 不改进度）
+  ///
+  /// 与 [ChapterContentPipeline.ensureContent] 配合：命中沙盒即把正文写进内存镜像
+  /// （见其 `cacheWriter` 分支），而内存镜像的写入会触发帧末分片
+  /// （见 [_cacheChapterContent] → [_scheduleNeighborSlices]）。
+  ///
+  /// 这一步专治「已下载却仍停在占位页」：已离线下载的章会被
+  /// [ChapterContentPipeline.downloadAdjacent] 直接跳过，正文因此从未进入内存，
+  /// 也就永远分不了片 —— 而桥接页的就绪判定含离线来源，于是长期显示
+  /// 「正文已就绪，即将无缝续读」。预载补上的正是「离线 → 内存 → 分片」这条通路。
+  void _preloadChapterContent(int chapter) {
+    if (chapter < 0 || chapter >= _chapters.length) return;
+    if (_chapterSlices[chapter]?.isNotEmpty == true) return;
+    // 正在下载 / 预取中的章由下载流程负责，避免同一章被并发抓取两次
+    if (_prefetching.contains(chapter)) return;
+    if (!_preloadRequested.add(chapter)) return;
+    unawaited(_pipeline.ensureContent(chapter));
+  }
+
+  /// 预载滑窗内的邻居章（当前章 ± 1）
+  ///
+  /// 对齐 Legado 的「当前章加载成功后接力预载前后各一章」（`loadInitialContent`），
+  /// 使窗口内的章在用户翻到之前就已分片，跨章落地即为真实正文页、零占位。
+  void _preloadNeighborContent() {
+    _preloadChapterContent(_currentChapterIndex - 1);
+    _preloadChapterContent(_currentChapterIndex + 1);
+  }
+
   /// 滑窗页数变化后的统一收口：重建 + 以「章 + 章内页」重新锚定当前页
   ///
   /// 未分片章在扁平序列里只占 1 页（见 [HorizontalWindow]）：它一旦补上分片，
@@ -1201,6 +1242,11 @@ class _NovelReaderPageState extends State<NovelReaderPage>
   void _onHorizontalPagesChanged() {
     if (!mounted || _pageMode != PageTurnMode.horizontal) return;
     setState(() {});
+    // 拖拽途中只重建、不定位：jumpToPage 会打断正按着的手势（见 [_dragResyncPending]）
+    if (_horizontalDragging) {
+      _dragResyncPending = true;
+      return;
+    }
     _syncPageController();
   }
 
@@ -1229,7 +1275,20 @@ class _NovelReaderPageState extends State<NovelReaderPage>
   ///
   /// 不用扁平下标：拖拽途中邻居补分片会改变窗口总页数，下标含义会整体平移，
   /// 而 (章, 章内页) 是稳定语义。
+  ///
+  /// **章内落点同样要覆盖**（不能只在跨章时写）：用户「跨出去又滑回来」后，
+  /// 若这里仍留着最初那次跨章意图，松手就会把界面扯回上一章末页。
   (int, int)? _pendingHorizontalLanding;
+
+  /// 拖拽期间被冻结的「重新锚定」请求
+  ///
+  /// 邻居分片到位会改变窗口总页数，此时需按 (章, 章内页) 重新定位 —— 但拖拽途中
+  /// `jumpToPage` 会打断用户正按着的手势（位置被强行改写，后续位移继续叠加 →
+  /// 落点错乱 + 画面突变）。故挂起到松手后一次性补做。
+  bool _dragResyncPending = false;
+
+  /// 已发起过静默预载的章节（防重复读盘 / 重复抓取；分片作废或缓存淘汰时移除）
+  final Set<int> _preloadRequested = <int>{};
 
   /// 程序化定位到某个扁平页索引（跳转期间屏蔽过渡通知）
   void _jumpToFlatIndex(PageController controller, int targetRaw) {
@@ -1293,7 +1352,11 @@ class _NovelReaderPageState extends State<NovelReaderPage>
 
   /// 切分当前章正文并写入分片表（[invalidateAll] 时连邻居分片一并作废）
   void _sliceCurrentChapter(String content, {required bool invalidateAll}) {
-    if (invalidateAll) _chapterSlices.clear();
+    if (invalidateAll) {
+      _chapterSlices.clear();
+      // 分片作废 → 允许重新预载（否则排版参数变化后邻居再无预载机会）
+      _preloadRequested.clear();
+    }
     _chapterSlices[_currentChapterIndex] = _sliceContent(content);
     _pageSlices = _chapterSlices[_currentChapterIndex]!;
   }
@@ -1356,6 +1419,12 @@ class _NovelReaderPageState extends State<NovelReaderPage>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       if (_pageMode != PageTurnMode.horizontal) return;
+      // 拖拽途中不做程序化定位：既会打断用户正按着的手势，也会让索引补偿
+      // 与手指位移互相叠加（落点错乱）。挂起到松手后统一补做。
+      if (_horizontalDragging) {
+        _dragResyncPending = true;
+        return;
+      }
 
       final targetRaw = _flatIndexOf(
         _currentChapterIndex,
@@ -1462,19 +1531,24 @@ class _NovelReaderPageState extends State<NovelReaderPage>
     // 程序化定位的过渡通知：页码基于旧布局，必须整条丢弃（见 [_suppressPageChanged]）
     if (_suppressPageChanged) return;
 
+    final landing = _resolveFlatPage(rawIndex);
+
+    // 拖拽期间：只记录**最后经过的落点**，一律等松手再落地。
+    //
+    // 章内落点同样要覆盖，不能只在跨章时写：否则「跨出去又滑回来」后这里仍留着
+    // 最初那次跨章意图，松手就把界面扯回上一章末页 —— 用户明明滑回了当前章第一页。
+    if (_horizontalDragging) {
+      _pendingHorizontalLanding = landing;
+      // 手指已明确指向某章：立刻静默预载该章正文（不切章、不碰落点），
+      // 让「不松手停在占位页」的这段时间里内容已进内存并完成分片
+      _preloadChapterContent(landing.$1);
+      return;
+    }
+
     // 程序化定位（[_syncPageController] / [_translateHorizontalWindow] 的 jumpToPage）
     // 同样会回打本回调：落点与当前状态一致时无需任何处理，否则会重复触发章节加载，
     // 并把「未就绪落末页」的意图误置给下一次重建。
     if (rawIndex == _flatIndexOf(_currentChapterIndex, _currentPageIndex)) {
-      return;
-    }
-
-    final landing = _resolveFlatPage(rawIndex);
-
-    // 跨章拖拽：只记录意图，等松手再落地
-    // （拖拽中平移滑窗会改写下标含义 → 手指下内容突变 + 强制跳页，见 [_horizontalDragging]）
-    if (_horizontalDragging && landing.$1 != _currentChapterIndex) {
-      _pendingHorizontalLanding = landing;
       return;
     }
 
@@ -1494,8 +1568,13 @@ class _NovelReaderPageState extends State<NovelReaderPage>
     _horizontalDragging = false;
     final pending = _pendingHorizontalLanding;
     _pendingHorizontalLanding = null;
-    if (pending == null) return;
-    _applyHorizontalLanding(pending);
+    final needsResync = _dragResyncPending;
+    _dragResyncPending = false;
+
+    // 落地：消费的是「松手前最后经过的落点」，与手指最终停留位置一致
+    if (pending != null) _applyHorizontalLanding(pending);
+    // 拖拽期间被冻结的重新锚定在此补做（分片到位导致窗口页索引平移）
+    if (needsResync) _syncPageController();
   }
 
   /// 落地一次横向翻页（章内即时同步；跨章切换章节并平移滑窗）
@@ -1519,12 +1598,13 @@ class _NovelReaderPageState extends State<NovelReaderPage>
           math.max(0, _pageSlices.length - 1),
         );
       });
-      // 章内两端：提前分片相邻章 + 双向预取下载
+      // 章内两端：提前分片相邻章 + 双向预取下载 + 静默预载正文进内存
       if (_currentPageIndex <= 1 ||
           _currentPageIndex >= _pageSlices.length - 2) {
         _ensureChapterSliced(_currentChapterIndex - 1);
         _ensureChapterSliced(_currentChapterIndex + 1);
         _pipeline.downloadAdjacent(_currentChapterIndex);
+        _preloadNeighborContent();
       }
       return;
     }
@@ -1551,6 +1631,8 @@ class _NovelReaderPageState extends State<NovelReaderPage>
     _loadChapterContent(chapter);
     _pipeline.handleChapterJumped(chapter);
     _translateHorizontalWindow();
+    // 窗口平移后另一侧邻居新入窗：静默预载补齐，使下一次跨章落地同样零占位
+    _preloadNeighborContent();
   }
 
   /// 跨章平移滑窗：jump 到新窗口中同一内容的索引（前后渲染相同，视觉零跳变）

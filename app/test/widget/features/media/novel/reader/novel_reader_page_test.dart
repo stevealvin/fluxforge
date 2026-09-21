@@ -4,7 +4,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:ionicons/ionicons.dart';
 
+import 'package:fluxforge/domain/media/media.dart';
 import 'package:fluxforge/domain/rule/rule.dart';
+import 'package:fluxforge/features/media/novel/reader/controllers/chapter_content_pipeline.dart';
 import 'package:fluxforge/features/media/novel/reader/models/novel_chapter.dart';
 import 'package:fluxforge/features/media/novel/reader/novel_reader_page.dart';
 
@@ -531,4 +533,212 @@ void main() {
 
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('拖拽跨出去再滑回原位后松手，必须停在当前章（不得消费陈旧的跨章意图）', (WidgetTester tester) async {
+    final chapters = List<NovelChapter>.generate(
+      5,
+      (i) => NovelChapter(title: '第${i + 1}章', content: '第${i + 1}章正文内容。'),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: NovelReaderPage(
+          bookTitle: '拖回原位测试',
+          chapters: chapters,
+          initialChapterIndex: 2,
+        ),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('第 3 / 5 章'), findsOneWidget);
+
+    // 向左拖过半页：落点已指向第 4 章，但手指不松
+    final gesture = await tester.startGesture(
+      tester.getCenter(find.byType(PageView)),
+    );
+    for (int i = 0; i < 10; i++) {
+      await gesture.moveBy(const Offset(-80, 0));
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    expect(find.text('第 3 / 5 章'), findsOneWidget, reason: '拖拽中不得跨章');
+
+    // 原路滑回：落点重新指回当前章第一页
+    for (int i = 0; i < 10; i++) {
+      await gesture.moveBy(const Offset(80, 0));
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    // 核心断言：松手必须停在当前章。
+    // 旧实现只在跨章落点时记录意图，「滑回原处」不会覆盖它 → 松手仍消费最初那次
+    // 跨章意图，把界面扯到第 4 章（用户看到的正是「滑回来又自己跳走」）。
+    expect(find.text('第 3 / 5 章'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('已离线下载的邻居章进入窗口即被静默预载：滑过去直接是正文，不停在就绪占位页', (
+    WidgetTester tester,
+  ) async {
+    // 第 1 章正文只存在于沙盒（offlineStore），网络抓取不可用 ——
+    // 于是「滑过去能看到正文」只能来自「离线 → 内存 → 分片」这条预载通路。
+    final store = _FakeOfflineStore({
+      0: List.generate(
+        20,
+        (i) => '第 1 章第 ${i + 1} 段正文内容，用于撑出多页。',
+      ).join('\n\n'),
+    });
+    final chapters = [
+      const NovelChapter(title: '第1章 起点', url: 'https://example.com/chapter-1'),
+      NovelChapter(
+        title: '第2章 终点',
+        content: List.generate(
+          8,
+          (i) => '第 2 章第 ${i + 1} 段正文内容。',
+        ).join('\n\n'),
+      ),
+    ];
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: NovelReaderPage(
+          bookTitle: '离线预载测试',
+          chapters: chapters,
+          initialChapterIndex: 1,
+          offlineBookId: 'book-offline-1',
+          offlineStore: store,
+          rule: Rule(
+            id: 1,
+            name: '测试书源',
+            baseUrl: 'https://example.com',
+            type: 'novel',
+            code: '',
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // 预载已把第 1 章正文读进内存并完成分片 → 窗口内不再有未就绪占位页
+    expect(find.text('正在加载上一章'), findsNothing);
+    expect(find.text('正文已就绪，即将无缝续读'), findsNothing);
+
+    // 滑到上一章：必须直接是正文，而不是「已就绪待分片」的占位页
+    final controller = tester
+        .widget<PageView>(find.byType(PageView))
+        .controller!;
+    controller.jumpToPage(controller.page!.round() - 1);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+
+    expect(find.text('第 1 / 2 章'), findsOneWidget);
+    expect(find.textContaining('第 1 章第'), findsWidgets);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('拖拽途中邻居章正文到达（页索引整体平移）不得打断手势或提前切章', (
+    WidgetTester tester,
+  ) async {
+    final completer = Completer<Object?>();
+    final chapters = [
+      const NovelChapter(title: '第1章 起点', url: 'https://example.com/chapter-1'),
+      NovelChapter(
+        title: '第2章 终点',
+        content: List.generate(
+          10,
+          (i) => '第 2 章第 ${i + 1} 段正文内容。',
+        ).join('\n\n'),
+      ),
+    ];
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: NovelReaderPage(
+          bookTitle: '拖拽中到货测试',
+          chapters: chapters,
+          initialChapterIndex: 1,
+          rule: Rule(
+            id: 1,
+            name: '测试书源',
+            baseUrl: 'https://example.com',
+            type: 'novel',
+            code: '',
+          ),
+          parseRule: (rule, url) => completer.future,
+        ),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('第 2 / 2 章'), findsOneWidget);
+
+    // 从第 2 章第一页往右拖向上一章，拖过半页后保持按住不松
+    final gesture = await tester.startGesture(
+      tester.getCenter(find.byType(PageView)),
+    );
+    for (int i = 0; i < 10; i++) {
+      await gesture.moveBy(const Offset(80, 0));
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    // 防呆：确认手势真被 PageView 接管且已越过半页 ——
+    // 否则下面「不得切章」会空转通过（页码不跨界时 onPageChanged 根本不触发）
+    expect(
+      tester.widget<PageView>(find.byType(PageView)).controller!.page,
+      lessThan(0.5),
+      reason: '拖拽应已越过半页',
+    );
+    expect(find.text('第 2 / 2 章'), findsOneWidget, reason: '拖拽中不得切章');
+
+    // 按住不放的同时，上一章正文到达 → 分片补齐 → 窗口总页数变化
+    completer.complete({
+      'content': List.generate(
+        30,
+        (i) => '第 1 章第 ${i + 1} 段正文内容。',
+      ).join('\n\n'),
+    });
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    // 核心断言：页索引平移不得触发程序化跳页把人扯走 ——
+    // 旧实现在拖拽中 jumpToPage，既改写了用户正按着的位置，也伪造出 ScrollEnd
+    // 提前消费落点（表现为「滑到一半被强制跳章」）
+    expect(find.text('第 2 / 2 章'), findsOneWidget, reason: '分片平移不得在拖拽中切章');
+
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    // 松手才落地：用户拖的是上一章方向 → 落到第 1 章
+    expect(find.text('第 1 / 2 章'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+}
+
+/// 内存版离线章节存储替身（测试用）
+///
+/// 用于在无沙盒 / 无网络环境下构造「该章已离线下载」这一前置条件。
+class _FakeOfflineStore implements OfflineChapterStore {
+  _FakeOfflineStore(this._contents);
+
+  final Map<int, String> _contents;
+
+  @override
+  bool isDownloaded(String bookId, int index) => _contents.containsKey(index);
+
+  @override
+  int downloadedCount(String bookId) => _contents.length;
+
+  @override
+  Future<String?> read(String bookId, int index) async => _contents[index];
+
+  @override
+  Future<bool> save({
+    required Rule rule,
+    required String bookId,
+    required String title,
+    required List<MediaEpisode> chapters,
+    required int index,
+    required String content,
+  }) async {
+    _contents[index] = content;
+    return true;
+  }
 }

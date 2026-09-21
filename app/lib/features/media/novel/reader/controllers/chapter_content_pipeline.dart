@@ -17,6 +17,9 @@ abstract class OfflineChapterStore {
   /// 该章是否已落盘
   bool isDownloaded(String bookId, int index);
 
+  /// 该书已落盘的章节数量（目录与底部栏据此展示「已缓存 N 章」）
+  int downloadedCount(String bookId);
+
   /// 读取已落盘的章节正文
   Future<String?> read(String bookId, int index);
 
@@ -38,6 +41,10 @@ class GlobalOfflineChapterStore implements OfflineChapterStore {
   @override
   bool isDownloaded(String bookId, int index) =>
       downloadService.isNovelChapterDownloaded(bookId, index);
+
+  @override
+  int downloadedCount(String bookId) =>
+      downloadService.taskOf(bookId)?.completed.length ?? 0;
 
   @override
   Future<String?> read(String bookId, int index) =>
@@ -121,10 +128,13 @@ class ChapterContentPipeline {
       (offlineBookId?.isNotEmpty ?? false) && rule != null;
 
   /// 已离线下载到沙盒的章节数量（与下载管理页共用同一份任务记录）
+  ///
+  /// 经 [OfflineChapterStore] 取值而非直连全局服务：后者会让阅读器在未注册 DI 的
+  /// 测试环境里于**渲染期**抛异常，也破坏了本类「可脱离沙盒单测」的设计前提。
   int get downloadedCount {
     final bookId = offlineBookId;
     if (bookId == null || bookId.isEmpty) return 0;
-    return downloadService.taskOf(bookId)?.completed.length ?? 0;
+    return offlineStore.downloadedCount(bookId);
   }
 
   /// 该章节是否已离线下载到本地沙盒
