@@ -1,4 +1,5 @@
 import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 
 import 'package:fluxforge/core/storage/app_storage.dart';
@@ -82,8 +83,20 @@ class FavoriteItem {
   }
 }
 
+/// 追更探测：访问源站取该收藏项的最新集 / 章（返回 null 表示未知或探测失败）
+///
+/// 由调用方注入 —— `data/` 层不反向依赖详情抓取链路，与
+/// `ChapterContentPipeline(parseRule: …)` 同一「默认实现在外、可注入可测」范式。
+typedef FavoriteLatestProbe = Future<String?> Function(FavoriteItem item);
+
+/// 本地真实进度读取（消费记录里的「上次看到」）
+///
+/// 同样由调用方注入：收藏库自己不掌握播放进度，[FavoriteItem.lastEpisode]
+/// 只是导入备份或确实没有进度时的兜底快照。
+typedef FavoriteProgressReader = String Function(FavoriteItem item);
+
 /// 统一收藏与智能追更提醒服务
-/// 
+///
 /// 管理跨媒体收藏库，支持自动追更比对、更新红点胶囊高亮
 class FavoriteService {
   static const String storageKey = 'app_favorites';
@@ -92,6 +105,13 @@ class FavoriteService {
       ValueNotifier<List<FavoriteItem>>([]);
 
   List<FavoriteItem> get favorites => favoritesNotifier.value;
+
+  bool _isLoaded = false;
+
+  /// 是否已完成首次磁盘加载
+  ///
+  /// 供页面区分「尚未加载」与「确实没有收藏」—— 否则首帧必然闪一次空态。
+  bool get isLoaded => _isLoaded;
 
   /// 是否有未读更新的红点指示
   bool get hasAnyUpdate => favorites.any((item) => item.hasUpdate);
@@ -107,7 +127,9 @@ class FavoriteService {
       if (jsonStr != null && jsonStr.isNotEmpty) {
         final List<dynamic> decoded = jsonDecode(jsonStr);
         final loaded = decoded
-            .map((e) => FavoriteItem.fromJson(Map<String, dynamic>.from(e as Map)))
+            .map(
+              (e) => FavoriteItem.fromJson(Map<String, dynamic>.from(e as Map)),
+            )
             .toList();
         favoritesNotifier.value = List.unmodifiable(loaded);
       } else {
@@ -116,6 +138,8 @@ class FavoriteService {
     } catch (e) {
       debugPrint('[FavoriteService] 加载收藏数据失败: $e');
       favoritesNotifier.value = [];
+    } finally {
+      _isLoaded = true;
     }
   }
 
@@ -161,15 +185,15 @@ class FavoriteService {
     }
   }
 
-  /// 标记已读 (消除追更红点)
+  /// 标记已读（仅消除追更红点）
+  ///
+  /// **不再改写 [FavoriteItem.lastEpisode]**：那是「上次看到」的展示来源，
+  /// 打开详情页并不代表用户看完了新一集，把它改成 `latestEpisode` 属于伪造
+  /// 观看进度（并且会污染与消费记录的一致性）。真实进度一律从
+  /// [FavoriteProgressReader] 注入读取。
   Future<void> markAsRead(String id) async {
     final current = favorites.map((item) {
-      if (item.id == id) {
-        return item.copyWith(
-          hasUpdate: false,
-          lastEpisode: item.latestEpisode.isNotEmpty ? item.latestEpisode : item.lastEpisode,
-        );
-      }
+      if (item.id == id) return item.copyWith(hasUpdate: false);
       return item;
     }).toList();
     await _saveFavorites(current);
@@ -177,24 +201,44 @@ class FavoriteService {
 
   /// 执行智能追更检测
   ///
-  /// 比对本地记录的观看集数（lastEpisode）与详情页下探到的最新集数（latestEpisode），
-  /// 不一致则点亮未读红点并返回更新的作品数量。
-  Future<int> checkUpdates() async {
+  /// 两部分真值都由调用方注入，缺省时退化为「只按本地已存字段比对」：
+  /// - [probe]：访问源站取该作品的最新集 / 章（缺省不联网 → 恒无新更新）；
+  /// - [progressOf]：本地真实进度（缺省回退 [FavoriteItem.lastEpisode]）。
+  ///
+  /// 「有更新」的判定是 **源站最新 ≠ 本地真实进度**。原先只比较 `latestEpisode`
+  /// 与 `lastEpisode` 两个本地字段，而 `latestEpisode` 全仓没有任何写入者，
+  /// 因此恒返回 0 —— 追更实际上从未生效。
+  ///
+  /// 逐项探测、单项异常不影响其余（失败时保留原有最新值），返回有更新的作品数。
+  Future<int> checkUpdates({
+    FavoriteLatestProbe? probe,
+    FavoriteProgressReader? progressOf,
+  }) async {
     if (favorites.isEmpty) return 0;
 
     int newUpdateCount = 0;
-    final updatedList = favorites.map((item) {
-      // 若已有更高集数，触发提醒
-      if (item.latestEpisode.isNotEmpty && item.latestEpisode != item.lastEpisode) {
-        newUpdateCount++;
-        return item.copyWith(hasUpdate: true);
-      }
-      return item;
-    }).toList();
+    final next = <FavoriteItem>[];
 
-    if (newUpdateCount > 0) {
-      await _saveFavorites(updatedList);
+    for (final item in favorites) {
+      var latest = item.latestEpisode;
+
+      if (probe != null) {
+        try {
+          final probed = await probe(item);
+          if (probed != null && probed.isNotEmpty) latest = probed;
+        } catch (e) {
+          debugPrint('[FavoriteService] 追更探测失败(${item.title}): $e');
+        }
+      }
+
+      final progress = progressOf?.call(item) ?? item.lastEpisode;
+      final hasUpdate = latest.isNotEmpty && latest != progress;
+      if (hasUpdate) newUpdateCount++;
+
+      next.add(item.copyWith(latestEpisode: latest, hasUpdate: hasUpdate));
     }
+
+    await _saveFavorites(next);
     return newUpdateCount;
   }
 
