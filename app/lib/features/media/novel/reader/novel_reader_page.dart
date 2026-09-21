@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math' as math;
+
 import 'package:flutter/rendering.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -10,6 +11,7 @@ import 'package:fluxforge/features/media/novel/reader/controllers/chapter_cache.
 import 'package:fluxforge/features/media/novel/reader/controllers/chapter_content_pipeline.dart';
 import 'package:fluxforge/features/media/novel/reader/controllers/reader_preferences.dart';
 import 'package:fluxforge/features/media/novel/reader/engines/catalog_navigator.dart';
+import 'package:fluxforge/features/media/novel/reader/engines/horizontal_window.dart';
 import 'package:fluxforge/features/media/novel/reader/engines/pagination_engine.dart';
 import 'package:fluxforge/features/media/novel/reader/engines/reader_progress.dart';
 import 'package:fluxforge/features/media/novel/reader/engines/vertical_flow_engine.dart';
@@ -18,6 +20,7 @@ import 'package:fluxforge/features/media/novel/reader/models/novel_chapter.dart'
 import 'package:fluxforge/features/media/novel/reader/models/page_turn_mode.dart';
 import 'package:fluxforge/features/media/novel/reader/models/reader_theme.dart';
 import 'package:fluxforge/features/media/novel/reader/widgets/reader_bottom_bar.dart';
+import 'package:fluxforge/features/media/novel/reader/widgets/reader_chapter_bridge.dart';
 import 'package:fluxforge/features/media/novel/reader/widgets/reader_horizontal_page_view.dart';
 import 'package:fluxforge/features/media/novel/reader/widgets/reader_settings_panel.dart';
 import 'package:fluxforge/features/media/novel/reader/widgets/reader_status_views.dart';
@@ -27,7 +30,7 @@ import 'package:fluxforge/features/media/novel/reader/widgets/reader_top_bar.dar
 import 'package:fluxforge/features/media/novel/reader/widgets/reader_vertical_scroll_view.dart';
 
 /// 纯净小说阅读引擎 (FluxReader)
-/// 
+///
 /// 支持按需异步调度沙箱 parse 抓取正文、智能排版切片分页、
 /// SelectionArea 长按划词自由选区复制（横向 / 纵向统一）、后台预取与跨章无缝续读、
 /// 四大经典护眼底色、字号行距无级微调，以及左侧目录抽屉（自动定位当前章 + 缓存状态标识）
@@ -42,6 +45,7 @@ class NovelReaderPage extends StatefulWidget {
     this.customHeaders = const {},
     this.onChapterChanged,
     this.offlineBookId,
+    this.parseRule,
   });
 
   final String bookTitle;
@@ -58,6 +62,12 @@ class NovelReaderPage extends StatefulWidget {
   /// 传入后阅读器会优先读取沙盒中的离线章节，实现断网阅读
   final String? offlineBookId;
 
+  /// 正文抓取函数（缺省走沙箱 [RuleEngine]）
+  ///
+  /// 仅供「正文延迟到达」这类纯时序场景注入可控实现（测试用）；
+  /// 正常调用方无需传入 —— 阅读器的三级来源与预取策略都不依赖它。
+  final Future<Object?> Function(Rule rule, String url)? parseRule;
+
   @override
   State<NovelReaderPage> createState() => _NovelReaderPageState();
 }
@@ -68,9 +78,12 @@ class _NovelReaderPageState extends State<NovelReaderPage>
   late List<NovelChapter> _chapters;
   late int _currentChapterIndex;
 
-  // 正文异步沙箱加载状态与缓存
-  bool _isLoadingContent = false;
+  // 正文异步加载状态与缓存
+  //
+  // 不再有「正在加载」布尔量：未就绪状态由渲染层就地表达（横向桥接页 / 纵向块内占位），
+  // 只保留失败原因用于块内重试入口。
   String? _contentError;
+
   /// 正文缓存的保留半径（章）：略大于渲染窗口，作为回看缓冲
   ///
   /// 顺读时它基本不被访问，挡的是回看 / 跳章时的重新分页开销
@@ -81,8 +94,9 @@ class _NovelReaderPageState extends State<NovelReaderPage>
   ///
   /// 与「离线下载」（沙盒落盘、断网可读）是两层机制，详见 [ChapterCache]；
   /// 分页切片（[_chapterSlices]）与该缓存同生共死，见 [_applyCacheEviction]。
-  final ChapterCache _contentCache =
-      ChapterCache(capacity: _cacheWindowRadius * 2 + 1);
+  final ChapterCache _contentCache = ChapterCache(
+    capacity: _cacheWindowRadius * 2 + 1,
+  );
 
   /// 章节正文获取管道（三级来源 + 后台预取 / 落盘调度）
   ///
@@ -244,6 +258,7 @@ class _NovelReaderPageState extends State<NovelReaderPage>
       cache: _contentCache,
       prefetching: _prefetching,
       cacheWriter: _cacheChapterContent,
+      parseRule: widget.parseRule,
       onPersisted: (index) {
         // 该章此前若在纵向续载中失败过，落盘成功后解除熔断标记
         _verticalFailed.remove(index);
@@ -262,98 +277,66 @@ class _NovelReaderPageState extends State<NovelReaderPage>
   }
 
   /// 异步按需加载指定章节正文
-  Future<void> _loadChapterContent(int index, {bool forceReload = false}) async {
+  ///
+  /// 四条来源按「代价从低到高」依次尝试，命中即返回：
+  /// 1. **内存镜像**（阅读期加速层）—— 零等待；
+  /// 2. **沙盒离线文件** —— 一次本地 IO，刻意不进 loading 态（否则「已下载却闪加载」）；
+  /// 3. **章节自带正文**（无目标 URL 时）—— 详情页直传，落盘后仍可读；
+  /// 4. **沙箱抓取** —— 最后兜底，失败进入错误态并给出重试。
+  ///
+  /// 四条路径的就绪收尾统一走 [_settleChapterContent]：原先「状态收尾 + 落点处理」
+  /// 这段在四处各写一遍，其中「落点重置」这条规则因此有了四份实现（改一处必漏三处）。
+  Future<void> _loadChapterContent(
+    int index, {
+    bool forceReload = false,
+  }) async {
     if (index < 0 || index >= _chapters.length) return;
 
-    // 1. 如果已有本地缓存且非强制刷新，直接挂载并重新切片（命中缓存即刻渲染，零等待）
-    if (!forceReload && _contentCache.containsKey(index) && _contentCache[index]!.isNotEmpty) {
-      final cached = _contentCache[index]!;
-      setState(() {
-        _chapters[index] = _chapters[index].copyWith(content: cached);
-        _isLoadingContent = false;
-        _contentError = null;
-        _recalculatePages();
-        if (_openAtLastPage) {
-          _currentPageIndex = _pageSlices.isNotEmpty ? _pageSlices.length - 1 : 0;
-          _openAtLastPage = false;
-        }
-      });
-      _syncPageController();
-      // 命中内存镜像即代表阅读顺畅，立即静默下载前后相邻章节
-      _pipeline.downloadAdjacent(_currentChapterIndex);
+    // 1. 内存镜像：命中即刻渲染
+    final cached = _contentCache[index];
+    if (!forceReload && cached != null && cached.isNotEmpty) {
+      _settleChapterContent(index, cached);
       return;
     }
 
-    // 2. 沙盒离线正文：本地文件 IO，耗时极短，因此**刻意不进入 loading 态** ——
-    //    否则会出现「明明已下载却仍闪一下加载」的反差。
-    //    守卫说明：isOfflineDownloaded 是同步判定且未配置书籍标识时直接返回 false，
-    //    因此未下载的章节走这条路是零开销的，不会给正常路径增加任何成本。
+    // 2. 沙盒离线正文。守卫说明：isOfflineDownloaded 是同步判定，且未配置书籍标识时
+    //    直接返回 false，因此未下载的章节走这条路是零开销的，不给正常路径增加成本。
     if (!forceReload && _pipeline.isOfflineDownloaded(index)) {
       final offline = await _pipeline.readOffline(index);
       // 读盘期间用户可能已切走，此时必须丢弃本次结果，避免覆盖当前章
       if (!mounted || _currentChapterIndex != index) return;
       if (offline != null && offline.isNotEmpty) {
         _cacheChapterContent(index, offline);
-        setState(() {
-          _chapters[index] = _chapters[index].copyWith(content: offline);
-          _isLoadingContent = false;
-          _contentError = null;
-          _recalculatePages();
-          if (_openAtLastPage) {
-            _currentPageIndex = _pageSlices.isNotEmpty ? _pageSlices.length - 1 : 0;
-            _openAtLastPage = false;
-          }
-        });
-        _syncPageController();
-        _pipeline.downloadAdjacent(_currentChapterIndex);
+        _settleChapterContent(index, offline);
         return;
       }
       // 离线文件读不到（损坏 / 被外部清理）时不报错，继续降级到自带正文 / 网络抓取
     }
 
+    // 3. 无目标 URL：只能用章节自带正文
     final currentCh = _chapters[index];
     final chapterUrl = currentCh.url?.trim() ?? '';
-
-    // 若无目标 URL 且已有正文，直接使用
     if (chapterUrl.isEmpty) {
       if (currentCh.content.isNotEmpty) {
         // 章节自带正文同样属于「已加载」→ 一并落盘，退出后仍可读
         _mountLoadedContent(index, currentCh.content);
-        _recalculatePages();
-        if (_openAtLastPage) {
-          _currentPageIndex = _pageSlices.isNotEmpty ? _pageSlices.length - 1 : 0;
-          _openAtLastPage = false;
-        }
-        _syncPageController();
+        _settleChapterContent(index, currentCh.content);
       }
       return;
     }
 
-    // 2. 调度沙箱执行 parse 动作
-    setState(() {
-      _isLoadingContent = true;
-      _contentError = null;
-    });
+    // 4. 沙箱抓取（最后兜底）
+    setState(() => _contentError = null);
 
     try {
-      if (widget.rule == null) {
+      final rule = widget.rule;
+      if (rule == null) {
         throw Exception('未绑定解析规则，无法调度沙箱抓取章节内容');
       }
 
-      final res = await RuleEngine.parse(widget.rule!, chapterUrl);
-      String rawContent = '';
-
-      if (res is Map) {
-        rawContent = res['content']?.toString() ??
-            res['text']?.toString() ??
-            res['data']?.toString() ??
-            '';
-      } else if (res is String) {
-        rawContent = res;
-      }
-
-      final cleanContent = _cleanNovelContent(rawContent);
-
+      final cleanContent = _cleanNovelContent(
+        _extractContentText(await _parseChapter(rule, chapterUrl)),
+      );
       if (cleanContent.isEmpty) {
         throw Exception('目标站点响应完成，但未提取到正文文本内容');
       }
@@ -361,28 +344,46 @@ class _NovelReaderPageState extends State<NovelReaderPage>
       // 建立内存镜像并落盘 —— 抓到即属于「已下载」，退出阅读器后依然可读
       _mountLoadedContent(index, cleanContent);
       if (mounted && _currentChapterIndex == index) {
-        setState(() {
-          _chapters[index] = _chapters[index].copyWith(content: cleanContent);
-          _isLoadingContent = false;
-          _contentError = null;
-          _recalculatePages();
-          if (_openAtLastPage) {
-            _currentPageIndex = _pageSlices.isNotEmpty ? _pageSlices.length - 1 : 0;
-            _openAtLastPage = false;
-          }
-        });
-        _syncPageController();
+        _settleChapterContent(index, cleanContent);
       }
-      // 当前章加载就绪后，立即静默下载相邻章节（实现连续翻页零等待）
-      _pipeline.downloadAdjacent(_currentChapterIndex);
     } catch (e) {
       if (mounted && _currentChapterIndex == index) {
         setState(() {
-          _isLoadingContent = false;
           _contentError = '正文加载失败: $e';
         });
       }
     }
+  }
+
+  /// 执行一次正文抓取：缺省走沙箱 [RuleEngine]，[NovelReaderPage.parseRule] 可注入替代实现
+  Future<Object?> _parseChapter(Rule rule, String url) {
+    final injected = widget.parseRule;
+    return injected != null ? injected(rule, url) : RuleEngine.parse(rule, url);
+  }
+
+  /// 从沙箱返回结果取正文字符串（`content` / `text` / `data` 三种既有约定）
+  String _extractContentText(Object? res) {
+    if (res is Map) {
+      return res['content']?.toString() ??
+          res['text']?.toString() ??
+          res['data']?.toString() ??
+          '';
+    }
+    return res is String ? res : '';
+  }
+
+  /// 正文就绪后的统一收尾：同步章节模型 → 重算分页 → 应用落点 → 对齐控制器 → 准备邻居
+  void _settleChapterContent(int index, String content) {
+    setState(() {
+      _chapters[index] = _chapters[index].copyWith(content: content);
+      _contentError = null;
+      _recalculatePages();
+      // 覆盖「本章此刻无正文」这一早退分支：_recalculatePages 不会消费落点
+      _applyPendingLanding();
+    });
+    _syncPageController();
+    // 正文就绪即代表阅读顺畅，立即静默准备相邻章节（实现连续翻页零等待）
+    _pipeline.downloadAdjacent(_currentChapterIndex);
   }
 
   // ==================== 后台预取、跨章连续与阅读位置保持 ====================
@@ -522,6 +523,38 @@ class _NovelReaderPageState extends State<NovelReaderPage>
     }
   }
 
+  /// 用户点击「下一章加载失败 · 点击重试」：解除熔断后重新续载
+  ///
+  /// 熔断的存在意义是「滚动过程中不反复发起无效请求」；用户显式点击重试
+  /// 说明网络或规则源可能已恢复，故先解除标记再发起一次。
+  /// 仍失败则给出明确提示 —— 不再像原先那样静默停住。
+  Future<void> _retryAppendNextChapter() async {
+    if (_verticalSequence.isEmpty) return;
+    final next = _verticalSequence.last + 1;
+    if (next >= _chapters.length) return;
+
+    setState(() => _verticalFailed.remove(next));
+    await _appendNextVerticalChapter();
+
+    if (mounted && _verticalFailed.contains(next)) {
+      _showReaderSnack('「${_chapters[next].title}」仍加载失败，请检查网络或规则源');
+    }
+  }
+
+  /// 用户点击「上一章加载失败 · 点击重试」：解除熔断后重新前插
+  Future<void> _retryPrependPrevChapter() async {
+    if (_verticalSequence.isEmpty) return;
+    final prev = _verticalSequence.first - 1;
+    if (prev < 0) return;
+
+    setState(() => _verticalFailed.remove(prev));
+    await _prependPrevVerticalChapter();
+
+    if (mounted && _verticalFailed.contains(prev)) {
+      _showReaderSnack('「${_chapters[prev].title}」仍加载失败，请检查网络或规则源');
+    }
+  }
+
   /// 纵向模式：依据屏幕中线定位当前正在阅读的章节并同步阅读进度
   void _syncVerticalCurrentChapter() {
     if (_verticalBlockKeys.isEmpty || !mounted) return;
@@ -587,8 +620,10 @@ class _NovelReaderPageState extends State<NovelReaderPage>
     final metrics = _verticalChapterMetrics();
     if (metrics == null) return;
 
-    final inChapterOffset =
-        (_scrollController.offset - metrics.top).clamp(0.0, double.infinity);
+    final inChapterOffset = (_scrollController.offset - metrics.top).clamp(
+      0.0,
+      double.infinity,
+    );
 
     setState(() => _verticalAnchorIndex = _currentChapterIndex);
     _scrollController.jumpTo(inChapterOffset);
@@ -622,6 +657,12 @@ class _NovelReaderPageState extends State<NovelReaderPage>
   void _cacheChapterContent(int index, String content) {
     _contentCache[index] = content;
     _evictChapterCacheIfNeeded();
+    // 内容就绪是「可以分片」的唯一信号：立刻排队给窗口内各章补齐切片。
+    //
+    // 否则会留下「正文早已到达、翻页时仍是占位页」的窗口期 —— 而未分片章在扁平
+    // 序列里只占 1 页，补分片时窗口内页索引会整体平移（见 [_onHorizontalPagesChanged]），
+    // 曾是「进入后直接往前翻落到上一章章首」的直接成因。
+    if ((index - _currentChapterIndex).abs() <= 1) _scheduleNeighborSlices();
   }
 
   /// 加载到正文后的统一收尾：建立内存镜像 + 尽力落盘
@@ -643,13 +684,13 @@ class _NovelReaderPageState extends State<NovelReaderPage>
   /// 长卷正在渲染的章节（回收会出空白块）、当前章、预取 / 下载中章节，
   /// 以及**无远程地址的章节**（详情页直传正文，回收即永久丢失）。
   Set<int> _cacheProtectSet() => <int>{
-        ..._verticalSequence,
-        _currentChapterIndex,
-        ..._prefetching,
-        ..._downloadingChapters,
-        for (int i = 0; i < _chapters.length; i++)
-          if ((_chapters[i].url ?? '').isEmpty) i,
-      };
+    ..._verticalSequence,
+    _currentChapterIndex,
+    ..._prefetching,
+    ..._downloadingChapters,
+    for (int i = 0; i < _chapters.length; i++)
+      if ((_chapters[i].url ?? '').isEmpty) i,
+  };
 
   /// 按容量上限回收内存缓存（常规路径：控制会话内存增长）
   void _evictChapterCacheIfNeeded() {
@@ -706,8 +747,10 @@ class _NovelReaderPageState extends State<NovelReaderPage>
       if (_pageMode == PageTurnMode.horizontal) {
         if (_pageSlices.isEmpty) return;
 
-        final target =
-            ReaderProgress.pageIndexFromCharOffset(_pageSlices, charOffset);
+        final target = ReaderProgress.pageIndexFromCharOffset(
+          _pageSlices,
+          charOffset,
+        );
 
         if (_currentPageIndex != target) {
           setState(() => _currentPageIndex = target);
@@ -792,9 +835,7 @@ class _NovelReaderPageState extends State<NovelReaderPage>
       final ok = await _pipeline.downloadOffline(next);
       if (!mounted) return;
       _showReaderSnack(
-        ok
-            ? '下载完成，当前已下载 ${_pipeline.downloadedCount} 章'
-            : '下载失败，请检查网络或解析规则',
+        ok ? '下载完成，当前已下载 ${_pipeline.downloadedCount} 章' : '下载失败，请检查网络或解析规则',
       );
       return;
     }
@@ -836,8 +877,10 @@ class _NovelReaderPageState extends State<NovelReaderPage>
         return;
       }
       final viewport = _scrollController.position.viewportDimension;
-      final target = (_scrollController.offset - viewport * 0.92)
-          .clamp(0.0, _scrollController.position.maxScrollExtent);
+      final target = (_scrollController.offset - viewport * 0.92).clamp(
+        0.0,
+        _scrollController.position.maxScrollExtent,
+      );
       _scrollController.animateTo(
         target,
         duration: const Duration(milliseconds: 260),
@@ -874,8 +917,10 @@ class _NovelReaderPageState extends State<NovelReaderPage>
     if (_pageMode == PageTurnMode.verticalScroll) {
       if (!_scrollController.hasClients) return;
       final viewport = _scrollController.position.viewportDimension;
-      final target = (_scrollController.offset + viewport * 0.92)
-          .clamp(0.0, _scrollController.position.maxScrollExtent);
+      final target = (_scrollController.offset + viewport * 0.92).clamp(
+        0.0,
+        _scrollController.position.maxScrollExtent,
+      );
       _scrollController.animateTo(
         target,
         duration: const Duration(milliseconds: 260),
@@ -925,9 +970,10 @@ class _NovelReaderPageState extends State<NovelReaderPage>
   ChapterMetrics? _verticalChapterMetrics() {
     if (!_scrollController.hasClients) return null;
 
-    final box = _verticalBlockKeys[_currentChapterIndex]
-        ?.currentContext
-        ?.findRenderObject() as RenderBox?;
+    final box =
+        _verticalBlockKeys[_currentChapterIndex]?.currentContext
+                ?.findRenderObject()
+            as RenderBox?;
     if (box == null || !box.hasSize) return null;
 
     final viewport = RenderAbstractViewport.maybeOf(box);
@@ -981,8 +1027,10 @@ class _NovelReaderPageState extends State<NovelReaderPage>
     // 横向：按比例换算目标页码并直接跳转（无动画，保证拖动跟手）
     if (_pageMode == PageTurnMode.horizontal) {
       if (_pageSlices.isEmpty) return;
-      final target =
-          ReaderProgress.pageIndexFromRatio(ratio, _pageSlices.length);
+      final target = ReaderProgress.pageIndexFromRatio(
+        ratio,
+        _pageSlices.length,
+      );
       if (target == _currentPageIndex) return;
       setState(() => _currentPageIndex = target);
       // 准确定位到包含桥接页偏移的真实目标页（拖到 0% 时绝不误切回上一章，拉到 100% 精确达至末页）
@@ -994,8 +1042,10 @@ class _NovelReaderPageState extends State<NovelReaderPage>
     if (!_scrollController.hasClients) return;
     final metrics = _verticalChapterMetrics();
     if (metrics == null) return;
-    final target =
-        ReaderProgress.verticalOffsetFromRatio(ratio: ratio, metrics: metrics);
+    final target = ReaderProgress.verticalOffsetFromRatio(
+      ratio: ratio,
+      metrics: metrics,
+    );
     _scrollController.jumpTo(
       target.clamp(0.0, _scrollController.position.maxScrollExtent),
     );
@@ -1063,36 +1113,33 @@ class _NovelReaderPageState extends State<NovelReaderPage>
     return window;
   }
 
-  /// 窗口内某章的渲染页数：未分片章恒占 1 页（加载占位页）
-  int _windowPageCountOf(int chapter) {
-    final slices = _chapterSlices[chapter];
-    return (slices != null && slices.isNotEmpty) ? slices.length : 1;
-  }
-
-  /// 滑窗扁平总页数
+  /// 滑窗扁平总页数（口径见 [HorizontalWindow]）
   int get _horizontalTotalPages =>
-      _horizontalWindow.fold(0, (sum, c) => sum + _windowPageCountOf(c));
+      HorizontalWindow.totalPages(_horizontalWindow, _chapterSlices);
 
   /// 全局扁平页索引 → (章号, 章内页码)；越界兜底为窗口最后一章第 0 页
-  (int, int) _resolveFlatPage(int rawIndex) {
-    var remaining = rawIndex;
-    for (final chapter in _horizontalWindow) {
-      final count = _windowPageCountOf(chapter);
-      if (remaining < count) return (chapter, remaining);
-      remaining -= count;
-    }
-    return (_horizontalWindow.last, 0);
-  }
+  (int, int) _resolveFlatPage(int rawIndex) =>
+      HorizontalWindow.resolveFlat(_horizontalWindow, _chapterSlices, rawIndex);
 
   /// (章号, 章内页码) → 全局扁平页索引（章不在窗口内时兜底 0）
-  int _flatIndexOf(int chapter, int pageInChapter) {
-    var base = 0;
-    for (final c in _horizontalWindow) {
-      if (c == chapter) return base + pageInChapter;
-      base += _windowPageCountOf(c);
-    }
-    return 0;
-  }
+  int _flatIndexOf(int chapter, int pageInChapter) =>
+      HorizontalWindow.flatIndexOf(
+        _horizontalWindow,
+        _chapterSlices,
+        chapter,
+        pageInChapter,
+      );
+
+  /// 横向模式是否应渲染滑窗 `PageView`
+  ///
+  /// **横向模式下恒为真**（滑窗必含当前章）：「本章未就绪 / 失败」一律交给窗内占位页
+  /// 原地表达，绝不整屏切换视图。原因有两条：
+  /// 1. 整屏切换会销毁 `PageView`，丢掉翻页动画与控制器位置；
+  /// 2. 原先的判据是「窗口内任一章已分片」，与全屏加载态的判据（当前章正文是否为空）
+  ///    **不同源** —— 于是跳到未下载章时会先闪一次全屏「正在抓取并排版章节正文...」，
+  ///    等帧末邻居补分片后窗口变可读，又切成桥接页「正在加载本章」，同一动作出现两条提示。
+  bool get _shouldRenderHorizontalWindow =>
+      _pageMode == PageTurnMode.horizontal && _horizontalWindow.isNotEmpty;
 
   /// 按当前视口与排版参数切片正文（纯计算，不落任何状态）
   List<String> _sliceContent(String content) {
@@ -1140,14 +1187,68 @@ class _NovelReaderPageState extends State<NovelReaderPage>
       if (!mounted || _pageMode != PageTurnMode.horizontal) return;
       final before = _horizontalTotalPages;
       _ensureNeighborSlices();
-      // 占位页 → 真实页数会改变滑窗总页数，需要重建才能生效
-      if (_horizontalTotalPages != before) setState(() {});
+      // 占位页 → 真实页数：既要重建，也要按「章 + 章内页」重新锚定（见下）
+      if (_horizontalTotalPages != before) _onHorizontalPagesChanged();
+    });
+  }
+
+  /// 滑窗页数变化后的统一收口：重建 + 以「章 + 章内页」重新锚定当前页
+  ///
+  /// 未分片章在扁平序列里只占 1 页（见 [HorizontalWindow]）：它一旦补上分片，
+  /// 窗口内**排在它之后**的所有页索引都会平移（真实页数 - 1），而 `PageView` 只能
+  /// 按索引定位 —— 不重新锚定的话，「当前页」会静默漂到另一页。往前翻时补的正是
+  /// 上一章（当前页索引整体后移），于是精确地漂成上一章章首。
+  void _onHorizontalPagesChanged() {
+    if (!mounted || _pageMode != PageTurnMode.horizontal) return;
+    setState(() {});
+    _syncPageController();
+  }
+
+  /// 是否正在程序化定位（`jumpToPage`）—— 期间的页码通知一律屏蔽
+  ///
+  /// `PageView` 在跳转过程中会吐出基于**旧布局**的过渡通知，其页码可能落在
+  /// 任意一个 (章, 页) 上（实测：跳向末页时曾收到落在章内的中间页码）。
+  /// 若把这类通知当作真实翻页处理，就会覆盖刚刚算好的落点 ——
+  /// 「往前翻又滑回上一章章首附近」正是由此产生。
+  ///
+  /// 屏蔽窗口只有一帧：`jumpToPage` 是同步的、通知在当帧派发，
+  /// 故定位后在**下一帧末**解除，不会长期屏蔽用户的真实翻页。
+  bool _suppressPageChanged = false;
+
+  /// 是否正处于横向翻页的拖拽手势中
+  ///
+  /// `PageView.onPageChanged` **不是等松手才触发**：页码按四舍五入变化，拖过半页那一刻
+  /// 就会回调。此时若立即走跨章分支，会同步平移滑窗 —— 窗口一变，同一扁平下标指向的
+  /// 内容随之改变（手指下那页会突然换成另一章），再叠加 [_translateHorizontalWindow]
+  /// 的 `jumpToPage`，用户看到的就是「慢慢滑到一半被强制跳到下一章」。
+  ///
+  /// 因此跨章一律等手势结束（[ScrollEndNotification]）再落地；章内翻页不受影响。
+  bool _horizontalDragging = false;
+
+  /// 拖拽期间最后经过的落点，按 **(章, 章内页)** 记录
+  ///
+  /// 不用扁平下标：拖拽途中邻居补分片会改变窗口总页数，下标含义会整体平移，
+  /// 而 (章, 章内页) 是稳定语义。
+  (int, int)? _pendingHorizontalLanding;
+
+  /// 程序化定位到某个扁平页索引（跳转期间屏蔽过渡通知）
+  void _jumpToFlatIndex(PageController controller, int targetRaw) {
+    if (controller.page?.round() == targetRaw) return;
+    _suppressPageChanged = true;
+    // 程序化定位优先级更高，丢弃尚未落地的拖拽意图（此刻下标含义已被改写）
+    _pendingHorizontalLanding = null;
+    controller.jumpToPage(targetRaw);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _suppressPageChanged = false;
     });
   }
 
   /// 文本分页算法已抽取至 `PaginationEngine.sliceIntoPages`（纯函数，可独立单测）
 
   /// 计算当前章分页；[invalidateAll] 置真时（视口/排版变化）所有章分片一并作废
+  ///
+  /// 只做三件事：量尺寸 → 切当前章 → 定落点，各自成方法；
+  /// 避免「分页 + 落点 + 邻居调度」混在一个 90 行的函数里。
   void _recalculatePages({
     double? width,
     double? height,
@@ -1161,7 +1262,8 @@ class _NovelReaderPageState extends State<NovelReaderPage>
       return;
     }
 
-    final currentContent = _contentCache[_currentChapterIndex] ??
+    final currentContent =
+        _contentCache[_currentChapterIndex] ??
         _chapters[_currentChapterIndex].content;
     if (currentContent.isEmpty) {
       _chapterSlices.remove(_currentChapterIndex);
@@ -1173,7 +1275,7 @@ class _NovelReaderPageState extends State<NovelReaderPage>
     final targetWidth = width ?? _lastRenderWidth;
     final targetHeight = height ?? _lastRenderHeight;
 
-    // 若尚未测量到真实视口尺寸，进行基础兜底
+    // 若尚未测量到真实视口尺寸，进行基础兜底（此时不写分片表，待真实尺寸到达再切）
     if (targetWidth <= 0 || targetHeight <= 0) {
       _pageSlices = [currentContent];
       _currentPageIndex = 0;
@@ -1182,20 +1284,35 @@ class _NovelReaderPageState extends State<NovelReaderPage>
 
     _lastRenderWidth = targetWidth;
     _lastRenderHeight = targetHeight;
-
-    if (invalidateAll) _chapterSlices.clear();
-    _chapterSlices[_currentChapterIndex] = _sliceContent(currentContent);
-    _pageSlices = _chapterSlices[_currentChapterIndex]!;
-
-    if (_openAtLastPage && _pageSlices.isNotEmpty) {
-      _currentPageIndex = _pageSlices.length - 1;
-      _openAtLastPage = false;
-    } else {
-      _currentPageIndex = _currentPageIndex.clamp(0, math.max(0, _pageSlices.length - 1));
-    }
+    _sliceCurrentChapter(currentContent, invalidateAll: invalidateAll);
+    _applyPendingLanding();
 
     // 邻居分片推迟到帧末：当前章同步分片保证本帧可渲染，邻居只需在翻到之前就绪
     _scheduleNeighborSlices();
+  }
+
+  /// 切分当前章正文并写入分片表（[invalidateAll] 时连邻居分片一并作废）
+  void _sliceCurrentChapter(String content, {required bool invalidateAll}) {
+    if (invalidateAll) _chapterSlices.clear();
+    _chapterSlices[_currentChapterIndex] = _sliceContent(content);
+    _pageSlices = _chapterSlices[_currentChapterIndex]!;
+  }
+
+  /// 应用挂起的落点意图（横向）
+  ///
+  /// 有落点（[_openAtLastPage]）时落到本章最后一页；否则把当前页码夹回合法范围
+  /// （排版变更 / 章节切换后页数会变）。**同一条规则只有这一处实现。**
+  void _applyPendingLanding() {
+    if (!_openAtLastPage) {
+      _currentPageIndex = _currentPageIndex.clamp(
+        0,
+        math.max(0, _pageSlices.length - 1),
+      );
+      return;
+    }
+    // 落点随即消费：无论本章此刻有无正文，意图都不再跨章残留
+    _openAtLastPage = false;
+    _currentPageIndex = _pageSlices.isNotEmpty ? _pageSlices.length - 1 : 0;
   }
 
   /// 切换章节 (toLastPage: 是否直接定位到该章最后一页，用于从下一章倒序回溯)
@@ -1206,13 +1323,9 @@ class _NovelReaderPageState extends State<NovelReaderPage>
     setState(() {
       _currentChapterIndex = index;
       _recalculatePages();
-
-      if (toLastPage && _pageSlices.isNotEmpty) {
-        _currentPageIndex = _pageSlices.length - 1;
-        _openAtLastPage = false;
-      } else if (!toLastPage) {
-        _currentPageIndex = 0;
-      }
+      // 落点意图统一由 _openAtLastPage + [_applyPendingLanding] 表达，
+      // 此处只负责「正向跳章一律回到章首」这一条
+      if (!toLastPage) _currentPageIndex = 0;
 
       // 纵向模式下以目标章为锚点重建连续阅读序列（避免残留旧章内容造成错位）
       if (_pageMode == PageTurnMode.verticalScroll) {
@@ -1232,7 +1345,8 @@ class _NovelReaderPageState extends State<NovelReaderPage>
 
     if (_pageMode == PageTurnMode.horizontal) {
       _syncPageController();
-    } else if (_pageMode == PageTurnMode.verticalScroll && _scrollController.hasClients) {
+    } else if (_pageMode == PageTurnMode.verticalScroll &&
+        _scrollController.hasClients) {
       _scrollController.jumpTo(0);
     }
   }
@@ -1250,9 +1364,7 @@ class _NovelReaderPageState extends State<NovelReaderPage>
 
       final controller = _pageController;
       if (controller != null && controller.hasClients) {
-        if (controller.page?.round() != targetRaw) {
-          controller.jumpToPage(targetRaw);
-        }
+        _jumpToFlatIndex(controller, targetRaw);
       } else {
         _pageController?.dispose();
         _pageController = PageController(initialPage: targetRaw);
@@ -1307,42 +1419,38 @@ class _NovelReaderPageState extends State<NovelReaderPage>
     );
   }
 
-  /// 构建阅读器主体（状态分流：加载中 / 加载失败 / 正文排版）
+  /// 构建阅读器主体
+  ///
+  /// 两种翻页模式**各只有一条渲染路径**，「正文未就绪 / 抓取失败」都在原位表达：
+  /// - 横向 → 滑窗 `PageView`，未就绪章由窗内桥接页占位（见 [_buildChapterBridge]）；
+  /// - 纵向 → 连续长卷，未就绪 / 失败由章节块内占位表达（见 [ReaderVerticalScrollView]）。
+  ///
+  /// 全屏加载 / 错误视图不再参与分流：它们会丢掉阅读框架（顶部栏、目录、进度），
+  /// 横向还会销毁 `PageView`（丢翻页动画与控制器位置），并且让同一状态出现两套表达
+  /// —— 曾表现为「先闪全屏『正在抓取并排版章节正文...』，再切成窗内『正在加载本章』」。
   Widget _buildReaderBody() {
-    final chapter = _chapters[_currentChapterIndex];
-
-    // 状态 A：正文加载中且无可用内容
-    if (_isLoadingContent && chapter.content.isEmpty) {
-      return ReaderLoadingView(readerTheme: _readerTheme);
+    if (_shouldRenderHorizontalWindow) {
+      return _buildHorizontalPageView();
     }
-
-    // 状态 B：正文加载失败且无可用内容
-    if (_isContentErrorState) {
-      return ReaderErrorView(
-        readerTheme: _readerTheme,
-        message: _contentError!,
-        onRetry: () =>
-            _loadChapterContent(_currentChapterIndex, forceReload: true),
-      );
-    }
-
-    // 状态 C：正文就绪，根据模式渲染平滑横翻或长篇纵滚
-    return _pageMode == PageTurnMode.horizontal
-        ? _buildHorizontalPageView()
-        : _buildVerticalScrollView();
+    return _buildVerticalScrollView();
   }
 
   /// 横向平滑翻页视口
   /// 物理视口实测完成：尺寸变化（初次渲染 / 横竖屏旋转）或尚未分页时触发亚像素级精准重算
   void _onViewportResolved(double width, double height) {
-    final content = _contentCache[_currentChapterIndex] ??
+    final content =
+        _contentCache[_currentChapterIndex] ??
         _chapters[_currentChapterIndex].content;
-    if ((_lastRenderWidth - width).abs() > 1.0 ||
-        (_lastRenderHeight - height).abs() > 1.0 ||
-        _pageSlices.isEmpty ||
-        (_pageSlices.length == 1 &&
-            _pageSlices.first == content &&
-            content.length > 300)) {
+    if (PaginationEngine.needsRepaginate(
+      currentWidth: _lastRenderWidth,
+      currentHeight: _lastRenderHeight,
+      nextWidth: width,
+      nextHeight: height,
+      pageCount: _pageSlices.length,
+      firstPageIsWholeContent:
+          _pageSlices.isNotEmpty && _pageSlices.first == content,
+      contentLength: content.length,
+    )) {
       _recalculatePages(width: width, height: height, invalidateAll: true);
     }
   }
@@ -1351,16 +1459,69 @@ class _NovelReaderPageState extends State<NovelReaderPage>
   void _onHorizontalPageChanged(int rawIndex) {
     _scheduleNeighborSlices();
 
-    final (chapter, pageInChapter) = _resolveFlatPage(rawIndex);
+    // 程序化定位的过渡通知：页码基于旧布局，必须整条丢弃（见 [_suppressPageChanged]）
+    if (_suppressPageChanged) return;
+
+    // 程序化定位（[_syncPageController] / [_translateHorizontalWindow] 的 jumpToPage）
+    // 同样会回打本回调：落点与当前状态一致时无需任何处理，否则会重复触发章节加载，
+    // 并把「未就绪落末页」的意图误置给下一次重建。
+    if (rawIndex == _flatIndexOf(_currentChapterIndex, _currentPageIndex)) {
+      return;
+    }
+
+    final landing = _resolveFlatPage(rawIndex);
+
+    // 跨章拖拽：只记录意图，等松手再落地
+    // （拖拽中平移滑窗会改写下标含义 → 手指下内容突变 + 强制跳页，见 [_horizontalDragging]）
+    if (_horizontalDragging && landing.$1 != _currentChapterIndex) {
+      _pendingHorizontalLanding = landing;
+      return;
+    }
+
+    _applyHorizontalLanding(landing);
+  }
+
+  /// 横向滚动开始（拖拽 / 吸附动画都会派发，成对出现）
+  void _onHorizontalScrollStart() {
+    _horizontalDragging = true;
+  }
+
+  /// 横向滚动结束（吸附完成）：此刻才允许跨章落地
+  ///
+  /// 用户拖动期间手指下那页始终是同一次布局的结果；松手后才做「切章 + 平移滑窗 +
+  /// 索引补偿」，于是跳转发生在动画结束之后，而不是滑到一半就被扯走。
+  void _onHorizontalScrollEnd() {
+    _horizontalDragging = false;
+    final pending = _pendingHorizontalLanding;
+    _pendingHorizontalLanding = null;
+    if (pending == null) return;
+    _applyHorizontalLanding(pending);
+  }
+
+  /// 落地一次横向翻页（章内即时同步；跨章切换章节并平移滑窗）
+  void _applyHorizontalLanding((int, int) landing) {
+    if (!mounted) return;
+
+    final (chapter, pageInChapter) = landing;
+    if (chapter < 0 || chapter >= _chapters.length) return;
+    // 落点与当前状态一致（程序化定位回打 / 拖回原位）时无需处理
+    if (chapter == _currentChapterIndex && pageInChapter == _currentPageIndex) {
+      return;
+    }
+
     final wasChapter = _currentChapterIndex;
 
     // 章内翻页：仅同步页码
     if (chapter == wasChapter) {
       setState(() {
-        _currentPageIndex = pageInChapter.clamp(0, math.max(0, _pageSlices.length - 1));
+        _currentPageIndex = pageInChapter.clamp(
+          0,
+          math.max(0, _pageSlices.length - 1),
+        );
       });
       // 章内两端：提前分片相邻章 + 双向预取下载
-      if (_currentPageIndex <= 1 || _currentPageIndex >= _pageSlices.length - 2) {
+      if (_currentPageIndex <= 1 ||
+          _currentPageIndex >= _pageSlices.length - 2) {
         _ensureChapterSliced(_currentChapterIndex - 1);
         _ensureChapterSliced(_currentChapterIndex + 1);
         _pipeline.downloadAdjacent(_currentChapterIndex);
@@ -1368,16 +1529,22 @@ class _NovelReaderPageState extends State<NovelReaderPage>
       return;
     }
 
-    // 跨章：目标章在当前章之前且未就绪时，加载完成后落其最后一页
-    if (chapter < wasChapter && !_isChapterContentAvailable(chapter)) {
+    // 跨章回退：落点由「目标章是否已分片」决定，判据必须与 [_resolveFlatPage] 同源。
+    //
+    // 未分片章在窗口里只占 1 页，此时回退落到的其实是它的**占位页**（解析结果恒为章内
+    // 第 0 页），故加载完成后应落到该章最后一页。这里不能用「正文是否可用」判断：
+    // 正文已预取到内存、但尚未分片的窗口期里，那个判据会漏判 → 落到上一章章首。
+    if (chapter < wasChapter && (_chapterSlices[chapter]?.isEmpty ?? true)) {
       _openAtLastPage = true;
     }
 
     setState(() {
       _currentChapterIndex = chapter;
       _pageSlices = _chapterSlices[chapter] ?? const [];
-      _currentPageIndex =
-          pageInChapter.clamp(0, math.max(0, _pageSlices.length - 1));
+      _currentPageIndex = pageInChapter.clamp(
+        0,
+        math.max(0, _pageSlices.length - 1),
+      );
     });
 
     widget.onChapterChanged?.call(chapter, _chapters[chapter].title);
@@ -1394,30 +1561,72 @@ class _NovelReaderPageState extends State<NovelReaderPage>
       _currentChapterIndex,
       _currentPageIndex.clamp(0, math.max(0, _pageSlices.length - 1)),
     );
-    if (controller.page?.round() == targetRaw) return;
-    controller.jumpToPage(targetRaw);
+    _jumpToFlatIndex(controller, targetRaw);
+  }
+
+  /// 滑窗内「尚未分片」章的占位页（加载中 / 已就绪待分片 / 失败 + 重试）
+  ///
+  /// 横向模式不再整屏切换加载 / 错误视图，跨章未就绪一律由这里表达 ——
+  /// 这是「占位页原地顶替、翻页动画不中断」得以成立的前提。
+  Widget _buildChapterBridge(BuildContext context, int chapter) {
+    final isCurrent = chapter == _currentChapterIndex;
+    // 失败态只对当前章有意义：相邻章的抓取失败在真正切过去时才会被记录
+    final error = isCurrent ? _contentError : null;
+
+    return ReaderChapterBridge(
+      chapterTitle: (chapter >= 0 && chapter < _chapters.length)
+          ? _chapters[chapter].title
+          : '',
+      readerTheme: _readerTheme,
+      isReady: _isChapterContentAvailable(chapter),
+      heading: error != null
+          ? '本章正文加载失败'
+          : isCurrent
+          ? '正在加载本章'
+          : (chapter < _currentChapterIndex ? '正在加载上一章' : '正在进入下一章'),
+      readyHint: '正文已就绪，即将无缝续读',
+      loadingHint: '正在加载正文...',
+      errorMessage: error,
+      onRetry: error != null
+          ? () => _loadChapterContent(chapter, forceReload: true)
+          : null,
+    );
   }
 
   Widget _buildHorizontalPageView() {
-    return ReaderHorizontalPageView(
-      bookTitle: widget.bookTitle,
-      windowChapters: _horizontalWindow,
-      windowSlices: _chapterSlices,
-      chapterTitleOf: (i) =>
-          (i >= 0 && i < _chapters.length) ? _chapters[i].title : '',
-      chapterCount: _chapters.length,
-      currentChapterIndex: _currentChapterIndex,
-      currentPageIndex: _currentPageIndex,
-      pageController: _pageController,
-      readerTheme: _readerTheme,
-      bodyTextStyle: TextStyle(
-        fontSize: _fontSize,
-        height: _lineHeight,
-        color: _readerTheme.text,
-        letterSpacing: 0.5,
+    // 拖拽态由 PageView 的滚动通知驱动：跨章落地必须等手势结束（见 [_onHorizontalScrollEnd]）
+    return NotificationListener<ScrollNotification>(
+      onNotification: (notification) {
+        // 只认横向主滚动，避免把外层其它可滚动组件的通知当成本页翻页
+        if (notification.metrics.axis != Axis.horizontal) return false;
+        if (notification is ScrollStartNotification) {
+          _onHorizontalScrollStart();
+        } else if (notification is ScrollEndNotification) {
+          _onHorizontalScrollEnd();
+        }
+        return false;
+      },
+      child: ReaderHorizontalPageView(
+        bookTitle: widget.bookTitle,
+        windowChapters: _horizontalWindow,
+        windowSlices: _chapterSlices,
+        chapterTitleOf: (i) =>
+            (i >= 0 && i < _chapters.length) ? _chapters[i].title : '',
+        chapterCount: _chapters.length,
+        currentChapterIndex: _currentChapterIndex,
+        currentPageIndex: _currentPageIndex,
+        pageController: _pageController,
+        readerTheme: _readerTheme,
+        bodyTextStyle: TextStyle(
+          fontSize: _fontSize,
+          height: _lineHeight,
+          color: _readerTheme.text,
+          letterSpacing: 0.5,
+        ),
+        onViewportResolved: _onViewportResolved,
+        onPageChanged: _onHorizontalPageChanged,
+        bridgeBuilder: _buildChapterBridge,
       ),
-      onViewportResolved: _onViewportResolved,
-      onPageChanged: _onHorizontalPageChanged,
     );
   }
 
@@ -1453,6 +1662,23 @@ class _NovelReaderPageState extends State<NovelReaderPage>
         failed: _verticalFailed,
         chapterCount: _chapters.length,
       ),
+      // 「加载失败」必须与「确实没有下一章」分开传：合并成一个 false
+      // 会把失败误报成「已是最后一章」（见 VerticalFlowEngine.failedBelow）
+      failedAbove: VerticalFlowEngine.failedAbove(
+        sequence: _verticalSequence,
+        failed: _verticalFailed,
+      ),
+      failedBelow: VerticalFlowEngine.failedBelow(
+        sequence: _verticalSequence,
+        failed: _verticalFailed,
+        chapterCount: _chapters.length,
+      ),
+      onRetryAbove: _retryPrependPrevChapter,
+      onRetryBelow: _retryAppendNextChapter,
+      // 当前章失败同样在块内重试（不再整屏切错误页）
+      currentFailed: _isContentErrorState,
+      onRetryCurrent: () =>
+          _loadChapterContent(_currentChapterIndex, forceReload: true),
       onScrollEnd: _onVerticalScrollEnd,
     );
   }
@@ -1463,7 +1689,8 @@ class _NovelReaderPageState extends State<NovelReaderPage>
       bookTitle: widget.bookTitle,
       readerTheme: _readerTheme,
       onBack: () => Navigator.maybePop(context),
-      onRefresh: () => _loadChapterContent(_currentChapterIndex, forceReload: true),
+      onRefresh: () =>
+          _loadChapterContent(_currentChapterIndex, forceReload: true),
       onOpenCatalog: _showCatalogDrawer,
     );
   }
@@ -1516,7 +1743,8 @@ class _NovelReaderPageState extends State<NovelReaderPage>
         _applyTypographyChange(() => _fontSize += 1);
         ReaderPreferences.saveFontSize(_fontSize);
       },
-      onLineHeightChangeStart: () => _typographyAnchorOffset = _currentCharOffset,
+      onLineHeightChangeStart: () =>
+          _typographyAnchorOffset = _currentCharOffset,
       onLineHeightChanged: (val) {
         setState(() {
           _lineHeight = val;
@@ -1535,16 +1763,16 @@ class _NovelReaderPageState extends State<NovelReaderPage>
 
   /// 当前章在目录中的显示行号（倒序时镜像翻转）
   int get _catalogDisplayIndex => CatalogNavigator.displayIndex(
-        chapterIndex: _currentChapterIndex,
-        chapterCount: _chapters.length,
-        reversed: _isCatalogReversed,
-      );
+    chapterIndex: _currentChapterIndex,
+    chapterCount: _chapters.length,
+    reversed: _isCatalogReversed,
+  );
 
   /// 按当前章计算目录应停靠的滚动偏移
   double _catalogOffsetForCurrentChapter() => CatalogNavigator.offsetFor(
-        displayIndex: _catalogDisplayIndex,
-        chapterCount: _chapters.length,
-      );
+    displayIndex: _catalogDisplayIndex,
+    chapterCount: _chapters.length,
+  );
 
   /// 打开章节目录（左侧抽屉）
   ///
@@ -1552,7 +1780,9 @@ class _NovelReaderPageState extends State<NovelReaderPage>
   void _showCatalogDrawer() {
     final double targetOffset = _catalogOffsetForCurrentChapter();
     _catalogScrollController?.dispose();
-    _catalogScrollController = ScrollController(initialScrollOffset: targetOffset);
+    _catalogScrollController = ScrollController(
+      initialScrollOffset: targetOffset,
+    );
     setState(() {});
 
     _scaffoldKey.currentState?.openDrawer();
@@ -1568,8 +1798,10 @@ class _NovelReaderPageState extends State<NovelReaderPage>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final controller = _catalogScrollController;
       if (!mounted || controller == null || !controller.hasClients) return;
-      final target = _catalogOffsetForCurrentChapter()
-          .clamp(0.0, controller.position.maxScrollExtent);
+      final target = _catalogOffsetForCurrentChapter().clamp(
+        0.0,
+        controller.position.maxScrollExtent,
+      );
       controller.jumpTo(target);
     });
   }

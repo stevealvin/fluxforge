@@ -76,6 +76,33 @@ class VerticalFlowEngine {
     return !failed.contains(last + 1);
   }
 
+  /// 下方那一章是否已处于「加载失败熔断」状态
+  ///
+  /// 必须与 [hasMoreBelow] 分开判断：后者把「加载失败」与「确实没有下一章」
+  /// 都归为 `false`，视图单看它无法区分两者 —— 结果就是**把加载失败误报成
+  /// 「— 已是最后一章 —」**，让用户以为书读完了。宿主据此显示重试入口。
+  static bool failedBelow({
+    required List<int> sequence,
+    required Set<int> failed,
+    required int chapterCount,
+  }) {
+    if (sequence.isEmpty) return false;
+    final next = sequence.last + 1;
+    if (next >= chapterCount) return false;
+    return failed.contains(next);
+  }
+
+  /// 上方那一章是否已处于「加载失败熔断」状态（长卷顶部据此显示重试入口）
+  static bool failedAbove({
+    required List<int> sequence,
+    required Set<int> failed,
+  }) {
+    if (sequence.isEmpty) return false;
+    final prev = sequence.first - 1;
+    if (prev < 0) return false;
+    return failed.contains(prev);
+  }
+
   // 注：原 `compensateOffsetAfterPrepend`（前插后按实测高度补偿偏移）已删除。
   // 长卷改为 `CustomScrollView.center` 锚点结构后，向上方向的坐标独立于锚点，
   // 前插内容不会移动既有内容的布局坐标，因此**不再需要任何偏移补偿** ——

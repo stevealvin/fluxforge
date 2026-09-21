@@ -225,6 +225,78 @@ void main() {
     });
   });
 
+  group('failedBelow / failedAbove 熔断可见性', () {
+    test('下方熔断：必须能把「加载失败」与「确实没有下一章」分开', () {
+      const sequence = [10];
+      // 同一个 hasMore=false，两种成因必须可分辨 —— 否则视图会把加载失败
+      // 误报成「— 已是最后一章 —」
+      expect(
+        VerticalFlowEngine.hasMoreBelow(
+          sequence: sequence,
+          failed: const {11},
+          chapterCount: 20,
+        ),
+        isFalse,
+      );
+      expect(
+        VerticalFlowEngine.failedBelow(
+          sequence: sequence,
+          failed: const {11},
+          chapterCount: 20,
+        ),
+        isTrue,
+      );
+      // 已到末章：hasMore 同样是 false，但那不是失败
+      expect(
+        VerticalFlowEngine.failedBelow(
+          sequence: const [19],
+          failed: const {},
+          chapterCount: 20,
+        ),
+        isFalse,
+      );
+    });
+
+    test('下方熔断：已到末章或序列为空时一律 false', () {
+      expect(
+        VerticalFlowEngine.failedBelow(
+          sequence: const [19],
+          failed: const {20},
+          chapterCount: 20,
+        ),
+        isFalse,
+      );
+      expect(
+        VerticalFlowEngine.failedBelow(
+          sequence: const [],
+          failed: const {0},
+          chapterCount: 20,
+        ),
+        isFalse,
+      );
+    });
+
+    test('上方熔断：首章之前、未熔断、空序列均 false', () {
+      expect(
+        VerticalFlowEngine.failedAbove(sequence: const [10], failed: const {9}),
+        isTrue,
+      );
+      // 已在首章：上方没有章节，failed 里就算有 -1 也不算
+      expect(
+        VerticalFlowEngine.failedAbove(sequence: const [0], failed: const {-1}),
+        isFalse,
+      );
+      expect(
+        VerticalFlowEngine.failedAbove(sequence: const [10], failed: const {}),
+        isFalse,
+      );
+      expect(
+        VerticalFlowEngine.failedAbove(sequence: const [], failed: const {0}),
+        isFalse,
+      );
+    });
+  });
+
   // 注：`compensateOffsetAfterPrepend` 的 5 条测试已随方法一并删除 ——
   // 长卷改用 `CustomScrollView.center` 锚点后不再需要偏移补偿。
 

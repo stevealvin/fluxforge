@@ -1,12 +1,12 @@
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fluxforge/features/media/novel/reader/engines/horizontal_window.dart';
 import 'package:fluxforge/features/media/novel/reader/models/reader_theme.dart';
-import 'package:fluxforge/features/media/novel/reader/widgets/reader_chapter_bridge.dart';
 
 /// 横向翻页视图（滑窗跨章连续渲染）
 ///
 /// 渲染 `[上一章, 当前章, 下一章]` 的扁平页序列，跨章翻页动画与章内完全一致；
-/// 未就绪章占一页加载占位（[ReaderChapterBridge]），就绪后自动顶替。
+/// 未就绪章占一页占位页（由上层 [bridgeBuilder] 提供），就绪后自动顶替。
 /// 纯展示组件：切片与窗口由上层提供，实测视口上抛驱动 TextPainter 分页。
 class ReaderHorizontalPageView extends StatelessWidget {
   const ReaderHorizontalPageView({
@@ -21,6 +21,7 @@ class ReaderHorizontalPageView extends StatelessWidget {
     required this.pageController,
     required this.readerTheme,
     required this.bodyTextStyle,
+    required this.bridgeBuilder,
     required this.onViewportResolved,
     required this.onPageChanged,
   });
@@ -51,24 +52,23 @@ class ReaderHorizontalPageView extends StatelessWidget {
   /// 正文排版样式（字号 / 行距 / 字色 / 字距）
   final TextStyle bodyTextStyle;
 
+  /// 未就绪章的占位页构建器
+  ///
+  /// 该章是「加载中 / 已就绪待分片 / 加载失败」只有上层知道（视图不掌握加载状态，
+  /// 也不应猜测原因），故占位页整体由上层构建。
+  final Widget Function(BuildContext context, int chapter) bridgeBuilder;
+
   /// 物理视口实测完成（上层据此判断是否需要重算分页）
   final void Function(double width, double height) onViewportResolved;
 
   /// `PageView` 原始扁平页码变化（语义反解交由上层）
   final ValueChanged<int> onPageChanged;
 
-  /// 窗口内某章的渲染页数：未就绪章恒占 1 页（加载占位）
-  int _pageCountOf(int chapter) {
-    final slices = windowSlices[chapter];
-    return (slices != null && slices.isNotEmpty) ? slices.length : 1;
-  }
-
   @override
   Widget build(BuildContext context) {
-    final totalCount = windowChapters.fold(
-      0,
-      (sum, chapter) => sum + _pageCountOf(chapter),
-    );
+    // 总页数统一走引擎：与页面侧「扁平索引 → (章, 页)」反解同源，
+    // 避免「未分片章占 1 页」的规则在此处再写一遍（口径漂移会让翻页落点错位）
+    final totalCount = HorizontalWindow.totalPages(windowChapters, windowSlices);
 
     return Column(
       children: [
@@ -130,47 +130,35 @@ class ReaderHorizontalPageView extends StatelessWidget {
                   itemCount: totalCount,
                   onPageChanged: onPageChanged,
                   itemBuilder: (context, index) {
-                    var remaining = index;
-                    for (final chapter in windowChapters) {
-                      final slices = windowSlices[chapter];
-                      final count = (slices != null && slices.isNotEmpty)
-                          ? slices.length
-                          : 1;
-                      if (remaining >= count) {
-                        remaining -= count;
-                        continue;
-                      }
+                    // 扁平索引 → (章, 章内页) 与页面侧同源（见 [HorizontalWindow]）
+                    final (chapter, pageInChapter) = HorizontalWindow.resolveFlat(
+                      windowChapters,
+                      windowSlices,
+                      index,
+                    );
+                    final slices = windowSlices[chapter];
 
-                      // 未就绪章：渲染加载占位页（就绪后由上层补切片自动顶替）
-                      if (slices == null || slices.isEmpty) {
-                        return ReaderChapterBridge(
-                          key: ValueKey('bridge_$chapter'),
-                          chapterTitle: chapterTitleOf(chapter),
-                          readerTheme: readerTheme,
-                          isReady: false,
-                          heading: chapter < currentChapterIndex
-                              ? '正在加载上一章'
-                              : '正在进入下一章',
-                          readyHint: '正文已就绪，即将无缝续读',
-                          loadingHint: '正在加载正文...',
-                        );
-                      }
-
-                      return Padding(
-                        key: ValueKey('chapter_${chapter}_page_$remaining'),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 20,
-                          vertical: 8,
-                        ),
-                        // 单击手势统一由上层的三区点击热层接管；
-                        // 长按划词与跨页选择由外层 SelectionArea 统一提供
-                        child: Text(
-                          slices[remaining],
-                          style: bodyTextStyle,
-                        ),
+                    // 未就绪章：渲染上层提供的占位页（就绪后由上层补切片自动原地顶替）
+                    if (slices == null || slices.isEmpty) {
+                      return KeyedSubtree(
+                        key: ValueKey('bridge_$chapter'),
+                        child: bridgeBuilder(context, chapter),
                       );
                     }
-                    return const SizedBox.shrink();
+
+                    return Padding(
+                      key: ValueKey('chapter_${chapter}_page_$pageInChapter'),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 8,
+                      ),
+                      // 单击手势统一由上层的三区点击热层接管；
+                      // 长按划词与跨页选择由外层 SelectionArea 统一提供
+                      child: Text(
+                        slices[pageInChapter],
+                        style: bodyTextStyle,
+                      ),
+                    );
                   },
                 ),
               );

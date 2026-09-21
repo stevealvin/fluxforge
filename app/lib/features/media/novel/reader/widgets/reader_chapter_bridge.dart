@@ -4,12 +4,18 @@ import 'package:ionicons/ionicons.dart';
 import 'package:fluxforge/app/theme/app_colors.dart';
 import 'package:fluxforge/features/media/novel/reader/models/reader_theme.dart';
 
-/// 章首 / 章末衔接页
+/// 章首 / 章末衔接页（横向滑窗内「尚未分片」的章在此占位）
 ///
-/// 横向分页模式滑到本章边界时展示的过渡页，随后自动切换到上一章 / 下一章。
+/// 横向模式**不再用全屏加载 / 错误视图顶掉 `PageView`**：跨章未就绪一律由本页
+/// 在原地表达，正文就绪后由上层补切片原地顶替。整屏替换会销毁 `PageView`、
+/// 丢失翻页动画与控制器位置，表现为「翻到下一章直接跳过去」。
 ///
-/// 关键体验约定：**正文已就绪时不再渲染转圈动画**（改用对勾图标），
-/// 否则会出现「明明已缓存却仍在加载」的错觉。
+/// 三种形态：
+/// - **加载中**：转圈 + [loadingHint]；
+/// - **已就绪**（正文在内存 / 沙盒，只差分片）：对勾 + [readyHint] ——
+///   避免「明明已缓存却仍在加载」的错觉；
+/// - **失败**：[errorMessage] 非空时展示失败说明与 [onRetry] 重试入口，
+///   否则该章会永远转圈。
 class ReaderChapterBridge extends StatelessWidget {
   const ReaderChapterBridge({
     super.key,
@@ -19,6 +25,8 @@ class ReaderChapterBridge extends StatelessWidget {
     required this.heading,
     required this.readyHint,
     required this.loadingHint,
+    this.errorMessage,
+    this.onRetry,
   });
 
   /// 目标章节标题
@@ -37,6 +45,14 @@ class ReaderChapterBridge extends StatelessWidget {
   final String readyHint;
   final String loadingHint;
 
+  /// 加载失败原因；非空时进入失败形态（展示重试入口）
+  final String? errorMessage;
+
+  /// 失败形态下的重试回调
+  final VoidCallback? onRetry;
+
+  bool get _hasError => errorMessage != null;
+
   @override
   Widget build(BuildContext context) {
     return Padding(
@@ -44,13 +60,16 @@ class ReaderChapterBridge extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          isReady
-              ? const Icon(Ionicons.checkmarkCircle, size: 26, color: AppColors.primary)
-              : const SizedBox(
-                  width: 26,
-                  height: 26,
-                  child: CircularProgressIndicator(strokeWidth: 2.4, color: AppColors.primary),
-                ),
+          if (_hasError)
+            Icon(Ionicons.alertCircleOutline, size: 26, color: readerTheme.subText)
+          else if (isReady)
+            const Icon(Ionicons.checkmarkCircle, size: 26, color: AppColors.primary)
+          else
+            const SizedBox(
+              width: 26,
+              height: 26,
+              child: CircularProgressIndicator(strokeWidth: 2.4, color: AppColors.primary),
+            ),
           const SizedBox(height: 18),
           Text(
             heading,
@@ -70,9 +89,26 @@ class ReaderChapterBridge extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           Text(
-            isReady ? readyHint : loadingHint,
+            _hasError ? errorMessage! : (isReady ? readyHint : loadingHint),
+            textAlign: TextAlign.center,
+            maxLines: 3,
+            overflow: TextOverflow.ellipsis,
             style: TextStyle(fontSize: 11, color: readerTheme.subText),
           ),
+          if (_hasError && onRetry != null) ...[
+            const SizedBox(height: 14),
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+              onPressed: onRetry,
+              icon: const Icon(Ionicons.refreshOutline, size: 14),
+              label: const Text('重新加载本章'),
+            ),
+          ],
         ],
       ),
     );

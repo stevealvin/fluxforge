@@ -62,22 +62,81 @@ void main() {
       expect(short, greaterThan(medium));
     });
 
-    test('每页高度不超过可用高度（段落吸附最多容忍一行误差）', () {
+    test('每页可见正文都不超过可用高度（溢出的只可能是末尾空白行）', () {
       final text = List.generate(80, (i) => '第 $i 行内容，用于校验单页高度约束。').join('\n');
       const maxHeight = 200.0;
       // fontSize 16 * height 1.5 = 24
       const oneLineHeight = 24.0;
 
-      for (final page in slice(text, height: maxHeight)) {
-        final painter = TextPainter(
-          text: TextSpan(text: page, style: style),
-          textDirection: TextDirection.ltr,
-        )..layout(maxWidth: 320);
+      double measuredHeight(String content) => (TextPainter(
+            text: TextSpan(text: content, style: style),
+            textDirection: TextDirection.ltr,
+          )..layout(maxWidth: 320))
+              .height;
 
-        // 说明：二分查找保证切分点本身不溢出；随后若命中「段落自然吸附」
-        // （断点恰好是换行符时会在其后多带 1 个字符），可能多出至多一行高度。
-        expect(painter.height, lessThanOrEqualTo(maxHeight + oneLineHeight));
+      for (final page in slice(text, height: maxHeight)) {
+        final fullHeight = measuredHeight(page);
+
+        // 断言 1（真正的不变量）：去掉末尾换行后必须完全放得下 ——
+        // 溢出永远只发生在「末尾空白行」上，可见正文一行都不会被挤出可视区。
+        // 可证明：二分查找保证切分点自身不超限，段落自然吸附只会把切分点**前移**，
+        // 故页内正文恒 ≤ maxHeight；换行符落在页尾时 TextPainter 多算的那一行是空行。
+        final visibleHeight = page.endsWith('\n')
+            ? measuredHeight(page.substring(0, page.length - 1))
+            : fullHeight;
+        expect(visibleHeight, lessThanOrEqualTo(maxHeight));
+
+        // 断言 2：整页高度至多多一行，且这一行只可能是末尾空白
+        expect(fullHeight, lessThanOrEqualTo(maxHeight + oneLineHeight));
+        if (fullHeight > maxHeight) {
+          expect(page.endsWith('\n'), isTrue,
+              reason: '超限页必须以换行结尾（末尾空白行），不得是正文被挤出');
+        }
       }
+    });
+  });
+
+  group('PaginationEngine.needsRepaginate', () {
+    bool need({
+      double currentWidth = 320,
+      double currentHeight = 240,
+      double nextWidth = 320,
+      double nextHeight = 240,
+      int pageCount = 5,
+      bool wholeContent = false,
+      int contentLength = 1000,
+    }) =>
+        PaginationEngine.needsRepaginate(
+          currentWidth: currentWidth,
+          currentHeight: currentHeight,
+          nextWidth: nextWidth,
+          nextHeight: nextHeight,
+          pageCount: pageCount,
+          firstPageIsWholeContent: wholeContent,
+          contentLength: contentLength,
+        );
+
+    test('视口尺寸变化必须重排（首次渲染 / 横竖屏旋转 / 分屏）', () {
+      expect(need(nextWidth: 400), isTrue);
+      expect(need(nextHeight: 300), isTrue);
+      // 亚像素抖动不触发（实测视口尺寸存在浮点误差）
+      expect(need(nextWidth: 320.5), isFalse);
+    });
+
+    test('尚无任何分页时必须重排', () {
+      expect(need(pageCount: 0), isTrue);
+    });
+
+    test('「单页即全文」的兜底结果：长文重排，短文保持', () {
+      // 尚未测量尺寸时产生的兜底单页 → 长文必须重切
+      expect(need(pageCount: 1, wholeContent: true, contentLength: 800), isTrue);
+      // 短文本本就只有一页，重排没有意义
+      expect(need(pageCount: 1, wholeContent: true, contentLength: 200), isFalse);
+    });
+
+    test('已正常分页且尺寸未变时不重排', () {
+      expect(need(pageCount: 5), isFalse);
+      expect(need(pageCount: 1, wholeContent: false), isFalse);
     });
   });
 }
