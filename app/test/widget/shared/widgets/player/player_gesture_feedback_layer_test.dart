@@ -9,6 +9,9 @@ import 'package:fluxforge/shared/widgets/player/player_gesture_feedback_layer.da
 ///
 /// 这组行为此前**完全没有测试**（`aura_player_test.dart` 只覆盖错误路径与 active 切换），
 /// 而它正是「状态下沉」重构的对照基准：浮层出现、自动消失、每次更新重新计时、三态图标。
+///
+/// 亮度与音量已改为作用于真实设备（`screen_brightness` / `volume_controller`），
+/// 浮层只保留数值反馈，故断言对象是胶囊数值而非此前的变暗遮罩。
 void main() {
   Future<GlobalKey<PlayerGestureFeedbackLayerState>> buildLayer(
     WidgetTester tester, {
@@ -25,16 +28,6 @@ void main() {
     return key;
   }
 
-  /// 变暗遮罩：唯一带半透明黑色的 Container（透明度 = (1 - 亮度) * 0.75）
-  Color? dimOverlayColor(WidgetTester tester) {
-    final containers = tester.widgetList<Container>(find.byType(Container));
-    for (final c in containers) {
-      final color = c.color;
-      if (color != null && color.a > 0 && color.a < 1) return color;
-    }
-    return null;
-  }
-
   testWidgets('初始不显示任何浮层', (WidgetTester tester) async {
     await buildLayer(tester);
     await tester.pump();
@@ -42,7 +35,7 @@ void main() {
     expect(find.byType(PlayerVerticalIndicatorCapsule), findsNothing);
   });
 
-  testWidgets('显示亮度：胶囊出现、变暗遮罩按亮度压暗', (WidgetTester tester) async {
+  testWidgets('显示亮度：胶囊出现且数值与推送一致', (WidgetTester tester) async {
     final key = await buildLayer(tester);
     await tester.pump();
 
@@ -51,8 +44,16 @@ void main() {
 
     expect(find.byType(PlayerVerticalIndicatorCapsule), findsOneWidget);
     expect(find.byIcon(Ionicons.sunnyOutline), findsOneWidget);
-    // (1 - 0.5) * 0.75 = 0.375
-    expect(dimOverlayColor(tester)?.a, closeTo(0.375, 0.01));
+    // 亮度已改为作用于真实屏幕背光（screen_brightness），浮层不再压暗画面，
+    // 因此直接断言胶囊数值
+    expect(
+      tester
+          .widget<PlayerVerticalIndicatorCapsule>(
+            find.byType(PlayerVerticalIndicatorCapsule),
+          )
+          .value,
+      closeTo(0.5, 0.001),
+    );
   });
 
   testWidgets('1 秒后自动消失（未到点仍在）', (WidgetTester tester) async {

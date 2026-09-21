@@ -63,6 +63,10 @@ dependencies:
   # 持久化存储
   shared_preferences: ^2.5.5
   video_player: ^2.14.0
+  # 播放器手势：屏幕亮度（应用级，零权限，随应用生命周期自动重置）
+  screen_brightness: ^2.1.11
+  # 播放器手势：系统音量读写
+  volume_controller: ^3.7.1
   # 视频离线下载：调用 FFmpeg 完成 HLS 分片拉取 / 解密 / 合并 / MP4 封装
   # 注意：主包为 Full+GPL 变体，README 标注实际等效 GPL v3.0（含 x264/x265 等），
   # 若需规避 GPL 传染性，可换成 ffmpeg_kit_flutter_new_https 等子包并同步调整 import。

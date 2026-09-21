@@ -7,12 +7,13 @@ import 'package:fluxforge/shared/widgets/player/player_capsules.dart';
 
 /// 手势浮层：亮度 / 音量的数值反馈层（**自带状态**）
 ///
-/// 原先这组状态（两个值 + 两个可见性 + 两个定时器 + 变暗遮罩）散在
+/// 原先这组状态（两个值 + 两个可见性 + 两个定时器）散在
 /// `AuraPlayerState` 里，浮层每次显隐都要 `setState` 重建整棵播放器树。
 /// 这里整组收拢，并把职责切成两半：
 ///
-/// - **宿主保留**「改变外部世界」的那半：把音量写进播放器控制器、持久化偏好；
-/// - **本层负责**「显示什么」：数值、可见性、定时自动隐藏、变暗遮罩、三态音量图标。
+/// - **宿主保留**「改变外部世界」的那半：把亮度 / 音量写进真实设备
+///   （`screen_brightness` / `volume_controller`）；
+/// - **本层负责**「显示什么」：数值、可见性、定时自动隐藏、三态音量图标。
 ///
 /// 调用方通过 `GlobalKey<PlayerGestureFeedbackLayerState>` 推入数值
 /// （[showBrightness] / [showVolume]），因此**拖动的逐帧更新既不触发本层的整树重建，
@@ -94,17 +95,8 @@ class PlayerGestureFeedbackLayerState extends State<PlayerGestureFeedbackLayer> 
     return Stack(
       fit: StackFit.expand,
       children: [
-        // 1. 应用内微调暗度遮罩（无权限亮度调节：按当前亮度压暗画面）
-        IgnorePointer(
-          child: ValueListenableBuilder<int>(
-            valueListenable: _tick,
-            builder: (context, _, _) => Container(
-              color: Colors.black.withValues(alpha: (1.0 - _brightness) * 0.75),
-            ),
-          ),
-        ),
-
-        // 2. 左侧亮度胶囊（全屏下避让左侧控制区）
+        // 1. 左侧亮度胶囊（全屏下避让左侧控制区）
+        //    亮度本身由宿主写入真实屏幕背光，这里只做数值反馈
         if (_showBrightness)
           ValueListenableBuilder<int>(
             valueListenable: _tick,
@@ -116,7 +108,7 @@ class PlayerGestureFeedbackLayerState extends State<PlayerGestureFeedbackLayer> 
             ),
           ),
 
-        // 3. 右侧音量胶囊（静音 / 低音量 / 高音量三态图标）
+        // 2. 右侧音量胶囊（静音 / 低音量 / 高音量三态图标）
         if (_showVolume)
           ValueListenableBuilder<int>(
             valueListenable: _tick,

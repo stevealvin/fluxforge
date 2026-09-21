@@ -2,7 +2,9 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
+import 'package:screen_brightness/screen_brightness.dart';
 import 'package:video_player/video_player.dart';
+import 'package:volume_controller/volume_controller.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 import 'package:fluxforge/shared/widgets/player/player_capsules.dart';
@@ -160,12 +162,19 @@ class AuraPlayerState extends State<AuraPlayer>
 
   // 应用内免权限音量调节 (0.0 ~ 1.0)
   //
-  // 数值与其**显示**已分离：这里只保留「设备效果」的权威值（写进控制器），
-  // 浮层外观（胶囊 / 变暗遮罩 / 定时隐藏）由 PlayerGestureFeedbackLayer 自己持有。
+  // 数值与其**显示**已分离：这里只保留作用于「真实设备」的权威值，
+  // 胶囊反馈（可见性 / 定时隐藏）由 PlayerGestureFeedbackLayer 自己持有。
+
+  /// 系统音量（0.0 ~ 1.0）——经 `volume_controller` 直接作用于系统音量，
+  /// 不再使用播放器实例音量（否则会与系统音量形成两个互相打架的音量维度）
   double _volume = 1.0;
 
-  // 应用内无侵入遮罩亮度调节 (0.0 最暗 ~ 1.0 最亮，遮罩由浮层按该值压暗)
+  /// 屏幕亮度（0.0 ~ 1.0）——经 `screen_brightness` 作用于**应用级真实屏幕背光**
+  /// （零权限，随应用生命周期自动重置；不再使用黑色遮罩压暗）
   double _brightness = 1.0;
+
+  /// 用户是否已用手势调整过亮度：未调整过时不在生命周期回调里写回，避免无谓改屏
+  bool _brightnessAdjusted = false;
 
   // 水平快进/快退手势
   bool _isSeeking = false;
@@ -282,7 +291,6 @@ class AuraPlayerState extends State<AuraPlayer>
     if (widget.controller != null) {
       _controller = widget.controller;
       _isInitialized = _controller!.value.isInitialized;
-      _volume = _controller!.value.volume;
       _controller!.addListener(_onControllerUpdate);
       // 休眠实例（宿主被全屏遮挡期间）不申请屏幕常亮，由全屏实例接管
       if (widget.active && _controller!.value.isPlaying) {
@@ -294,6 +302,64 @@ class AuraPlayerState extends State<AuraPlayer>
     }
 
     _syncShimmerTicker();
+    // 以当前系统音量 / 屏幕亮度作为手势起点，并关闭系统音量 UI（播放器自带胶囊反馈）
+    unawaited(_syncSystemFeedbackState());
+  }
+
+  /// 读取当前系统音量与屏幕亮度作为手势起点
+  ///
+  /// 每次唤醒（退出全屏回到本实例）也会调用：休眠期间用户可能在另一实例上调整过，
+  /// 重新读取可保证两个实例的起点一致，不会出现「退出全屏后音量跳回旧值」。
+  Future<void> _syncSystemFeedbackState() async {
+    try {
+      // 手势滑动时由播放器自己的胶囊反馈，关闭系统音量 UI 避免双重提示
+      VolumeController.instance.showSystemUI = false;
+    } catch (e) {
+      debugPrint('[AuraPlayer] 关闭系统音量 UI 失败: $e');
+    }
+
+    try {
+      final volume = await VolumeController.instance.getVolume();
+      if (!mounted) return;
+      _volume = volume.clamp(0.0, 1.0);
+    } catch (e) {
+      debugPrint('[AuraPlayer] 读取系统音量失败: $e');
+    }
+
+    try {
+      // 应用亮度未设置过时返回负值，此时以系统亮度作为起点
+      var brightness = await ScreenBrightness.instance.application;
+      if (brightness < 0) brightness = await ScreenBrightness.instance.system;
+      if (!mounted) return;
+      _brightness = brightness.clamp(0.0, 1.0);
+    } catch (e) {
+      debugPrint('[AuraPlayer] 读取屏幕亮度失败: $e');
+    }
+  }
+
+  /// 写入应用级屏幕亮度（失败仅记日志，不影响手势与胶囊反馈）
+  void _applyScreenBrightness(double value) {
+    ScreenBrightness.instance
+        .setApplicationScreenBrightness(value)
+        .catchError((Object e) {
+      debugPrint('[AuraPlayer] 设置屏幕亮度失败: $e');
+    });
+  }
+
+  /// 归还屏幕亮度给系统（退出播放器 / 组件销毁时）
+  void _resetScreenBrightness() {
+    ScreenBrightness.instance
+        .resetApplicationScreenBrightness()
+        .catchError((Object e) {
+      debugPrint('[AuraPlayer] 重置屏幕亮度失败: $e');
+    });
+  }
+
+  /// 写入系统音量（失败仅记日志）
+  void _applySystemVolume(double value) {
+    VolumeController.instance.setVolume(value).catchError((Object e) {
+      debugPrint('[AuraPlayer] 设置系统音量失败: $e');
+    });
   }
 
   /// 按当前缓冲状态启停扫光动画
@@ -342,6 +408,8 @@ class AuraPlayerState extends State<AuraPlayer>
       return;
     }
     _syncShimmerTicker();
+    // 休眠期间用户可能在另一实例上调过音量 / 亮度，唤醒时重新同步起点
+    unawaited(_syncSystemFeedbackState());
     final value = _controller?.value;
     _updateWakelock(
       value != null && value.isInitialized && value.isPlaying && !value.hasError,
@@ -365,6 +433,8 @@ class AuraPlayerState extends State<AuraPlayer>
       if (value != null && value.isInitialized && value.isPlaying && !value.hasError) {
         _updateWakelock(true);
       }
+      // 应用亮度会随应用生命周期重置，回到前台补写回用户调整过的值
+      if (_brightnessAdjusted) _applyScreenBrightness(_brightness);
     }
   }
 
@@ -388,7 +458,10 @@ class AuraPlayerState extends State<AuraPlayer>
     }
 
     _controller?.removeListener(_onControllerUpdate);
-    
+
+    // 退出播放器时归还屏幕亮度（应用亮度虽会随应用生命周期重置，主动恢复更即时）
+    if (_brightnessAdjusted) _resetScreenBrightness();
+
     // 仅当控制器是由本组件创建时才执行销毁，全屏模式下不销毁主页面控制器
     if (widget.controller == null) {
       _controller?.dispose();
@@ -457,7 +530,7 @@ class AuraPlayerState extends State<AuraPlayer>
       if (!mounted || !identical(controller, _controller)) return;
 
       controller.addListener(_onControllerUpdate);
-      controller.setVolume(_volume);
+      // 不再设置播放器实例音量：音量统一交由系统音量控制，避免两个音量维度互相打架
       controller.setPlaybackSpeed(_normalSpeed);
       controller.play();
 
@@ -642,7 +715,6 @@ class AuraPlayerState extends State<AuraPlayer>
         if (!mounted) return;
         setState(() {
           _isFullScreen = false;
-          _volume = _controller?.value.volume ?? _volume;
         });
         _startControlsTimer();
         _updateWakelock(_controller?.value.isPlaying ?? false);
@@ -822,6 +894,9 @@ class AuraPlayerState extends State<AuraPlayer>
             min: 0.15,
             max: 1.0,
           );
+          _brightnessAdjusted = true;
+          // 直接作用于真实屏幕背光（应用级，零权限）
+          _applyScreenBrightness(_brightness);
           // 显示交给浮层：首次出现只在浮层内建树，逐帧只递增它的心跳，
           // 本页不再为此 setState（原先浮层每次显隐都会重建整棵播放器树）
           _feedbackKey.currentState?.showBrightness(_brightness);
@@ -832,7 +907,8 @@ class AuraPlayerState extends State<AuraPlayer>
             min: 0.0,
             max: 1.0,
           );
-          _controller?.setVolume(_volume);
+          // 直接作用于系统音量
+          _applySystemVolume(_volume);
           _feedbackKey.currentState?.showVolume(_volume);
         }
       },
