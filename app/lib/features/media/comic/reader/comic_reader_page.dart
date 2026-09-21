@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:extended_image/extended_image.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:ionicons/ionicons.dart';
 
 import 'package:fluxforge/core/storage/app_storage.dart';
