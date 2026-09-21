@@ -25,14 +25,17 @@ npm run start         # 启动后端生产服务
 ```bash
 cd app
 flutter analyze                                        # 静态分析（CI 门禁第 1 关）
-dart run tool/guardrails/check_architecture.dart       # 架构门禁（CI 门禁第 2 关）
-dart run tool/guardrails/check_architecture.dart --update  # 重构后刷新存量白名单
-flutter test                                           # 单元 + 组件测试（CI 门禁第 3 关）
+flutter test                                           # 单元 + 组件测试（CI 门禁第 2 关）
 ```
 
-架构门禁三条硬性规则：`lib/domain/**` 零 Flutter 依赖、`lib/shared/**` 不得反向依赖
-`lib/features/**`、`lib/` 下 UI 文件不超过 300 行（存量债见 `app/tool/guardrails/baseline.txt`）。
-CI 工作流见 `.github/workflows/app-quality.yml`。
+架构约定（**人工遵守，无自动校验** —— 原 `app/tool/guardrails/` 门禁脚本已移除）：
+1. `lib/domain/**` 零 Flutter 依赖；
+2. `lib/shared/**` 不得反向依赖 `lib/features/**`；
+3. `lib/features/A/**` 不得依赖 `lib/features/B/**`（A ≠ B）。已确认存在的横向依赖：
+   `shell → {discover, profile, rules, sites}`、`profile → library`、`settings → browser`、
+   `library ↔ media`（双向，**待收敛**）。
+文件行数不作约束：该不该拆取决于是否存在**可抽象的职责**，不由数字驱动。
+CI 工作流见 `.github/workflows/app-quality.yml`（仅静态分析 + 测试两关）。
 
 ## Stack & toolchain
 
