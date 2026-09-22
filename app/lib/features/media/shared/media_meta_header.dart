@@ -113,14 +113,20 @@ class _MediaMetaHeaderState extends State<MediaMetaHeader> {
                 headers: widget.data.customHeaders,
                 // 封面尺寸固定 104×144 → 按 3x 屏降采样，避免按原图解码
                 cacheWidth: 312,
-                errorWidget: Icon(Ionicons.imageOutline,
-                  color: isDark ? AppColors.darkTextTertiary : AppColors.lightTextTertiary,
+                errorWidget: Icon(
+                  Ionicons.imageOutline,
+                  color: isDark
+                      ? AppColors.darkTextTertiary
+                      : AppColors.lightTextTertiary,
                   size: 28,
                 ),
               )
             : Center(
-                child: Icon(Ionicons.filmOutline,
-                  color: isDark ? AppColors.darkTextTertiary : AppColors.lightTextTertiary,
+                child: Icon(
+                  Ionicons.filmOutline,
+                  color: isDark
+                      ? AppColors.darkTextTertiary
+                      : AppColors.lightTextTertiary,
                   size: 32,
                 ),
               ),
@@ -151,9 +157,12 @@ class _MediaMetaHeaderState extends State<MediaMetaHeader> {
             ),
             if (widget.onShareTap != null)
               IconButton(
-                icon: Icon(Ionicons.shareSocialOutline,
+                icon: Icon(
+                  Ionicons.shareSocialOutline,
                   size: 18,
-                  color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
+                  color: isDark
+                      ? AppColors.darkTextSecondary
+                      : AppColors.lightTextSecondary,
                 ),
                 onPressed: widget.onShareTap,
                 padding: EdgeInsets.zero,
@@ -166,7 +175,8 @@ class _MediaMetaHeaderState extends State<MediaMetaHeader> {
         // 评分与规则来源标牌
         Row(
           children: [
-            if (widget.data.rating != null && widget.data.rating!.isNotEmpty) ...[
+            if (widget.data.rating != null &&
+                widget.data.rating!.isNotEmpty) ...[
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 decoration: BoxDecoration(
@@ -176,7 +186,11 @@ class _MediaMetaHeaderState extends State<MediaMetaHeader> {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.star_rounded, size: 13, color: Colors.amber),
+                    const Icon(
+                      Icons.star_rounded,
+                      size: 13,
+                      color: Colors.amber,
+                    ),
                     const SizedBox(width: 3),
                     Text(
                       widget.data.rating!,
@@ -193,9 +207,14 @@ class _MediaMetaHeaderState extends State<MediaMetaHeader> {
             ],
             if (widget.rule != null)
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 7,
+                  vertical: 2.5,
+                ),
                 decoration: BoxDecoration(
-                  color: AppColors.primary.withValues(alpha: isDark ? 0.2 : 0.12),
+                  color: AppColors.primary.withValues(
+                    alpha: isDark ? 0.2 : 0.12,
+                  ),
                   borderRadius: BorderRadius.circular(6),
                 ),
                 child: Text(
@@ -219,7 +238,9 @@ class _MediaMetaHeaderState extends State<MediaMetaHeader> {
             '作者/主演: ${widget.data.author}',
             style: TextStyle(
               fontSize: 12,
-              color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
+              color: isDark
+                  ? AppColors.darkTextSecondary
+                  : AppColors.lightTextSecondary,
             ),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
@@ -227,41 +248,47 @@ class _MediaMetaHeaderState extends State<MediaMetaHeader> {
         ],
 
         // 更新时间
-        if (widget.data.updateTime != null && widget.data.updateTime!.isNotEmpty) ...[
+        if (widget.data.updateTime != null &&
+            widget.data.updateTime!.isNotEmpty) ...[
           const SizedBox(height: 4),
           Text(
             '更新: ${widget.data.updateTime}',
             style: TextStyle(
               fontSize: 12,
-              color: isDark ? AppColors.darkTextTertiary : AppColors.lightTextTertiary,
+              color: isDark
+                  ? AppColors.darkTextTertiary
+                  : AppColors.lightTextTertiary,
             ),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
         ],
 
-        // 题材标签 Chips (使用实体卡片底色与微光边框)
+        // 题材标签 Chips (实体卡片底色，无描边)
         if (widget.data.tags.isNotEmpty) ...[
           const SizedBox(height: 8),
           Wrap(
             spacing: 6,
             runSpacing: 6,
-            children: widget.data.tags.take(widget.showCover ? 4 : 8).map((tag) {
+            children: widget.data.tags.take(widget.showCover ? 4 : 8).map((
+              tag,
+            ) {
               return Container(
-                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 7,
+                  vertical: 2.5,
+                ),
                 decoration: BoxDecoration(
                   color: isDark ? AppColors.darkCard : AppColors.lightSurface,
                   borderRadius: BorderRadius.circular(4),
-                  border: Border.all(
-                    color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
-                    width: 0.8,
-                  ),
                 ),
                 child: Text(
                   tag,
                   style: TextStyle(
                     fontSize: 10.5,
-                    color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
+                    color: isDark
+                        ? AppColors.darkTextSecondary
+                        : AppColors.lightTextSecondary,
                   ),
                 ),
               );
@@ -272,14 +299,14 @@ class _MediaMetaHeaderState extends State<MediaMetaHeader> {
     );
   }
 
-  /// 作品简介展开/折叠卡片 (采用 AppCard 实体底色与微光边框，彻底消除深色模式下透明发脏问题)
+  /// 作品简介展开/折叠卡片（实体底色，**无边框线**）
+  ///
+  /// 与视频详情页的简介区同风格（那里的注释写的就是"无多余边框大卡片"）。
   Widget _buildDescCard(bool isDark, String desc) {
     return AppCard(
       padding: const EdgeInsets.all(12),
       borderRadius: 12,
       color: isDark ? AppColors.darkCard : AppColors.lightSurface,
-      showBorder: true,
-      borderColor: isDark ? AppColors.darkBorder : AppColors.lightBorder,
       onTap: () {
         setState(() {
           _isDescExpanded = !_isDescExpanded;
@@ -307,7 +334,9 @@ class _MediaMetaHeaderState extends State<MediaMetaHeader> {
                 ),
               ),
               Icon(
-                _isDescExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
+                _isDescExpanded
+                    ? Icons.keyboard_arrow_up
+                    : Icons.keyboard_arrow_down,
                 size: 16,
                 color: AppColors.primary,
               ),
@@ -316,10 +345,7 @@ class _MediaMetaHeaderState extends State<MediaMetaHeader> {
           const SizedBox(height: 6),
           Text(
             desc,
-            style: const TextStyle(
-              fontSize: 12.5,
-              height: 1.5,
-            ),
+            style: const TextStyle(fontSize: 12.5, height: 1.5),
             maxLines: _isDescExpanded ? 100 : 3,
             overflow: TextOverflow.ellipsis,
           ),

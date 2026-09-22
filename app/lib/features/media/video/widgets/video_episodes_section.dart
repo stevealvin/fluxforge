@@ -54,7 +54,7 @@ class VideoEpisodesSection extends StatelessWidget {
       count,
       (i) => isReversed ? (count - 1 - i) : i,
     );
-        return Column(
+    return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // 1. 多播放线路切换栏 (若沙箱返回多个 group)
@@ -75,21 +75,27 @@ class VideoEpisodesSection extends StatelessWidget {
                     label: Text(g.name),
                     selected: isSelected,
                     selectedColor: AppColors.primary,
-                    backgroundColor: isDark ? AppColors.darkCard : AppColors.lightSurface,
+                    backgroundColor: isDark
+                        ? AppColors.darkCard
+                        : AppColors.lightSurface,
                     side: BorderSide(
                       color: isSelected
                           ? AppColors.primary
-                          : (isDark ? AppColors.darkBorder : AppColors.lightBorder),
+                          : (isDark
+                                ? AppColors.darkBorder
+                                : AppColors.lightBorder),
                       width: 0.8,
                     ),
                     labelStyle: TextStyle(
                       fontSize: 11.5,
-                      fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                      fontWeight: isSelected
+                          ? FontWeight.bold
+                          : FontWeight.normal,
                       color: isSelected
                           ? Colors.white
                           : (isDark
-                              ? AppColors.darkTextSecondary
-                              : AppColors.lightTextSecondary),
+                                ? AppColors.darkTextSecondary
+                                : AppColors.lightTextSecondary),
                     ),
                     onSelected: (val) {
                       if (val && selectedGroupIndex != index) {
@@ -134,7 +140,9 @@ class VideoEpisodesSection extends StatelessWidget {
                     '共 $count 集',
                     style: TextStyle(
                       fontSize: 12,
-                      color: isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted,
+                      color: isDark
+                          ? AppColors.darkTextMuted
+                          : AppColors.lightTextMuted,
                     ),
                   ),
                 ],
@@ -150,8 +158,8 @@ class VideoEpisodesSection extends StatelessWidget {
                       color: isReversed
                           ? AppColors.primary
                           : (isDark
-                              ? AppColors.darkTextSecondary
-                              : AppColors.lightTextSecondary),
+                                ? AppColors.darkTextSecondary
+                                : AppColors.lightTextSecondary),
                     ),
                     visualDensity: VisualDensity.compact,
                     onPressed: () {
@@ -164,10 +172,17 @@ class VideoEpisodesSection extends StatelessWidget {
                   if (count > 5)
                     TextButton.icon(
                       style: TextButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
                         visualDensity: VisualDensity.compact,
                       ),
-                      icon: const Icon(Ionicons.gridOutline, size: 13, color: AppColors.primary),
+                      icon: const Icon(
+                        Ionicons.gridOutline,
+                        size: 13,
+                        color: AppColors.primary,
+                      ),
                       label: const Text(
                         '全部',
                         style: TextStyle(
@@ -208,12 +223,16 @@ class VideoEpisodesSection extends StatelessWidget {
                   decoration: BoxDecoration(
                     color: isCurrent
                         ? AppColors.primary
-                        : (isDark ? AppColors.darkCard : AppColors.lightSurface),
+                        : (isDark
+                              ? AppColors.darkCard
+                              : AppColors.lightSurface),
                     borderRadius: BorderRadius.circular(8),
                     border: Border.all(
                       color: isCurrent
                           ? AppColors.primary
-                          : (isDark ? AppColors.darkBorder : AppColors.lightBorder),
+                          : (isDark
+                                ? AppColors.darkBorder
+                                : AppColors.lightBorder),
                       width: 0.8,
                     ),
                     boxShadow: isCurrent
@@ -231,19 +250,25 @@ class VideoEpisodesSection extends StatelessWidget {
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       if (isCurrent) ...[
-                        const Icon(Ionicons.playOutline, size: 9, color: Colors.white),
+                        const Icon(
+                          Ionicons.playOutline,
+                          size: 9,
+                          color: Colors.white,
+                        ),
                         const SizedBox(width: 4),
                       ],
                       Text(
                         item.title,
                         style: TextStyle(
                           fontSize: 12,
-                          fontWeight: isCurrent ? FontWeight.bold : FontWeight.w500,
+                          fontWeight: isCurrent
+                              ? FontWeight.bold
+                              : FontWeight.w500,
                           color: isCurrent
                               ? Colors.white
                               : (isDark
-                                  ? AppColors.darkTextPrimary
-                                  : AppColors.lightTextPrimary),
+                                    ? AppColors.darkTextPrimary
+                                    : AppColors.lightTextPrimary),
                         ),
                       ),
                     ],

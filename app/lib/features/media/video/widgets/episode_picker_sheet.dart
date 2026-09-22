@@ -128,7 +128,9 @@ class _EpisodePickerSheetState extends State<EpisodePickerSheet> {
                       '共 $count 集',
                       style: TextStyle(
                         fontSize: 12,
-                        color: isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted,
+                        color: isDark
+                            ? AppColors.darkTextMuted
+                            : AppColors.lightTextMuted,
                       ),
                     ),
                   ],
@@ -141,7 +143,9 @@ class _EpisodePickerSheetState extends State<EpisodePickerSheet> {
                     size: 15,
                     color: _isReversed
                         ? AppColors.primary
-                        : (isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary),
+                        : (isDark
+                              ? AppColors.darkTextSecondary
+                              : AppColors.lightTextSecondary),
                   ),
                   onPressed: () {
                     HapticFeedback.lightImpact();
@@ -173,16 +177,20 @@ class _EpisodePickerSheetState extends State<EpisodePickerSheet> {
                 final ep = episodes[realIndex];
                 final isCurrent = realIndex == widget.currentEpisodeIndex;
 
-                return AppCard(
+                // 选中态靠描边强调 → 边框只属于 AppCard.outlined
+                return AppCard.outlined(
                   padding: const EdgeInsets.symmetric(horizontal: 4),
                   borderRadius: 8,
-                  showBorder: true,
                   borderColor: isCurrent
                       ? AppColors.primary
                       : (isDark ? AppColors.darkBorder : AppColors.lightBorder),
                   color: isCurrent
-                      ? AppColors.primary.withValues(alpha: isDark ? 0.25 : 0.15)
-                      : (isDark ? const Color(0xFF0F1420) : AppColors.lightSurface),
+                      ? AppColors.primary.withValues(
+                          alpha: isDark ? 0.25 : 0.15,
+                        )
+                      : (isDark
+                            ? const Color(0xFF0F1420)
+                            : AppColors.lightSurface),
                   onTap: () {
                     Navigator.pop(context);
                     widget.onEpisodeTap(realIndex);
@@ -194,12 +202,14 @@ class _EpisodePickerSheetState extends State<EpisodePickerSheet> {
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         fontSize: 12,
-                        fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal,
+                        fontWeight: isCurrent
+                            ? FontWeight.bold
+                            : FontWeight.normal,
                         color: isCurrent
                             ? AppColors.primary
                             : (isDark
-                                ? AppColors.darkTextPrimary
-                                : AppColors.lightTextPrimary),
+                                  ? AppColors.darkTextPrimary
+                                  : AppColors.lightTextPrimary),
                       ),
                     ),
                   ),

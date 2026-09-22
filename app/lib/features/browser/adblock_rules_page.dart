@@ -56,7 +56,9 @@ class _AdBlockRulesPageState extends State<AdBlockRulesPage> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          success ? '[${source.name}] 更新成功！' : '[${source.name}] 更新失败，请检查网络或订阅地址',
+          success
+              ? '[${source.name}] 更新成功！'
+              : '[${source.name}] 更新失败，请检查网络或订阅地址',
         ),
         duration: const Duration(seconds: 2),
       ),
@@ -75,8 +77,12 @@ class _AdBlockRulesPageState extends State<AdBlockRulesPage> {
         builder: (dialogCtx, setDialogState) {
           final isDark = Theme.of(dialogCtx).brightness == Brightness.dark;
           return AlertDialog(
-            backgroundColor: isDark ? AppColors.darkSurface : AppColors.lightSurface,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+            backgroundColor: isDark
+                ? AppColors.darkSurface
+                : AppColors.lightSurface,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(18),
+            ),
             title: Row(
               children: [
                 Container(
@@ -85,10 +91,17 @@ class _AdBlockRulesPageState extends State<AdBlockRulesPage> {
                     color: AppColors.primary.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: const Icon(Ionicons.addOutline, size: 18, color: AppColors.primary),
+                  child: const Icon(
+                    Ionicons.addOutline,
+                    size: 18,
+                    color: AppColors.primary,
+                  ),
                 ),
                 const SizedBox(width: 10),
-                const Text('添加自定义规则订阅', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                const Text(
+                  '添加自定义规则订阅',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
               ],
             ),
             content: Column(
@@ -108,8 +121,12 @@ class _AdBlockRulesPageState extends State<AdBlockRulesPage> {
                     hintStyle: const TextStyle(fontSize: 12),
                     isDense: true,
                     filled: true,
-                    fillColor: isDark ? AppColors.darkCard : AppColors.lightCard,
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                    fillColor: isDark
+                        ? AppColors.darkCard
+                        : AppColors.lightCard,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -121,8 +138,12 @@ class _AdBlockRulesPageState extends State<AdBlockRulesPage> {
                     hintStyle: const TextStyle(fontSize: 12),
                     isDense: true,
                     filled: true,
-                    fillColor: isDark ? AppColors.darkCard : AppColors.lightCard,
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                    fillColor: isDark
+                        ? AppColors.darkCard
+                        : AppColors.lightCard,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
                   ),
                 ),
               ],
@@ -140,7 +161,9 @@ class _AdBlockRulesPageState extends State<AdBlockRulesPage> {
                   final url = urlCtrl.text.trim();
                   if (name.isEmpty || !url.startsWith('http')) {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('请输入合法的规则名称和以 http 开头的订阅地址')),
+                      const SnackBar(
+                        content: Text('请输入合法的规则名称和以 http 开头的订阅地址'),
+                      ),
                     );
                     return;
                   }
@@ -154,7 +177,9 @@ class _AdBlockRulesPageState extends State<AdBlockRulesPage> {
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
                         content: Text(
-                          success ? '已成功添加并编译规则源 [$name]' : '已添加源 [$name]，但网络拉取超时，下次同步时将自动重试',
+                          success
+                              ? '已成功添加并编译规则源 [$name]'
+                              : '已添加源 [$name]，但网络拉取超时，下次同步时将自动重试',
                         ),
                       ),
                     );
@@ -174,7 +199,10 @@ class _AdBlockRulesPageState extends State<AdBlockRulesPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('广告拦截管理', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+        title: const Text(
+          '广告拦截管理',
+          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+        ),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
           onPressed: () => Navigator.pop(context),
@@ -195,7 +223,10 @@ class _AdBlockRulesPageState extends State<AdBlockRulesPage> {
                         child: SizedBox(
                           width: 18,
                           height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primary),
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: AppColors.primary,
+                          ),
                         ),
                       ),
                     )
@@ -229,11 +260,14 @@ class _AdBlockRulesPageState extends State<AdBlockRulesPage> {
   }
 
   /// 1. 顶层核心总览 Hero 卡片
-  Widget _buildHeroOverviewCard(BuildContext context, AppSettings settings, bool isDark) {
+  Widget _buildHeroOverviewCard(
+    BuildContext context,
+    AppSettings settings,
+    bool isDark,
+  ) {
     return AppCard(
       padding: const EdgeInsets.all(16),
       borderRadius: 18,
-      showBorder: false,
       color: isDark ? AppColors.darkCard : AppColors.lightCard,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -247,14 +281,21 @@ class _AdBlockRulesPageState extends State<AdBlockRulesPage> {
                 decoration: BoxDecoration(
                   color: settings.enableAdBlock
                       ? AppColors.primary.withValues(alpha: 0.14)
-                      : (isDark ? Colors.white.withValues(alpha: 0.06) : Colors.black.withValues(alpha: 0.05)),
+                      : (isDark
+                            ? Colors.white.withValues(alpha: 0.06)
+                            : Colors.black.withValues(alpha: 0.05)),
                   borderRadius: BorderRadius.circular(13),
                 ),
                 child: Center(
-                  child: Icon(settings.enableAdBlock ? Ionicons.shieldCheckmarkOutline : Ionicons.shieldCheckmarkOutline,
+                  child: Icon(
+                    settings.enableAdBlock
+                        ? Ionicons.shieldCheckmarkOutline
+                        : Ionicons.shieldCheckmarkOutline,
                     color: settings.enableAdBlock
                         ? AppColors.primary
-                        : (isDark ? AppColors.darkTextTertiary : AppColors.lightTextTertiary),
+                        : (isDark
+                              ? AppColors.darkTextTertiary
+                              : AppColors.lightTextTertiary),
                     size: 24,
                   ),
                 ),
@@ -269,15 +310,21 @@ class _AdBlockRulesPageState extends State<AdBlockRulesPage> {
                       style: TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.bold,
-                        color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
+                        color: isDark
+                            ? AppColors.darkTextPrimary
+                            : AppColors.lightTextPrimary,
                       ),
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      settings.enableAdBlock ? '全自动阻断恶意弹窗、暗刷探针与牛皮癣悬浮' : '网页将按原始形态加载，不执行任何规则过滤',
+                      settings.enableAdBlock
+                          ? '全自动阻断恶意弹窗、暗刷探针与牛皮癣悬浮'
+                          : '网页将按原始形态加载，不执行任何规则过滤',
                       style: TextStyle(
                         fontSize: 11.5,
-                        color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
+                        color: isDark
+                            ? AppColors.darkTextSecondary
+                            : AppColors.lightTextSecondary,
                       ),
                     ),
                   ],
@@ -287,7 +334,9 @@ class _AdBlockRulesPageState extends State<AdBlockRulesPage> {
                 value: settings.enableAdBlock,
                 activeTrackColor: AppColors.primary,
                 onChanged: (val) {
-                  appService.updateSettings(settings.copyWith(enableAdBlock: val));
+                  appService.updateSettings(
+                    settings.copyWith(enableAdBlock: val),
+                  );
                 },
               ),
             ],
@@ -308,7 +357,9 @@ class _AdBlockRulesPageState extends State<AdBlockRulesPage> {
                           '生效规则: ',
                           style: TextStyle(
                             fontSize: 13,
-                            color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
+                            color: isDark
+                                ? AppColors.darkTextSecondary
+                                : AppColors.lightTextSecondary,
                           ),
                         ),
                         Text(
@@ -343,7 +394,11 @@ class _AdBlockRulesPageState extends State<AdBlockRulesPage> {
   }
 
   /// 2. 规则订阅源管理列表
-  Widget _buildSourcesSection(BuildContext context, AppSettings settings, bool isDark) {
+  Widget _buildSourcesSection(
+    BuildContext context,
+    AppSettings settings,
+    bool isDark,
+  ) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -351,14 +406,20 @@ class _AdBlockRulesPageState extends State<AdBlockRulesPage> {
           padding: const EdgeInsets.symmetric(horizontal: 4),
           child: Row(
             children: [
-              const Icon(Ionicons.filterOutline, size: 16, color: AppColors.primary),
+              const Icon(
+                Ionicons.filterOutline,
+                size: 16,
+                color: AppColors.primary,
+              ),
               const SizedBox(width: 8),
               Text(
                 '规则订阅源',
                 style: TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.bold,
-                  color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
+                  color: isDark
+                      ? AppColors.darkTextPrimary
+                      : AppColors.lightTextPrimary,
                 ),
               ),
               const Spacer(),
@@ -366,7 +427,9 @@ class _AdBlockRulesPageState extends State<AdBlockRulesPage> {
                 '开启或关闭独立源，即改即生效',
                 style: TextStyle(
                   fontSize: 11,
-                  color: isDark ? AppColors.darkTextTertiary : AppColors.lightTextTertiary,
+                  color: isDark
+                      ? AppColors.darkTextTertiary
+                      : AppColors.lightTextTertiary,
                 ),
               ),
             ],
@@ -378,7 +441,9 @@ class _AdBlockRulesPageState extends State<AdBlockRulesPage> {
           valueListenable: _engine.sourcesNotifier,
           builder: (context, sources, _) {
             return Column(
-              children: sources.map((source) => _buildSourceCard(context, source, isDark)).toList(),
+              children: sources
+                  .map((source) => _buildSourceCard(context, source, isDark))
+                  .toList(),
             );
           },
         ),
@@ -387,13 +452,16 @@ class _AdBlockRulesPageState extends State<AdBlockRulesPage> {
   }
 
   /// 订阅源卡片
-  Widget _buildSourceCard(BuildContext context, AdFilterSource source, bool isDark) {
+  Widget _buildSourceCard(
+    BuildContext context,
+    AdFilterSource source,
+    bool isDark,
+  ) {
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       child: AppCard(
         padding: const EdgeInsets.all(14),
         borderRadius: 14,
-        showBorder: false,
         color: isDark ? AppColors.darkCard : AppColors.lightCard,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -403,7 +471,10 @@ class _AdBlockRulesPageState extends State<AdBlockRulesPage> {
               children: [
                 if (!source.isBuiltIn) ...[
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 2,
+                    ),
                     decoration: BoxDecoration(
                       color: AppColors.accentPurple.withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(6),
@@ -425,7 +496,9 @@ class _AdBlockRulesPageState extends State<AdBlockRulesPage> {
                     style: TextStyle(
                       fontSize: 13.5,
                       fontWeight: FontWeight.bold,
-                      color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
+                      color: isDark
+                          ? AppColors.darkTextPrimary
+                          : AppColors.lightTextPrimary,
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -453,7 +526,9 @@ class _AdBlockRulesPageState extends State<AdBlockRulesPage> {
               style: TextStyle(
                 fontSize: 11.5,
                 height: 1.35,
-                color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
+                color: isDark
+                    ? AppColors.darkTextSecondary
+                    : AppColors.lightTextSecondary,
               ),
             ),
 
@@ -462,16 +537,21 @@ class _AdBlockRulesPageState extends State<AdBlockRulesPage> {
             // 底部：镜像节点数 + 操作按钮
             Row(
               children: [
-                Icon(Ionicons.serverOutline,
+                Icon(
+                  Ionicons.serverOutline,
                   size: 11.5,
-                  color: isDark ? AppColors.darkTextTertiary : AppColors.lightTextTertiary,
+                  color: isDark
+                      ? AppColors.darkTextTertiary
+                      : AppColors.lightTextTertiary,
                 ),
                 const SizedBox(width: 4),
                 Text(
                   '${source.mirrorUrls.length} 个加速镜像容灾节点',
                   style: TextStyle(
                     fontSize: 10.5,
-                    color: isDark ? AppColors.darkTextTertiary : AppColors.lightTextTertiary,
+                    color: isDark
+                        ? AppColors.darkTextTertiary
+                        : AppColors.lightTextTertiary,
                   ),
                 ),
                 const Spacer(),
@@ -481,17 +561,28 @@ class _AdBlockRulesPageState extends State<AdBlockRulesPage> {
                   borderRadius: BorderRadius.circular(6),
                   onTap: () => _triggerSingleSync(source),
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 3,
+                    ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Ionicons.refreshOutline, size: 11, color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary),
+                        Icon(
+                          Ionicons.refreshOutline,
+                          size: 11,
+                          color: isDark
+                              ? AppColors.darkTextSecondary
+                              : AppColors.lightTextSecondary,
+                        ),
                         const SizedBox(width: 3),
                         Text(
                           '拉取更新',
                           style: TextStyle(
                             fontSize: 11,
-                            color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
+                            color: isDark
+                                ? AppColors.darkTextSecondary
+                                : AppColors.lightTextSecondary,
                           ),
                         ),
                       ],
@@ -515,9 +606,19 @@ class _AdBlockRulesPageState extends State<AdBlockRulesPage> {
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Ionicons.trashOutline, size: 11, color: AppColors.danger),
+                          Icon(
+                            Ionicons.trashOutline,
+                            size: 11,
+                            color: AppColors.danger,
+                          ),
                           SizedBox(width: 3),
-                          Text('删除', style: TextStyle(fontSize: 11, color: AppColors.danger)),
+                          Text(
+                            '删除',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: AppColors.danger,
+                            ),
+                          ),
                         ],
                       ),
                     ),

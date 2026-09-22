@@ -1,4 +1,5 @@
 import 'dart:convert';
+
 import 'package:material_ui/material_ui.dart';
 import 'package:ionicons/ionicons.dart';
 
@@ -20,7 +21,6 @@ class _MarketPageState extends State<MarketPage> {
   static const String marketApiUrl = 'https://fluxforge.nle.lol/api/rules';
 
   final RuleService _ruleService = ruleService;
-
 
   List<Rule> _marketRules = [];
   bool _loading = true;
@@ -148,9 +148,16 @@ class _MarketPageState extends State<MarketPage> {
       appBar: AppBar(
         title: const Row(
           children: [
-            Icon(Ionicons.storefrontOutline, size: 20, color: Color(0xFF10B981)),
+            Icon(
+              Ionicons.storefrontOutline,
+              size: 20,
+              color: Color(0xFF10B981),
+            ),
             SizedBox(width: 8),
-            Text('规则市场', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 18)),
+            Text(
+              '规则市场',
+              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 18),
+            ),
           ],
         ),
         actions: [
@@ -170,11 +177,7 @@ class _MarketPageState extends State<MarketPage> {
         valueListenable: _ruleService.rulesNotifier,
         builder: (context, localRules, _) {
           if (_loading) {
-            return const Center(
-              child: AppLoading(
-                message: '正在连接公共规则市场...',
-              ),
-            );
+            return const Center(child: AppLoading(message: '正在连接公共规则市场...'));
           }
 
           if (_errorMessage != null) {
@@ -184,9 +187,17 @@ class _MarketPageState extends State<MarketPage> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.error_outline_rounded, size: 48, color: Colors.orange),
+                    const Icon(
+                      Icons.error_outline_rounded,
+                      size: 48,
+                      color: Colors.orange,
+                    ),
                     const SizedBox(height: 12),
-                    Text(_errorMessage!, textAlign: TextAlign.center, style: const TextStyle(color: Colors.grey)),
+                    Text(
+                      _errorMessage!,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(color: Colors.grey),
+                    ),
                     const SizedBox(height: 16),
                     OutlinedButton.icon(
                       onPressed: _fetchMarketRules,
@@ -204,9 +215,16 @@ class _MarketPageState extends State<MarketPage> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Ionicons.fileTrayOutline, size: 48, color: Colors.grey),
+                  const Icon(
+                    Ionicons.fileTrayOutline,
+                    size: 48,
+                    color: Colors.grey,
+                  ),
                   const SizedBox(height: 12),
-                  const Text('市场暂无可用的公共规则', style: TextStyle(color: Colors.grey)),
+                  const Text(
+                    '市场暂无可用的公共规则',
+                    style: TextStyle(color: Colors.grey),
+                  ),
                   const SizedBox(height: 16),
                   ElevatedButton(
                     onPressed: _fetchMarketRules,
@@ -228,114 +246,142 @@ class _MarketPageState extends State<MarketPage> {
                 final rule = _marketRules[index];
                 final isImported = _ruleService.isRuleImported(rule);
 
+                // 需要"已导入"高亮时用 AppCard.outlined（边框只属于它）。
                 return AppCard(
-                  borderColor: isImported
-                      ? const Color(0xFF10B981).withValues(alpha: 0.3)
-                      : null,
                   child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.center,
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF10B981).withValues(alpha: 0.15),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Text(
-                                rule.type.toUpperCase(),
-                                style: const TextStyle(
-                                  color: Color(0xFF10B981),
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.bold,
-                                ),
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 3,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF10B981)
+                                  .withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              rule.type.toUpperCase(),
+                              style: const TextStyle(
+                                color: Color(0xFF10B981),
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
                               ),
                             ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                rule.name,
-                                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                            if (rule.version != null)
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: Colors.grey.withValues(alpha: 0.12),
-                                  borderRadius: BorderRadius.circular(6),
-                                ),
-                                child: Text(
-                                  'v${rule.version}',
-                                  style: const TextStyle(fontSize: 11, color: Colors.grey),
-                                ),
-                              ),
-                          ],
-                        ),
-                        if (rule.description != null && rule.description!.isNotEmpty) ...[
-                          const SizedBox(height: 8),
-                          Text(
-                            rule.description!,
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: isDark ? const Color(0xFFA1A1AA) : const Color(0xFF52525B),
-                            ),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
                           ),
-                        ],
-                        const SizedBox(height: 12),
-                        Row(
-                          children: [
-                            const Icon(Ionicons.globeOutline, size: 14, color: Colors.grey),
-                            const SizedBox(width: 4),
-                            Expanded(
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              rule.name,
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          if (rule.version != null)
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.grey.withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
                               child: Text(
-                                rule.baseUrl,
-                                style: const TextStyle(fontSize: 12, color: Colors.grey),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
+                                'v${rule.version}',
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  color: Colors.grey,
+                                ),
                               ),
                             ),
-                            const SizedBox(width: 12),
-                            if (isImported)
-                              Container(
-                                height: 30,
-                                padding: const EdgeInsets.symmetric(horizontal: 10),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFF10B981).withValues(alpha: 0.12),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: const Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(Ionicons.checkmarkOutline, size: 13, color: Color(0xFF10B981)),
-                                    SizedBox(width: 4),
-                                    Text(
-                                      '已导入',
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        color: Color(0xFF10B981),
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              )
-                            else
-                              AppButton.compact(
-                                onPressed: () => _importSingleRule(rule),
-                                icon: const Icon(Ionicons.downloadOutline),
-                                label: '一键导入',
-                              ),
-                          ],
+                        ],
+                      ),
+                      if (rule.description != null &&
+                          rule.description!.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          rule.description!,
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: isDark
+                                ? const Color(0xFFA1A1AA)
+                                : const Color(0xFF52525B),
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ],
-                    ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          const Icon(
+                            Ionicons.globeOutline,
+                            size: 14,
+                            color: Colors.grey,
+                          ),
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: Text(
+                              rule.baseUrl,
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          if (isImported)
+                            Container(
+                              height: 30,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                              ),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF10B981)
+                                    .withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: const Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    Ionicons.checkmarkOutline,
+                                    size: 13,
+                                    color: Color(0xFF10B981),
+                                  ),
+                                  SizedBox(width: 4),
+                                  Text(
+                                    '已导入',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Color(0xFF10B981),
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            )
+                          else
+                            AppButton.compact(
+                              onPressed: () => _importSingleRule(rule),
+                              icon: const Icon(Ionicons.downloadOutline),
+                              label: '一键导入',
+                            ),
+                        ],
+                      ),
+                    ],
+                  ),
                 );
               },
             ),

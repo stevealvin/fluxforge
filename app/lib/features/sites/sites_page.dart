@@ -67,12 +67,14 @@ class _SitesPageState extends State<SitesPage> {
               final host = Uri.tryParse(entry.url)?.host ?? entry.url;
 
               return AppCard(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 10,
+                ),
                 borderRadius: 14,
                 // 无底色、无边框、无阴影：站点项直接浮在页面背景上，
                 // 仅保留 AppCard 的点击水波与按压缩放反馈
                 color: Colors.transparent,
-                showBorder: false,
                 showShadow: false,
                 onTap: () => _openSite(entry),
                 onLongPress: () => showSiteActionsSheet(context, _store, entry),
@@ -86,8 +88,11 @@ class _SitesPageState extends State<SitesPage> {
                         color: AppColors.primary.withValues(alpha: 0.12),
                         borderRadius: BorderRadius.circular(14),
                       ),
-                      child: const Icon(Ionicons.globeOutline,
-                          size: 24, color: AppColors.primary),
+                      child: const Icon(
+                        Ionicons.globeOutline,
+                        size: 24,
+                        color: AppColors.primary,
+                      ),
                     ),
                     const SizedBox(height: 8),
                     Text(
@@ -134,7 +139,9 @@ class _SitesPageState extends State<SitesPage> {
             Icon(
               Ionicons.globeOutline,
               size: 44,
-              color: isDark ? AppColors.darkTextTertiary : AppColors.lightTextTertiary,
+              color: isDark
+                  ? AppColors.darkTextTertiary
+                  : AppColors.lightTextTertiary,
             ),
             const SizedBox(height: 14),
             const Text(
@@ -148,7 +155,9 @@ class _SitesPageState extends State<SitesPage> {
               style: TextStyle(
                 fontSize: 12,
                 height: 1.6,
-                color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
+                color: isDark
+                    ? AppColors.darkTextSecondary
+                    : AppColors.lightTextSecondary,
               ),
             ),
             const SizedBox(height: 20),

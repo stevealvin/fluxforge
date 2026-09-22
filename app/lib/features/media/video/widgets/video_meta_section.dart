@@ -100,9 +100,13 @@ class _VideoMetaSectionState extends State<VideoMetaSection> {
             // 评分徽标 (琥珀黄金色胶囊)
             if (rating != null && rating.isNotEmpty)
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 7,
+                  vertical: 2.5,
+                ),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF59E0B).withValues(alpha: isDark ? 0.2 : 0.12),
+                  color: const Color(0xFFF59E0B)
+                      .withValues(alpha: isDark ? 0.2 : 0.12),
                   borderRadius: BorderRadius.circular(6),
                   border: Border.all(
                     color: const Color(0xFFF59E0B).withValues(alpha: 0.4),
@@ -112,7 +116,11 @@ class _VideoMetaSectionState extends State<VideoMetaSection> {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.star_rounded, size: 13, color: Color(0xFFF59E0B)),
+                    const Icon(
+                      Icons.star_rounded,
+                      size: 13,
+                      color: Color(0xFFF59E0B),
+                    ),
                     const SizedBox(width: 3),
                     Text(
                       rating,
@@ -129,9 +137,14 @@ class _VideoMetaSectionState extends State<VideoMetaSection> {
             // 规则源标识
             if (widget.ruleName != null)
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 7,
+                  vertical: 2.5,
+                ),
                 decoration: BoxDecoration(
-                  color: AppColors.primary.withValues(alpha: isDark ? 0.2 : 0.12),
+                  color: AppColors.primary.withValues(
+                    alpha: isDark ? 0.2 : 0.12,
+                  ),
                   borderRadius: BorderRadius.circular(6),
                 ),
                 child: Text(
@@ -147,12 +160,17 @@ class _VideoMetaSectionState extends State<VideoMetaSection> {
             // 分类题材标签 (微光实体药丸)
             ...widget.tags.map(
               (tag) => Container(
-                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 7,
+                  vertical: 2.5,
+                ),
                 decoration: BoxDecoration(
                   color: isDark ? AppColors.darkCard : AppColors.lightSurface,
                   borderRadius: BorderRadius.circular(6),
                   border: Border.all(
-                    color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
+                    color: isDark
+                        ? AppColors.darkBorder
+                        : AppColors.lightBorder,
                     width: 0.8,
                   ),
                 ),
@@ -160,7 +178,9 @@ class _VideoMetaSectionState extends State<VideoMetaSection> {
                   tag,
                   style: TextStyle(
                     fontSize: 11,
-                    color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
+                    color: isDark
+                        ? AppColors.darkTextSecondary
+                        : AppColors.lightTextSecondary,
                   ),
                 ),
               ),
@@ -174,14 +194,18 @@ class _VideoMetaSectionState extends State<VideoMetaSection> {
                   Icon(
                     Ionicons.personOutline,
                     size: 11,
-                    color: isDark ? AppColors.darkTextTertiary : AppColors.lightTextTertiary,
+                    color: isDark
+                        ? AppColors.darkTextTertiary
+                        : AppColors.lightTextTertiary,
                   ),
                   const SizedBox(width: 4),
                   Text(
                     author,
                     style: TextStyle(
                       fontSize: 11.5,
-                      color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
+                      color: isDark
+                          ? AppColors.darkTextSecondary
+                          : AppColors.lightTextSecondary,
                     ),
                   ),
                 ],
@@ -204,8 +228,9 @@ class _VideoMetaSectionState extends State<VideoMetaSection> {
               children: [
                 AnimatedCrossFade(
                   duration: const Duration(milliseconds: 200),
-                  crossFadeState:
-                      _isDescExpanded ? CrossFadeState.showSecond : CrossFadeState.showFirst,
+                  crossFadeState: _isDescExpanded
+                      ? CrossFadeState.showSecond
+                      : CrossFadeState.showFirst,
                   firstChild: Text(
                     desc,
                     maxLines: 2,
@@ -213,7 +238,9 @@ class _VideoMetaSectionState extends State<VideoMetaSection> {
                     style: TextStyle(
                       fontSize: 12.5,
                       height: 1.5,
-                      color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
+                      color: isDark
+                          ? AppColors.darkTextSecondary
+                          : AppColors.lightTextSecondary,
                     ),
                   ),
                   secondChild: Text(
@@ -221,7 +248,9 @@ class _VideoMetaSectionState extends State<VideoMetaSection> {
                     style: TextStyle(
                       fontSize: 12.5,
                       height: 1.5,
-                      color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
+                      color: isDark
+                          ? AppColors.darkTextSecondary
+                          : AppColors.lightTextSecondary,
                     ),
                   ),
                 ),
