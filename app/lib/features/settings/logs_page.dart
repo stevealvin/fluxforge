@@ -7,6 +7,7 @@ import 'package:fluxforge/app/theme/app_colors.dart';
 import 'package:fluxforge/core/logging/app_logger.dart';
 import 'package:fluxforge/shared/widgets/app_card.dart';
 import 'package:fluxforge/shared/widgets/app_confirm_dialog.dart';
+import 'package:fluxforge/shared/widgets/app_delete_snack_bar.dart';
 
 /// 客户端全链路沙箱与系统日志中心页面
 ///
@@ -90,7 +91,8 @@ class _LogsPageState extends State<LogsPage> {
         final q = _searchQuery.toLowerCase();
         final matchMessage = entry.message.toLowerCase().contains(q);
         final matchTag = entry.tag.toLowerCase().contains(q);
-        final matchError = entry.error?.toString().toLowerCase().contains(q) ?? false;
+        final matchError =
+            entry.error?.toString().toLowerCase().contains(q) ?? false;
         if (!matchMessage && !matchTag && !matchError) {
           return false;
         }
@@ -108,7 +110,9 @@ class _LogsPageState extends State<LogsPage> {
 
     showModalBottomSheet(
       context: context,
-      backgroundColor: Theme.of(context).brightness == Brightness.dark ? AppColors.darkSurface : AppColors.lightSurface,
+      backgroundColor: Theme.of(context).brightness == Brightness.dark
+          ? AppColors.darkSurface
+          : AppColors.lightSurface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -119,9 +123,18 @@ class _LogsPageState extends State<LogsPage> {
             mainAxisSize: MainAxisSize.min,
             children: [
               const ListTile(
-                leading: Icon(Ionicons.checkmarkDoneOutline, color: AppColors.primary),
-                title: Text('全量日志已复制到剪贴板', style: TextStyle(fontWeight: FontWeight.bold)),
-                subtitle: Text('您可以直接粘贴发送给开发者或附加至 Issue 中', style: TextStyle(fontSize: 12)),
+                leading: Icon(
+                  Ionicons.checkmarkDoneOutline,
+                  color: AppColors.primary,
+                ),
+                title: Text(
+                  '全量日志已复制到剪贴板',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                subtitle: Text(
+                  '您可以直接粘贴发送给开发者或附加至 Issue 中',
+                  style: TextStyle(fontSize: 12),
+                ),
               ),
               const SizedBox(height: 12),
               Row(
@@ -133,10 +146,7 @@ class _LogsPageState extends State<LogsPage> {
                       onPressed: () {
                         Navigator.pop(ctx);
                         SharePlus.instance.share(
-                          ShareParams(
-                            text: text,
-                            subject: 'FluxForge 系统诊断日志',
-                          ),
+                          ShareParams(text: text, subject: 'FluxForge 系统诊断日志'),
                         );
                       },
                     ),
@@ -144,7 +154,9 @@ class _LogsPageState extends State<LogsPage> {
                   const SizedBox(width: 12),
                   Expanded(
                     child: FilledButton(
-                      style: FilledButton.styleFrom(backgroundColor: AppColors.primary),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                      ),
                       onPressed: () => Navigator.pop(ctx),
                       child: const Text('好的'),
                     ),
@@ -170,9 +182,8 @@ class _LogsPageState extends State<LogsPage> {
 
     await AppLogger.clear();
     if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('已清空全部日志记录')),
-    );
+    // 日志已不可恢复 → 只提示，不摆无用的「撤销」
+    showDeleteSnackBar(context, message: '已清空全部日志记录');
   }
 
   @override
@@ -196,7 +207,9 @@ class _LogsPageState extends State<LogsPage> {
               style: TextStyle(
                 fontWeight: FontWeight.bold,
                 fontSize: 17,
-                color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
+                color: isDark
+                    ? AppColors.darkTextPrimary
+                    : AppColors.lightTextPrimary,
               ),
             ),
             const SizedBox(width: 8),
@@ -204,7 +217,10 @@ class _LogsPageState extends State<LogsPage> {
               valueListenable: AppLogger.logsNotifier,
               builder: (context, logs, child) {
                 return Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 7,
+                    vertical: 2,
+                  ),
                   decoration: BoxDecoration(
                     color: AppColors.primary.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(10),
@@ -223,11 +239,11 @@ class _LogsPageState extends State<LogsPage> {
           ],
         ),
         actions: [
-
           // Live 实时滚动追踪开关
           IconButton(
             tooltip: _autoScroll ? '实时跟踪模式 (已开启)' : '开启实时跟踪',
-            icon: Icon(_autoScroll ? Ionicons.radioOutline : Ionicons.downloadOutline,
+            icon: Icon(
+              _autoScroll ? Ionicons.radioOutline : Ionicons.downloadOutline,
               color: _autoScroll ? AppColors.primary : Colors.grey,
               size: 20,
             ),
@@ -299,7 +315,9 @@ class _LogsPageState extends State<LogsPage> {
     return Container(
       padding: const EdgeInsets.fromLTRB(14, 8, 14, 8),
       decoration: BoxDecoration(
-        color: isDark ? AppColors.darkSurface.withValues(alpha: 0.5) : AppColors.lightSurface.withValues(alpha: 0.5),
+        color: isDark
+            ? AppColors.darkSurface.withValues(alpha: 0.5)
+            : AppColors.lightSurface.withValues(alpha: 0.5),
         border: Border(
           bottom: BorderSide(
             color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
@@ -317,7 +335,9 @@ class _LogsPageState extends State<LogsPage> {
               hintText: '搜索日志关键词、规则名称或报错信息...',
               hintStyle: TextStyle(
                 fontSize: 12,
-                color: isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted,
+                color: isDark
+                    ? AppColors.darkTextMuted
+                    : AppColors.lightTextMuted,
               ),
               prefixIcon: const Icon(Ionicons.searchOutline, size: 16),
               suffixIcon: _searchQuery.isNotEmpty
@@ -329,7 +349,10 @@ class _LogsPageState extends State<LogsPage> {
                       },
                     )
                   : null,
-              contentPadding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+              contentPadding: const EdgeInsets.symmetric(
+                vertical: 8,
+                horizontal: 12,
+              ),
               isDense: true,
               filled: true,
               fillColor: isDark ? Colors.black26 : Colors.white,
@@ -361,17 +384,42 @@ class _LogsPageState extends State<LogsPage> {
               children: [
                 _buildFilterChip('ALL', '全部', isDark),
                 const SizedBox(width: 6),
-                _buildFilterChip('RULE', '规则沙箱', isDark, icon: Ionicons.codeSlashOutline),
+                _buildFilterChip(
+                  'RULE',
+                  '规则沙箱',
+                  isDark,
+                  icon: Ionicons.codeSlashOutline,
+                ),
                 const SizedBox(width: 6),
-                _buildFilterChip('ERROR', '错误', isDark, color: Colors.redAccent),
+                _buildFilterChip(
+                  'ERROR',
+                  '错误',
+                  isDark,
+                  color: Colors.redAccent,
+                ),
                 const SizedBox(width: 6),
                 _buildFilterChip('WARN', '警告', isDark, color: Colors.amber),
                 const SizedBox(width: 6),
-                _buildFilterChip('INFO', '信息', isDark, color: AppColors.primary),
+                _buildFilterChip(
+                  'INFO',
+                  '信息',
+                  isDark,
+                  color: AppColors.primary,
+                ),
                 const SizedBox(width: 6),
-                _buildFilterChip('DEBUG', '调试', isDark, color: Colors.blueAccent),
+                _buildFilterChip(
+                  'DEBUG',
+                  '调试',
+                  isDark,
+                  color: Colors.blueAccent,
+                ),
                 const SizedBox(width: 6),
-                _buildFilterChip('NETWORK', '网络', isDark, icon: Ionicons.globeOutline),
+                _buildFilterChip(
+                  'NETWORK',
+                  '网络',
+                  isDark,
+                  icon: Ionicons.globeOutline,
+                ),
               ],
             ),
           ),
@@ -380,7 +428,13 @@ class _LogsPageState extends State<LogsPage> {
     );
   }
 
-  Widget _buildFilterChip(String key, String label, bool isDark, {Color? color, dynamic icon}) {
+  Widget _buildFilterChip(
+    String key,
+    String label,
+    bool isDark, {
+    Color? color,
+    dynamic icon,
+  }) {
     final isSelected = _selectedFilter == key;
     final activeColor = color ?? AppColors.primary;
 
@@ -395,7 +449,9 @@ class _LogsPageState extends State<LogsPage> {
         decoration: BoxDecoration(
           color: isSelected
               ? activeColor.withValues(alpha: 0.2)
-              : (isDark ? Colors.white.withValues(alpha: 0.05) : Colors.black.withValues(alpha: 0.04)),
+              : (isDark
+                    ? Colors.white.withValues(alpha: 0.05)
+                    : Colors.black.withValues(alpha: 0.04)),
           borderRadius: BorderRadius.circular(8),
           border: Border.all(
             color: isSelected ? activeColor : Colors.transparent,
@@ -407,8 +463,20 @@ class _LogsPageState extends State<LogsPage> {
           children: [
             if (icon != null) ...[
               icon is IconData
-                  ? Icon(icon, size: 12, color: isSelected ? activeColor : (isDark ? Colors.grey : Colors.black54))
-                  : Icon(icon as IconData, size: 12, color: isSelected ? activeColor : (isDark ? Colors.grey : Colors.black54)),
+                  ? Icon(
+                      icon,
+                      size: 12,
+                      color: isSelected
+                          ? activeColor
+                          : (isDark ? Colors.grey : Colors.black54),
+                    )
+                  : Icon(
+                      icon as IconData,
+                      size: 12,
+                      color: isSelected
+                          ? activeColor
+                          : (isDark ? Colors.grey : Colors.black54),
+                    ),
               const SizedBox(width: 4),
             ],
             Text(
@@ -416,7 +484,9 @@ class _LogsPageState extends State<LogsPage> {
               style: TextStyle(
                 fontSize: 11,
                 fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                color: isSelected ? activeColor : (isDark ? Colors.grey : Colors.black87),
+                color: isSelected
+                    ? activeColor
+                    : (isDark ? Colors.grey : Colors.black87),
               ),
             ),
           ],
@@ -426,8 +496,16 @@ class _LogsPageState extends State<LogsPage> {
   }
 
   /// 单条日志渲染卡片
-  Widget _buildLogCard(LogEntry entry, bool isExpanded, int logKey, bool isDark) {
-    final hasStackOrLong = entry.message.length > 90 || entry.error != null || entry.stackTrace != null;
+  Widget _buildLogCard(
+    LogEntry entry,
+    bool isExpanded,
+    int logKey,
+    bool isDark,
+  ) {
+    final hasStackOrLong =
+        entry.message.length > 90 ||
+        entry.error != null ||
+        entry.stackTrace != null;
 
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 4),
@@ -485,12 +563,17 @@ class _LogsPageState extends State<LogsPage> {
                           style: TextStyle(
                             fontSize: 10,
                             fontFamily: 'monospace',
-                            color: isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted,
+                            color: isDark
+                                ? AppColors.darkTextMuted
+                                : AppColors.lightTextMuted,
                           ),
                         ),
                         const SizedBox(width: 8),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 5,
+                            vertical: 1.5,
+                          ),
                           decoration: BoxDecoration(
                             color: entry.levelColor.withValues(alpha: 0.15),
                             borderRadius: BorderRadius.circular(4),
@@ -513,12 +596,17 @@ class _LogsPageState extends State<LogsPage> {
                             style: TextStyle(
                               fontSize: 10,
                               fontWeight: FontWeight.w600,
-                              color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
+                              color: isDark
+                                  ? AppColors.darkTextSecondary
+                                  : AppColors.lightTextSecondary,
                             ),
                           ),
                         ),
                         if (hasStackOrLong)
-                          Icon(isExpanded ? Ionicons.chevronUpOutline : Ionicons.chevronDownOutline,
+                          Icon(
+                            isExpanded
+                                ? Ionicons.chevronUpOutline
+                                : Ionicons.chevronDownOutline,
                             size: 14,
                             color: Colors.grey,
                           ),
@@ -530,18 +618,22 @@ class _LogsPageState extends State<LogsPage> {
                     Text(
                       entry.message,
                       maxLines: isExpanded ? null : 3,
-                      overflow: isExpanded ? TextOverflow.visible : TextOverflow.ellipsis,
+                      overflow: isExpanded
+                          ? TextOverflow.visible
+                          : TextOverflow.ellipsis,
                       style: TextStyle(
                         fontSize: 12,
                         height: 1.35,
                         fontFamily: 'monospace',
-                        color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
+                        color: isDark
+                            ? AppColors.darkTextPrimary
+                            : AppColors.lightTextPrimary,
                       ),
                     ),
 
-
                     // 展开的异常或堆栈详细视图
-                    if (isExpanded && (entry.error != null || entry.stackTrace != null)) ...[
+                    if (isExpanded &&
+                        (entry.error != null || entry.stackTrace != null)) ...[
                       const SizedBox(height: 8),
                       Container(
                         width: double.infinity,
@@ -572,7 +664,9 @@ class _LogsPageState extends State<LogsPage> {
                                 '${entry.stackTrace}',
                                 style: TextStyle(
                                   fontSize: 10,
-                                  color: isDark ? Colors.grey.shade400 : Colors.grey.shade700,
+                                  color: isDark
+                                      ? Colors.grey.shade400
+                                      : Colors.grey.shade700,
                                   fontFamily: 'monospace',
                                 ),
                               ),
@@ -605,7 +699,11 @@ class _LogsPageState extends State<LogsPage> {
                 color: AppColors.primary.withValues(alpha: 0.1),
                 shape: BoxShape.circle,
               ),
-              child: const Icon(Ionicons.documentTextOutline, size: 36, color: AppColors.primary),
+              child: const Icon(
+                Ionicons.documentTextOutline,
+                size: 36,
+                color: AppColors.primary,
+              ),
             ),
             const SizedBox(height: 16),
             Text(
@@ -613,7 +711,9 @@ class _LogsPageState extends State<LogsPage> {
               style: TextStyle(
                 fontSize: 15,
                 fontWeight: FontWeight.bold,
-                color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
+                color: isDark
+                    ? AppColors.darkTextPrimary
+                    : AppColors.lightTextPrimary,
               ),
             ),
             const SizedBox(height: 8),
@@ -624,7 +724,9 @@ class _LogsPageState extends State<LogsPage> {
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 12,
-                color: isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted,
+                color: isDark
+                    ? AppColors.darkTextMuted
+                    : AppColors.lightTextMuted,
               ),
             ),
           ],

@@ -9,6 +9,7 @@ import 'package:fluxforge/app/di/di.dart';
 import 'package:fluxforge/data/rule/rule_service.dart';
 import 'package:fluxforge/shared/widgets/app_card.dart';
 import 'package:fluxforge/shared/widgets/app_confirm_dialog.dart';
+import 'package:fluxforge/shared/widgets/app_delete_snack_bar.dart';
 import 'package:fluxforge/shared/widgets/app_loading.dart';
 
 /// 客户端本地规则管理页面
@@ -114,7 +115,9 @@ class _RulesPageState extends State<RulesPage> {
               child: Container(
                 decoration: BoxDecoration(
                   color: isDark ? const Color(0xFF131D19) : Colors.white,
-                  borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(20),
+                  ),
                 ),
                 padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
                 child: Column(
@@ -139,7 +142,10 @@ class _RulesPageState extends State<RulesPage> {
                       children: [
                         const Text(
                           '导入规则',
-                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                         TextButton.icon(
                           style: TextButton.styleFrom(
@@ -150,8 +156,14 @@ class _RulesPageState extends State<RulesPage> {
                             Navigator.pop(sheetContext);
                             context.pushMarket();
                           },
-                          icon: const Icon(Ionicons.storefrontOutline, size: 16),
-                          label: const Text('规则市场', style: TextStyle(fontSize: 13)),
+                          icon: const Icon(
+                            Ionicons.storefrontOutline,
+                            size: 16,
+                          ),
+                          label: const Text(
+                            '规则市场',
+                            style: TextStyle(fontSize: 13),
+                          ),
                         ),
                       ],
                     ),
@@ -184,21 +196,35 @@ class _RulesPageState extends State<RulesPage> {
                         autofocus: true,
                         decoration: InputDecoration(
                           hintText: '请输入规则订阅或 JSON 地址 (https://...)',
-                          hintStyle: TextStyle(fontSize: 13, color: Colors.grey.withValues(alpha: 0.8)),
-                          prefixIcon: const Icon(Ionicons.globeOutline, size: 18),
+                          hintStyle: TextStyle(
+                            fontSize: 13,
+                            color: Colors.grey.withValues(alpha: 0.8),
+                          ),
+                          prefixIcon: const Icon(
+                            Ionicons.globeOutline,
+                            size: 18,
+                          ),
                           filled: true,
-                          fillColor: isDark ? const Color(0xFF1E2D27) : const Color(0xFFF3F4F6),
+                          fillColor: isDark
+                              ? const Color(0xFF1E2D27)
+                              : const Color(0xFFF3F4F6),
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12),
                             borderSide: BorderSide.none,
                           ),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 12,
+                          ),
                         ),
                       ),
                       const SizedBox(height: 8),
                       Text(
                         '支持 Legado 风格订阅源、单条规则或规则数组格式。',
-                        style: TextStyle(fontSize: 12, color: Colors.grey.withValues(alpha: 0.8)),
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey.withValues(alpha: 0.8),
+                        ),
                       ),
                     ] else ...[
                       TextField(
@@ -207,9 +233,14 @@ class _RulesPageState extends State<RulesPage> {
                         maxLines: 5,
                         decoration: InputDecoration(
                           hintText: '在此粘贴规则 JSON 文本...',
-                          hintStyle: TextStyle(fontSize: 13, color: Colors.grey.withValues(alpha: 0.8)),
+                          hintStyle: TextStyle(
+                            fontSize: 13,
+                            color: Colors.grey.withValues(alpha: 0.8),
+                          ),
                           filled: true,
-                          fillColor: isDark ? const Color(0xFF1E2D27) : const Color(0xFFF3F4F6),
+                          fillColor: isDark
+                              ? const Color(0xFF1E2D27)
+                              : const Color(0xFFF3F4F6),
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12),
                             borderSide: BorderSide.none,
@@ -225,12 +256,16 @@ class _RulesPageState extends State<RulesPage> {
                         backgroundColor: const Color(0xFF059669),
                         foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                       ),
                       onPressed: isSubmitting
                           ? null
                           : () async {
-                              final text = activeTab == 0 ? urlController.text.trim() : jsonController.text.trim();
+                              final text = activeTab == 0
+                                  ? urlController.text.trim()
+                                  : jsonController.text.trim();
                               if (text.isEmpty) {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   const SnackBar(content: Text('输入内容不能为空')),
@@ -245,9 +280,13 @@ class _RulesPageState extends State<RulesPage> {
                               try {
                                 int count = 0;
                                 if (activeTab == 0) {
-                                  count = await _ruleService.importFromUrl(text);
+                                  count = await _ruleService.importFromUrl(
+                                    text,
+                                  );
                                 } else {
-                                  count = await _ruleService.importFromJson(text);
+                                  count = await _ruleService.importFromJson(
+                                    text,
+                                  );
                                 }
 
                                 if (context.mounted) {
@@ -274,8 +313,17 @@ class _RulesPageState extends State<RulesPage> {
                               }
                             },
                       child: isSubmitting
-                          ? const AppLoading.compact(size: 20, color: Colors.white)
-                          : const Text('立即导入', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+                          ? const AppLoading.compact(
+                              size: 20,
+                              color: Colors.white,
+                            )
+                          : const Text(
+                              '立即导入',
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
                     ),
                   ],
                 ),
@@ -299,9 +347,7 @@ class _RulesPageState extends State<RulesPage> {
 
     await _ruleService.removeRule(rule.id);
     if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('已删除规则「${rule.name}」')),
-    );
+    showDeleteSnackBar(context, message: '已删除规则「${rule.name}」');
   }
 
   /// 长按规则卡片弹出快捷操作面板 (支持规则调试/发现/复制/删除)
@@ -334,25 +380,38 @@ class _RulesPageState extends State<RulesPage> {
                 ),
                 // 规则基本信息行
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                    vertical: 6,
+                  ),
                   child: Row(
                     children: [
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
                         decoration: BoxDecoration(
                           color: typeColor.withValues(alpha: 0.12),
                           borderRadius: BorderRadius.circular(4),
                         ),
                         child: Text(
                           _getTypeLabel(rule.type),
-                          style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: typeColor),
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                            color: typeColor,
+                          ),
                         ),
                       ),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
                           rule.name,
-                          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -364,9 +423,19 @@ class _RulesPageState extends State<RulesPage> {
 
                 // 选项 1: 规则流式测试与调试 (对齐开源阅读)
                 ListTile(
-                  leading: const Icon(Ionicons.flaskOutline, color: AppColors.primary, size: 20),
-                  title: const Text('规则调试与测试 (Debug & Test)', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
-                  subtitle: const Text('多阶段流水线自动化测试 (发现/搜索/详情/直链解析)', style: TextStyle(fontSize: 11)),
+                  leading: const Icon(
+                    Ionicons.flaskOutline,
+                    color: AppColors.primary,
+                    size: 20,
+                  ),
+                  title: const Text(
+                    '规则调试与测试 (Debug & Test)',
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                  ),
+                  subtitle: const Text(
+                    '多阶段流水线自动化测试 (发现/搜索/详情/直链解析)',
+                    style: TextStyle(fontSize: 11),
+                  ),
                   onTap: () {
                     Navigator.pop(sheetCtx);
                     context.pushRuleTest(rule);
@@ -388,20 +457,35 @@ class _RulesPageState extends State<RulesPage> {
                   ListTile(
                     leading: const Icon(Ionicons.copyOutline, size: 20),
                     title: const Text('复制源站地址', style: TextStyle(fontSize: 14)),
-                    subtitle: Text(rule.baseUrl, style: const TextStyle(fontSize: 11), maxLines: 1, overflow: TextOverflow.ellipsis),
+                    subtitle: Text(
+                      rule.baseUrl,
+                      style: const TextStyle(fontSize: 11),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                     onTap: () {
                       Navigator.pop(sheetCtx);
                       Clipboard.setData(ClipboardData(text: rule.baseUrl));
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('已复制源站地址至剪贴板'), duration: Duration(seconds: 1)),
+                        const SnackBar(
+                          content: Text('已复制源站地址至剪贴板'),
+                          duration: Duration(seconds: 1),
+                        ),
                       );
                     },
                   ),
 
                 // 选项 4: 删除规则
                 ListTile(
-                  leading: const Icon(Ionicons.trashOutline, color: Colors.redAccent, size: 20),
-                  title: const Text('删除此规则', style: TextStyle(fontSize: 14, color: Colors.redAccent)),
+                  leading: const Icon(
+                    Ionicons.trashOutline,
+                    color: Colors.redAccent,
+                    size: 20,
+                  ),
+                  title: const Text(
+                    '删除此规则',
+                    style: TextStyle(fontSize: 14, color: Colors.redAccent),
+                  ),
                   onTap: () {
                     Navigator.pop(sheetCtx);
                     _confirmDeleteRule(context, rule);
@@ -439,10 +523,7 @@ class _RulesPageState extends State<RulesPage> {
           Container(
             width: 5,
             height: 5,
-            decoration: BoxDecoration(
-              color: color,
-              shape: BoxShape.circle,
-            ),
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
           ),
           const SizedBox(width: 3),
           Text(
@@ -462,8 +543,10 @@ class _RulesPageState extends State<RulesPage> {
   Widget _buildRuleCard(BuildContext context, Rule rule) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final typeColor = _getTypeColor(rule.type);
-    final hasUrl = rule.baseUrl.isNotEmpty &&
-        (rule.baseUrl.startsWith('http://') || rule.baseUrl.startsWith('https://'));
+    final hasUrl =
+        rule.baseUrl.isNotEmpty &&
+        (rule.baseUrl.startsWith('http://') ||
+            rule.baseUrl.startsWith('https://'));
 
     return AppCard(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
@@ -489,10 +572,14 @@ class _RulesPageState extends State<RulesPage> {
                 decoration: BoxDecoration(
                   color: typeColor.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: typeColor.withValues(alpha: 0.2), width: 0.8),
+                  border: Border.all(
+                    color: typeColor.withValues(alpha: 0.2),
+                    width: 0.8,
+                  ),
                 ),
                 child: Center(
-                  child: Icon(_getTypeIcon(rule.type),
+                  child: Icon(
+                    _getTypeIcon(rule.type),
                     color: typeColor,
                     size: 18,
                   ),
@@ -514,18 +601,26 @@ class _RulesPageState extends State<RulesPage> {
                               fontSize: 15,
                               fontWeight: FontWeight.w700,
                               color: rule.enabled
-                                  ? (isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary)
-                                  : (isDark ? AppColors.darkTextTertiary : AppColors.lightTextTertiary),
+                                  ? (isDark
+                                        ? AppColors.darkTextPrimary
+                                        : AppColors.lightTextPrimary)
+                                  : (isDark
+                                        ? AppColors.darkTextTertiary
+                                        : AppColors.lightTextTertiary),
                               letterSpacing: -0.3,
                             ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
-                        if (rule.version != null && rule.version!.isNotEmpty) ...[
+                        if (rule.version != null &&
+                            rule.version!.isNotEmpty) ...[
                           const SizedBox(width: 6),
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 4.5, vertical: 1),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 4.5,
+                              vertical: 1,
+                            ),
                             decoration: BoxDecoration(
                               color: isDark
                                   ? Colors.white.withValues(alpha: 0.08)
@@ -537,7 +632,9 @@ class _RulesPageState extends State<RulesPage> {
                               style: TextStyle(
                                 fontSize: 9,
                                 fontWeight: FontWeight.w600,
-                                color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
+                                color: isDark
+                                    ? AppColors.darkTextSecondary
+                                    : AppColors.lightTextSecondary,
                               ),
                             ),
                           ),
@@ -551,7 +648,10 @@ class _RulesPageState extends State<RulesPage> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 5,
+                            vertical: 1,
+                          ),
                           decoration: BoxDecoration(
                             color: typeColor.withValues(alpha: 0.1),
                             borderRadius: BorderRadius.circular(4),
@@ -559,7 +659,11 @@ class _RulesPageState extends State<RulesPage> {
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Icon(_getTypeIcon(rule.type), size: 9, color: typeColor),
+                              Icon(
+                                _getTypeIcon(rule.type),
+                                size: 9,
+                                color: typeColor,
+                              ),
                               const SizedBox(width: 3),
                               Text(
                                 _getTypeLabel(rule.type),
@@ -575,7 +679,8 @@ class _RulesPageState extends State<RulesPage> {
                         ValueListenableBuilder<Map<String, int>>(
                           valueListenable: _ruleService.latenciesNotifier,
                           builder: (context, latencies, _) {
-                            final latency = latencies[_ruleService.getRuleKey(rule)];
+                            final latency =
+                                latencies[_ruleService.getRuleKey(rule)];
                             return _buildLatencyBadge(latency, isDark);
                           },
                         ),
@@ -610,7 +715,9 @@ class _RulesPageState extends State<RulesPage> {
               style: TextStyle(
                 fontSize: 12,
                 height: 1.35,
-                color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
+                color: isDark
+                    ? AppColors.darkTextSecondary
+                    : AppColors.lightTextSecondary,
               ),
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
@@ -629,7 +736,10 @@ class _RulesPageState extends State<RulesPage> {
                   borderRadius: BorderRadius.circular(4),
                   onTap: hasUrl
                       ? () {
-                          context.pushBrowser(url: rule.baseUrl, title: rule.name);
+                          context.pushBrowser(
+                            url: rule.baseUrl,
+                            title: rule.name,
+                          );
                         }
                       : null,
                   child: Padding(
@@ -637,11 +747,16 @@ class _RulesPageState extends State<RulesPage> {
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Ionicons.globeOutline,
+                        Icon(
+                          Ionicons.globeOutline,
                           size: 12,
                           color: hasUrl
-                              ? (isDark ? const Color(0xFF34D399) : const Color(0xFF059669))
-                              : (isDark ? AppColors.darkTextTertiary : AppColors.lightTextTertiary),
+                              ? (isDark
+                                    ? const Color(0xFF34D399)
+                                    : const Color(0xFF059669))
+                              : (isDark
+                                    ? AppColors.darkTextTertiary
+                                    : AppColors.lightTextTertiary),
                         ),
                         const SizedBox(width: 4),
                         Flexible(
@@ -650,8 +765,12 @@ class _RulesPageState extends State<RulesPage> {
                             style: TextStyle(
                               fontSize: 11,
                               color: hasUrl
-                                  ? (isDark ? const Color(0xFF34D399) : const Color(0xFF059669))
-                                  : (isDark ? AppColors.darkTextTertiary : AppColors.lightTextSecondary),
+                                  ? (isDark
+                                        ? const Color(0xFF34D399)
+                                        : const Color(0xFF059669))
+                                  : (isDark
+                                        ? AppColors.darkTextTertiary
+                                        : AppColors.lightTextSecondary),
                             ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
@@ -659,9 +778,12 @@ class _RulesPageState extends State<RulesPage> {
                         ),
                         if (hasUrl) ...[
                           const SizedBox(width: 2),
-                          Icon(Ionicons.openOutline,
+                          Icon(
+                            Ionicons.openOutline,
                             size: 11,
-                            color: isDark ? const Color(0xFF34D399) : const Color(0xFF059669),
+                            color: isDark
+                                ? const Color(0xFF34D399)
+                                : const Color(0xFF059669),
                           ),
                         ],
                       ],
@@ -682,9 +804,12 @@ class _RulesPageState extends State<RulesPage> {
                   },
                   child: Padding(
                     padding: const EdgeInsets.all(4),
-                    child: Icon(Ionicons.flaskOutline,
+                    child: Icon(
+                      Ionicons.flaskOutline,
                       size: 14,
-                      color: isDark ? AppColors.primaryLight : AppColors.primary,
+                      color: isDark
+                          ? AppColors.primaryLight
+                          : AppColors.primary,
                     ),
                   ),
                 ),
@@ -698,9 +823,12 @@ class _RulesPageState extends State<RulesPage> {
                 onTap: () => _confirmDeleteRule(context, rule),
                 child: Padding(
                   padding: const EdgeInsets.all(4),
-                  child: Icon(Ionicons.trashOutline,
+                  child: Icon(
+                    Ionicons.trashOutline,
                     size: 14,
-                    color: isDark ? Colors.redAccent.withValues(alpha: 0.85) : Colors.redAccent,
+                    color: isDark
+                        ? Colors.redAccent.withValues(alpha: 0.85)
+                        : Colors.redAccent,
                   ),
                 ),
               ),
@@ -726,7 +854,11 @@ class _RulesPageState extends State<RulesPage> {
                 color: const Color(0xFF10B981).withValues(alpha: 0.12),
                 shape: BoxShape.circle,
               ),
-              child: const Icon(Ionicons.folderOutline, size: 40, color: Color(0xFF10B981)),
+              child: const Icon(
+                Ionicons.folderOutline,
+                size: 40,
+                color: Color(0xFF10B981),
+              ),
             ),
             const SizedBox(height: 16),
             const Text(
@@ -747,8 +879,13 @@ class _RulesPageState extends State<RulesPage> {
                   style: FilledButton.styleFrom(
                     backgroundColor: const Color(0xFF059669),
                     foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 10,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                   ),
                   onPressed: () => context.pushMarket(),
                   icon: const Icon(Ionicons.storefrontOutline, size: 16),
@@ -757,8 +894,13 @@ class _RulesPageState extends State<RulesPage> {
                 const SizedBox(width: 12),
                 OutlinedButton.icon(
                   style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 10,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                   ),
                   onPressed: () => _showImportDialog(context),
                   icon: const Icon(Ionicons.addOutline, size: 16),
@@ -778,7 +920,10 @@ class _RulesPageState extends State<RulesPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('规则管理', style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text(
+          '规则管理',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
         actions: [
           ValueListenableBuilder<bool>(
             valueListenable: _ruleService.isPingingNotifier,
@@ -792,7 +937,9 @@ class _RulesPageState extends State<RulesPage> {
                       height: 18,
                       child: CircularProgressIndicator(
                         strokeWidth: 2,
-                        valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                          AppColors.primary,
+                        ),
                       ),
                     ),
                   ),
@@ -836,7 +983,9 @@ class _RulesPageState extends State<RulesPage> {
           }).toList();
 
           return CustomScrollView(
-            physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
+            physics: const AlwaysScrollableScrollPhysics(
+              parent: BouncingScrollPhysics(),
+            ),
             slivers: [
               // 1. 顶部即时搜索栏
               SliverToBoxAdapter(
@@ -848,7 +997,9 @@ class _RulesPageState extends State<RulesPage> {
                       borderRadius: BorderRadius.circular(12),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withValues(alpha: isDark ? 0.20 : 0.03),
+                          color: Colors.black.withValues(
+                            alpha: isDark ? 0.20 : 0.03,
+                          ),
                           blurRadius: 8,
                           offset: const Offset(0, 2),
                         ),
@@ -858,25 +1009,38 @@ class _RulesPageState extends State<RulesPage> {
                       controller: _searchController,
                       style: TextStyle(
                         fontSize: 13,
-                        color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
+                        color: isDark
+                            ? AppColors.darkTextPrimary
+                            : AppColors.lightTextPrimary,
                       ),
                       decoration: InputDecoration(
                         hintText: '搜索规则名称、类型或地址...',
                         hintStyle: TextStyle(
                           fontSize: 13,
-                          color: isDark ? AppColors.darkTextTertiary : AppColors.lightTextTertiary,
+                          color: isDark
+                              ? AppColors.darkTextTertiary
+                              : AppColors.lightTextTertiary,
                         ),
-                        prefixIconConstraints: const BoxConstraints(minWidth: 38, minHeight: 38),
+                        prefixIconConstraints: const BoxConstraints(
+                          minWidth: 38,
+                          minHeight: 38,
+                        ),
                         prefixIcon: Padding(
                           padding: const EdgeInsets.only(left: 4),
-                          child: Icon(Ionicons.searchOutline,
+                          child: Icon(
+                            Ionicons.searchOutline,
                             size: 16,
                             color: _searchQuery.isNotEmpty
                                 ? AppColors.primary
-                                : (isDark ? AppColors.darkTextTertiary : AppColors.lightTextTertiary),
+                                : (isDark
+                                      ? AppColors.darkTextTertiary
+                                      : AppColors.lightTextTertiary),
                           ),
                         ),
-                        suffixIconConstraints: const BoxConstraints(minWidth: 36, minHeight: 38),
+                        suffixIconConstraints: const BoxConstraints(
+                          minWidth: 36,
+                          minHeight: 38,
+                        ),
                         suffixIcon: _searchQuery.isNotEmpty
                             ? GestureDetector(
                                 behavior: HitTestBehavior.opaque,
@@ -892,14 +1056,18 @@ class _RulesPageState extends State<RulesPage> {
                                     decoration: BoxDecoration(
                                       color: isDark
                                           ? Colors.white.withValues(alpha: 0.12)
-                                          : Colors.black.withValues(alpha: 0.07),
+                                          : Colors.black.withValues(
+                                              alpha: 0.07,
+                                            ),
                                       shape: BoxShape.circle,
                                     ),
                                     child: Center(
                                       child: Icon(
                                         Icons.close_rounded,
                                         size: 13,
-                                        color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
+                                        color: isDark
+                                            ? AppColors.darkTextSecondary
+                                            : AppColors.lightTextSecondary,
                                       ),
                                     ),
                                   ),
@@ -909,18 +1077,25 @@ class _RulesPageState extends State<RulesPage> {
                         isDense: true,
                         filled: true,
                         fillColor: Colors.transparent,
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 4,
+                          vertical: 10,
+                        ),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
                           borderSide: BorderSide(
-                            color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
+                            color: isDark
+                                ? AppColors.darkBorder
+                                : AppColors.lightBorder,
                             width: 0.8,
                           ),
                         ),
                         enabledBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
                           borderSide: BorderSide(
-                            color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
+                            color: isDark
+                                ? AppColors.darkBorder
+                                : AppColors.lightBorder,
                             width: 0.8,
                           ),
                         ),
@@ -932,7 +1107,8 @@ class _RulesPageState extends State<RulesPage> {
                           ),
                         ),
                       ),
-                      onChanged: (val) => setState(() => _searchQuery = val.trim()),
+                      onChanged: (val) =>
+                          setState(() => _searchQuery = val.trim()),
                     ),
                   ),
                 ),
@@ -945,28 +1121,41 @@ class _RulesPageState extends State<RulesPage> {
                   final failedCount = latencies.values
                       .where((v) => v < 0 || v > 2500)
                       .length;
-                  if (failedCount == 0) return const SliverToBoxAdapter(child: SizedBox.shrink());
+                  if (failedCount == 0) {
+                    return const SliverToBoxAdapter(child: SizedBox.shrink());
+                  }
 
                   return SliverToBoxAdapter(
                     child: Padding(
                       padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
                         decoration: BoxDecoration(
                           color: Colors.redAccent.withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: Colors.redAccent.withValues(alpha: 0.2)),
+                          border: Border.all(
+                            color: Colors.redAccent.withValues(alpha: 0.2),
+                          ),
                         ),
                         child: Row(
                           children: [
-                            const Icon(Ionicons.alertCircleOutline, size: 16, color: Colors.redAccent),
+                            const Icon(
+                              Ionicons.alertCircleOutline,
+                              size: 16,
+                              color: Colors.redAccent,
+                            ),
                             const SizedBox(width: 8),
                             Expanded(
                               child: Text(
                                 '检测到 $failedCount 个失效或超时规则',
                                 style: TextStyle(
                                   fontSize: 12,
-                                  color: isDark ? Colors.white70 : Colors.black87,
+                                  color: isDark
+                                      ? Colors.white70
+                                      : Colors.black87,
                                 ),
                               ),
                             ),
@@ -974,33 +1163,45 @@ class _RulesPageState extends State<RulesPage> {
                               style: TextButton.styleFrom(
                                 visualDensity: VisualDensity.compact,
                                 foregroundColor: Colors.amber,
-                                padding: const EdgeInsets.symmetric(horizontal: 6),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                ),
                               ),
                               onPressed: () async {
-                                final count = await _ruleService.disableFailedRules();
+                                final count = await _ruleService
+                                    .disableFailedRules();
                                 if (context.mounted) {
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     SnackBar(content: Text('已禁用 $count 个失效规则')),
                                   );
                                 }
                               },
-                              child: const Text('一键禁用', style: TextStyle(fontSize: 12)),
+                              child: const Text(
+                                '一键禁用',
+                                style: TextStyle(fontSize: 12),
+                              ),
                             ),
                             TextButton(
                               style: TextButton.styleFrom(
                                 visualDensity: VisualDensity.compact,
                                 foregroundColor: Colors.redAccent,
-                                padding: const EdgeInsets.symmetric(horizontal: 6),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                ),
                               ),
                               onPressed: () async {
-                                final count = await _ruleService.removeFailedRules();
+                                final count = await _ruleService
+                                    .removeFailedRules();
                                 if (context.mounted) {
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     SnackBar(content: Text('已清理 $count 个失效规则')),
                                   );
                                 }
                               },
-                              child: const Text('一键清理', style: TextStyle(fontSize: 12)),
+                              child: const Text(
+                                '一键清理',
+                                style: TextStyle(fontSize: 12),
+                              ),
                             ),
                           ],
                         ),
@@ -1020,34 +1221,51 @@ class _RulesPageState extends State<RulesPage> {
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Ionicons.cubeOutline,
+                          Icon(
+                            Ionicons.cubeOutline,
                             size: 44,
-                            color: isDark ? AppColors.darkTextTertiary : AppColors.lightTextTertiary,
+                            color: isDark
+                                ? AppColors.darkTextTertiary
+                                : AppColors.lightTextTertiary,
                           ),
                           const SizedBox(height: 12),
                           Text(
                             '未找到符合条件的规则',
                             style: TextStyle(
                               fontSize: 14,
-                              color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
+                              color: isDark
+                                  ? AppColors.darkTextSecondary
+                                  : AppColors.lightTextSecondary,
                             ),
                           ),
                           const SizedBox(height: 12),
                           OutlinedButton.icon(
                             style: OutlinedButton.styleFrom(
                               foregroundColor: AppColors.primary,
-                              side: const BorderSide(color: AppColors.primary, width: 0.8),
+                              side: const BorderSide(
+                                color: AppColors.primary,
+                                width: 0.8,
+                              ),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(10),
                               ),
-                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                                vertical: 8,
+                              ),
                             ),
                             onPressed: () {
                               _searchController.clear();
                               setState(() => _searchQuery = '');
                             },
                             icon: const Icon(Ionicons.reloadOutline, size: 14),
-                            label: const Text('重置搜索', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
+                            label: const Text(
+                              '重置搜索',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
                           ),
                         ],
                       ),
@@ -1056,19 +1274,14 @@ class _RulesPageState extends State<RulesPage> {
                 )
               else
                 SliverList(
-                  delegate: SliverChildBuilderDelegate(
-                    (context, index) {
-                      final rule = filteredRules[index];
-                      return _buildRuleCard(context, rule);
-                    },
-                    childCount: filteredRules.length,
-                  ),
+                  delegate: SliverChildBuilderDelegate((context, index) {
+                    final rule = filteredRules[index];
+                    return _buildRuleCard(context, rule);
+                  }, childCount: filteredRules.length),
                 ),
 
               // 底部避让导航栏
-              const SliverToBoxAdapter(
-                child: SizedBox(height: 96),
-              ),
+              const SliverToBoxAdapter(child: SizedBox(height: 96)),
             ],
           );
         },

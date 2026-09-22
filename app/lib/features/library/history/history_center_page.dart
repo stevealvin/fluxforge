@@ -12,6 +12,7 @@ import 'package:fluxforge/app/di/di.dart';
 import 'package:fluxforge/data/library/play_history_service.dart';
 import 'package:fluxforge/shared/widgets/app_card.dart';
 import 'package:fluxforge/shared/widgets/app_confirm_dialog.dart';
+import 'package:fluxforge/shared/widgets/app_delete_snack_bar.dart';
 import 'package:fluxforge/shared/widgets/app_image.dart';
 
 /// 打开消费记录对应的媒体详情页
@@ -94,8 +95,7 @@ class _HistoryCenterPageState extends State<HistoryCenterPage> {
     await playHistoryService.clear();
     await historyService.clearHistory();
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(const SnackBar(content: Text('已清空全部历史记录')));
+    showDeleteSnackBar(context, message: '已清空全部历史记录');
   }
 
   @override

@@ -4,6 +4,7 @@ import 'package:ionicons/ionicons.dart';
 
 import 'package:fluxforge/app/theme/app_colors.dart';
 import 'package:fluxforge/data/sites/site_store.dart';
+import 'package:fluxforge/shared/widgets/app_delete_snack_bar.dart';
 
 /// 站点新增 / 编辑弹层（[editing] 为空表示新增）
 ///
@@ -45,7 +46,9 @@ Future<void> showSiteEditorSheet(
                       width: 36,
                       height: 4,
                       decoration: BoxDecoration(
-                        color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
+                        color: isDark
+                            ? AppColors.darkBorder
+                            : AppColors.lightBorder,
                         borderRadius: BorderRadius.circular(2),
                       ),
                     ),
@@ -53,7 +56,10 @@ Future<void> showSiteEditorSheet(
                   const SizedBox(height: 16),
                   Text(
                     editing == null ? '添加站点' : '编辑站点',
-                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                   const SizedBox(height: 16),
                   TextFormField(
@@ -136,7 +142,10 @@ Future<void> showSiteActionsSheet(
               padding: const EdgeInsets.fromLTRB(20, 18, 20, 8),
               child: Text(
                 entry.name,
-                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.bold,
+                ),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
@@ -150,20 +159,20 @@ Future<void> showSiteActionsSheet(
               },
             ),
             ListTile(
-              leading: const Icon(Ionicons.trashOutline,
-                  size: 20, color: AppColors.danger),
-              title: const Text('删除',
-                  style: TextStyle(fontSize: 14, color: AppColors.danger)),
+              leading: const Icon(
+                Ionicons.trashOutline,
+                size: 20,
+                color: AppColors.danger,
+              ),
+              title: const Text(
+                '删除',
+                style: TextStyle(fontSize: 14, color: AppColors.danger),
+              ),
               onTap: () async {
                 Navigator.pop(sheetCtx);
                 await store.remove(entry.id);
                 if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('已删除「${entry.name}」'),
-                      duration: const Duration(milliseconds: 1500),
-                    ),
-                  );
+                  showDeleteSnackBar(context, message: '已删除「${entry.name}」');
                 }
               },
             ),

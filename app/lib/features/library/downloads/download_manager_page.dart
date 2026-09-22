@@ -8,6 +8,7 @@ import 'package:fluxforge/app/di/di.dart';
 import 'package:fluxforge/data/download/download_service.dart';
 import 'package:fluxforge/shared/widgets/app_card.dart';
 import 'package:fluxforge/shared/widgets/app_confirm_dialog.dart';
+import 'package:fluxforge/shared/widgets/app_delete_snack_bar.dart';
 import 'package:fluxforge/shared/widgets/app_empty_state.dart';
 import 'package:fluxforge/shared/widgets/app_image.dart';
 
@@ -71,8 +72,7 @@ class _DownloadManagerPageState extends State<DownloadManagerPage> {
     await downloadService.clearAll();
     await _refreshSize();
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(const SnackBar(content: Text('已清空全部离线下载内容')));
+    showDeleteSnackBar(context, message: '已清空全部离线下载内容');
   }
 
   /// 删除单个任务（连带本地文件）
@@ -88,8 +88,7 @@ class _DownloadManagerPageState extends State<DownloadManagerPage> {
     await downloadService.remove(task.id);
     await _refreshSize();
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(const SnackBar(content: Text('已删除该书离线内容')));
+    showDeleteSnackBar(context, message: '已删除该书离线内容');
   }
 
   @override

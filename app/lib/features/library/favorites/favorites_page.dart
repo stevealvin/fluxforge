@@ -9,6 +9,7 @@ import 'package:fluxforge/data/library/favorite_service.dart';
 import 'package:fluxforge/data/library/play_history_service.dart';
 import 'package:fluxforge/shared/widgets/app_card.dart';
 import 'package:fluxforge/shared/widgets/app_empty_state.dart';
+import 'package:fluxforge/shared/widgets/app_delete_snack_bar.dart';
 import 'package:fluxforge/shared/widgets/app_image.dart';
 import 'package:fluxforge/shared/widgets/app_loading.dart';
 import 'package:fluxforge/features/media/shared/media_detail_page.dart';
@@ -375,21 +376,13 @@ class _FavoritesPageState extends State<FavoritesPage> {
   /// 移除收藏并提供撤销（相比二次确认，更适合这种可逆的轻量操作）
   Future<void> _removeWithUndo(BuildContext context, FavoriteItem item) async {
     HapticFeedback.lightImpact();
-    final messenger = ScaffoldMessenger.of(context);
     await favoriteService.removeFavorite(item.id);
+    if (!context.mounted) return;
 
-    messenger
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Text('已移除《${item.title}》'),
-          // 撤销窗口给足 5 秒：移除是可逆操作，时间太短会来不及点「撤销」
-          duration: const Duration(seconds: 5),
-          action: SnackBarAction(
-            label: '撤销',
-            onPressed: () => favoriteService.addFavorite(item),
-          ),
-        ),
-      );
+    showDeleteSnackBar(
+      context,
+      message: '已移除《${item.title}》',
+      onUndo: () => favoriteService.addFavorite(item),
+    );
   }
 }

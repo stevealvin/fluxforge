@@ -5,6 +5,7 @@ import 'package:fluxforge/app/theme/app_colors.dart';
 import 'package:fluxforge/data/settings/app_service.dart';
 import 'package:fluxforge/app/di/di.dart';
 import 'package:fluxforge/shared/widgets/app_button.dart';
+import 'package:fluxforge/shared/widgets/app_delete_snack_bar.dart';
 import 'package:fluxforge/shared/widgets/app_card.dart';
 import 'package:fluxforge/features/browser/engine/adblock_engine.dart';
 
@@ -597,8 +598,9 @@ class _AdBlockRulesPageState extends State<AdBlockRulesPage> {
                     borderRadius: BorderRadius.circular(6),
                     onTap: () {
                       _engine.deleteCustomSource(source.id);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('已移除自定义规则源 [${source.name}]')),
+                      showDeleteSnackBar(
+                        context,
+                        message: '已移除自定义规则源 [${source.name}]',
                       );
                     },
                     child: const Padding(
