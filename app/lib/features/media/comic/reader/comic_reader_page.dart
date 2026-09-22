@@ -9,6 +9,12 @@ import 'package:fluxforge/shared/widgets/app_image.dart';
 /// 漫画沉浸阅读模式持久化偏好键
 const String _kComicReaderModeKey = 'comic_reader_continuous_mode';
 
+/// 图片「加载中 / 加载失败」占位页的高度
+///
+/// 两者**必须一致**：高度不同会在状态切换（加载中 → 失败）时让列表项高度突变，
+/// 连续滚动模式下表现为滚动位置抖动、画面跳动（此前是 280 / 220 两个值）。
+const double kComicPagePlaceholderHeight = 280;
+
 /// 全屏沉浸式漫画与画廊阅读引擎
 class ComicReaderPage extends StatefulWidget {
   const ComicReaderPage({
@@ -361,61 +367,16 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
               loadStateChanged: (state) {
                 switch (state.extendedImageLoadState) {
                   case LoadState.loading:
-                    return Container(
-                      height: 280,
-                      color: Colors.black,
-                      child: const Center(
-                        child: SizedBox(
-                          width: 24,
-                          height: 24,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            valueColor: AlwaysStoppedAnimation<Color>(
-                              AppColors.primary,
-                            ),
-                          ),
-                        ),
-                      ),
+                    return _buildImagePlaceholder(
+                      height: kComicPagePlaceholderHeight,
+                      child: _buildLoadingIndicator(),
                     );
                   case LoadState.completed:
                     return null;
                   case LoadState.failed:
-                    return Container(
-                      height: 220,
-                      color: const Color(0xFF141414),
-                      child: Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            const Icon(
-                              Ionicons.imageOutline,
-                              color: Colors.white38,
-                              size: 36,
-                            ),
-                            const SizedBox(height: 8),
-                            GestureDetector(
-                              onTap: () => state.reLoadImage(),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                  vertical: 4,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: Colors.white12,
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                child: const Text(
-                                  '重试加载',
-                                  style: TextStyle(
-                                    color: Colors.white70,
-                                    fontSize: 11,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
+                    return _buildImagePlaceholder(
+                      height: kComicPagePlaceholderHeight,
+                      child: _buildRetryPrompt(() => state.reLoadImage()),
                     );
                 }
               },
@@ -448,6 +409,57 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
       mode: mode,
       gestureConfig: initGestureConfigHandler,
       loadStateChanged: loadStateChanged,
+    );
+  }
+
+  /// 图片占位页：加载中与失败**共用同一底色与高度口径**
+  ///
+  /// [height] 为空表示撑满父级（翻页模式整屏占位）；连续滚动模式必须传
+  /// [kComicPagePlaceholderHeight]，否则状态切换时列表项高度突变、滚动位置抖动。
+  Widget _buildImagePlaceholder({required Widget child, double? height}) {
+    return Container(
+      height: height,
+      // 与 Scaffold 背景同色：换成另一种深灰会在切换瞬间显出一块色块
+      color: Colors.black,
+      child: Center(child: child),
+    );
+  }
+
+  /// 占位页里的加载指示器（两种阅读模式共用同一尺寸）
+  Widget _buildLoadingIndicator() {
+    return const SizedBox(
+      width: 28,
+      height: 28,
+      child: CircularProgressIndicator(
+        strokeWidth: 2,
+        valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
+      ),
+    );
+  }
+
+  /// 占位页里的失败形态：图标 + 重试入口（两种阅读模式共用同一尺寸与样式）
+  Widget _buildRetryPrompt(VoidCallback onRetry) {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const Icon(Ionicons.imageOutline, color: Colors.white38, size: 44),
+        const SizedBox(height: 10),
+        GestureDetector(
+          onTap: onRetry,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+            decoration: BoxDecoration(
+              color: Colors.white12,
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: const Text(
+              '点击重试',
+              style: TextStyle(color: Colors.white70, fontSize: 12.5),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -486,53 +498,13 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
           loadStateChanged: (state) {
             switch (state.extendedImageLoadState) {
               case LoadState.loading:
-                return const Center(
-                  child: SizedBox(
-                    width: 28,
-                    height: 28,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      valueColor: AlwaysStoppedAnimation<Color>(
-                        AppColors.primary,
-                      ),
-                    ),
-                  ),
-                );
+                // 翻页模式整屏占位：不设高度、撑满视口（与连续模式共用同一实现）
+                return _buildImagePlaceholder(child: _buildLoadingIndicator());
               case LoadState.completed:
                 return null;
               case LoadState.failed:
-                return Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Icon(
-                        Ionicons.imageOutline,
-                        color: Colors.white38,
-                        size: 48,
-                      ),
-                      const SizedBox(height: 12),
-                      GestureDetector(
-                        onTap: () => state.reLoadImage(),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 6,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.white12,
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          child: const Text(
-                            '点击重试',
-                            style: TextStyle(
-                              color: Colors.white70,
-                              fontSize: 13,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
+                return _buildImagePlaceholder(
+                  child: _buildRetryPrompt(() => state.reLoadImage()),
                 );
             }
           },
@@ -640,25 +612,29 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
   ///
   /// 样式对齐小说阅读器的 `ReaderBarActionButton`，但**不跨 feature 复用**它 ——
   /// comic 直接依赖 novel 的内部组件会形成 features 横向依赖。
+  ///
+  /// 按钮不因「当前处于该模式」而改变样式：label 本身已写明当前模式，
+  /// 额外的颜色 / 字重都属于重复强调（此前是染绿，后改为加粗，现全部去掉）。
   Widget _buildBottomAction({
     required IconData icon,
     required String label,
     required VoidCallback onTap,
     String? tooltip,
-    bool highlighted = false,
   }) {
-    final color = highlighted ? AppColors.primaryLight : Colors.white;
     final content = InkWell(
       borderRadius: BorderRadius.circular(8),
       onTap: onTap,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 6),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 20, color: color),
-            const SizedBox(height: 4),
-            Text(label, style: TextStyle(fontSize: 11, color: color)),
+            Icon(icon, size: 20, color: Colors.white),
+            const SizedBox(height: 3),
+            Text(
+              label,
+              style: const TextStyle(fontSize: 11, color: Colors.white),
+            ),
           ],
         ),
       ),
@@ -686,7 +662,7 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 2),
                     child: Text(
                       '阅读方式',
                       style: TextStyle(
@@ -712,7 +688,7 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
                     title: '长漫画',
                     subtitle: '纵向连续，适合条漫与长图',
                   ),
-                  const SizedBox(height: 6),
+                  const SizedBox(height: 4),
                 ],
               ),
             ),
@@ -740,33 +716,30 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
         ? AppColors.darkTextMuted
         : AppColors.lightTextMuted;
 
-    return ListTile(
-      dense: true,
-      leading: Icon(
-        icon,
-        size: 20,
-        color: current ? AppColors.primary : mutedColor,
-      ),
-      title: Text(
-        title,
-        style: TextStyle(
-          fontSize: 14,
-          color: current ? AppColors.primary : textColor,
-          fontWeight: current ? FontWeight.bold : FontWeight.normal,
+    return InkWell(
+      key: ValueKey('reading_mode_$value'),
+      onTap: () => Navigator.pop(sheetContext, value),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+        child: Row(
+          children: [
+            Icon(icon, size: 18, color: textColor),
+            const SizedBox(width: 10),
+            Text(title, style: TextStyle(fontSize: 13.5, color: textColor)),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                subtitle,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 11, color: mutedColor),
+              ),
+            ),
+            // 选中只给一个勾：此前整项染绿，而模式名本身已说明当前选择
+            if (current) Icon(Ionicons.checkmark, size: 16, color: textColor),
+          ],
         ),
       ),
-      subtitle: Text(
-        subtitle,
-        style: TextStyle(fontSize: 11.5, color: mutedColor),
-      ),
-      trailing: current
-          ? const Icon(
-              Ionicons.checkmarkCircle,
-              size: 18,
-              color: AppColors.primary,
-            )
-          : null,
-      onTap: () => Navigator.pop(sheetContext, value),
     );
   }
 
@@ -786,8 +759,8 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
     return Container(
       // 背景保持「顶部完全透明」的渐变遮罩：图片区与浅色主题之间不留生硬的色块分界
       padding: EdgeInsets.only(
-        top: 10,
-        bottom: MediaQuery.of(context).padding.bottom + 12,
+        top: 6,
+        bottom: MediaQuery.of(context).padding.bottom + 8,
         left: 8,
         right: 8,
       ),
@@ -806,9 +779,18 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // 进度行：上一页 / 进度条 / 下一页（与小说阅读器同构）
+          // 进度行：页码 / 上一页 / 进度条 / 下一页
+          //
+          // 页码并入本行（原先独占一行）—— 底部栏因此少一行，高度降约 20px
           Row(
             children: [
+              Padding(
+                padding: const EdgeInsets.only(left: 10, right: 2),
+                child: Text(
+                  '$displayIndex / $total',
+                  style: const TextStyle(color: Colors.white70, fontSize: 11),
+                ),
+              ),
               IconButton(
                 tooltip: '上一页',
                 icon: const Icon(Ionicons.chevronBackOutline, size: 20),
@@ -850,13 +832,7 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
             ],
           ),
 
-          // 进度文案（与小说阅读器一致：居中一行）
-          Text(
-            '$displayIndex / $total',
-            style: const TextStyle(color: Colors.white70, fontSize: 11),
-          ),
-
-          const SizedBox(height: 4),
+          const SizedBox(height: 2),
 
           // 功能按钮行：目录（章节形态才有）与阅读方式，都从底部面板进入
           Row(
@@ -874,7 +850,6 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
                     ? Ionicons.readerOutline
                     : Ionicons.bookOutline,
                 label: _isContinuousMode ? '长漫画' : '左右翻页',
-                highlighted: _isContinuousMode,
                 onTap: _openReadingModeSheet,
               ),
             ],

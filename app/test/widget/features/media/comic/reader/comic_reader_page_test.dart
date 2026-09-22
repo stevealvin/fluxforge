@@ -53,7 +53,7 @@ void main() {
     expect(find.text('长漫画'), findsOneWidget);
 
     // 在面板里选「长漫画」→ 切到纵向连续
-    await tester.tap(find.widgetWithText(ListTile, '长漫画'));
+    await tester.tap(find.byKey(const ValueKey('reading_mode_true')));
     await settle(tester);
     expect(find.byType(ListView), findsOneWidget);
     expect(find.text('长漫画'), findsOneWidget, reason: '底部入口显示当前方式');
@@ -63,7 +63,7 @@ void main() {
     // 再切回左右翻页
     await tester.tap(find.text('长漫画'));
     await settle(tester);
-    await tester.tap(find.widgetWithText(ListTile, '左右翻页'));
+    await tester.tap(find.byKey(const ValueKey('reading_mode_false')));
     await settle(tester);
     expect(find.text('左右翻页'), findsOneWidget);
     expect(find.byType(ListView), findsNothing);
@@ -145,5 +145,27 @@ void main() {
 
     expect(pageChanges, isNotEmpty, reason: '滑得快也必须定位到位');
     expect(pageChanges.length, 1, reason: '一次甩动仍只定位一次');
+  });
+
+  testWidgets('连续模式下图片占位页高度唯一：加载中与失败不得两种高度', (tester) async {
+    await pumpReader(tester, continuous: true);
+    await settle(tester);
+
+    // 测试环境无网络 → 图片进入加载中 / 失败态，两者共用同一占位高度。
+    // 断言「高度集合只有一个元素」：此前加载中 280、失败 220，
+    // 状态切换会让列表项高度突变、滚动位置抖动。
+    final placeholderHeights = tester
+        .widgetList<Container>(find.byType(Container))
+        .map((container) => container.constraints?.maxHeight)
+        .whereType<double>()
+        // 只关心固定高度的占位容器：撑满父级的约束是无限值，不参与比较
+        .where((height) => height.isFinite && height > 200)
+        .toSet();
+
+    expect(
+      placeholderHeights,
+      {kComicPagePlaceholderHeight},
+      reason: '加载中与失败的占位高度必须一致',
+    );
   });
 }
