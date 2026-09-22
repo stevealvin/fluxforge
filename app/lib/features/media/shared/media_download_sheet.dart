@@ -8,6 +8,7 @@ import 'package:fluxforge/app/theme/app_colors.dart';
 import 'package:fluxforge/data/download/download_service.dart';
 import 'package:fluxforge/features/library/downloads/models/download_unit.dart';
 import 'package:fluxforge/features/library/downloads/widgets/download_bar.dart';
+import 'package:fluxforge/shared/widgets/app_card.dart';
 
 /// 呼出「离线下载」底部面板
 ///
@@ -196,7 +197,9 @@ class _DownloadSheetBodyState extends State<_DownloadSheetBody> {
     final isDark = widget.isDark;
 
     return SafeArea(
-      child: Padding(
+      // 内容（选集卡片 + 动作行 + 任务状态条）在窄屏上可能超过半屏高度：
+      // 外层可滚动，避免 RenderFlex 溢出把面板顶穿
+      child: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(16, 18, 16, 12),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -229,26 +232,28 @@ class _DownloadSheetBodyState extends State<_DownloadSheetBody> {
               const SizedBox(height: 12),
             ],
 
-            // 全部下载 / 状态条：五态入口，点击即执行动作，进度实时刷新
+            // 底部动作行：「下载选中」为主，「下载全部」紧随其后（同族动作、范围不同）
             ValueListenableBuilder<List<DownloadTask>>(
               valueListenable: widget.tasks,
-              builder: (context, _, _) => DownloadBar(
-                task: widget.taskOf(),
-                unitLabel: widget.unitLabel,
-                idleLabel: widget.units.isEmpty
-                    ? null
-                    : '下载全部 ${widget.units.length} ${widget.unitLabel}',
-                onTap: (task) async {
-                  final message = await widget.onAction(task);
-                  if (!context.mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(message),
-                      duration: const Duration(milliseconds: 1800),
-                    ),
-                  );
-                },
-              ),
+              builder: (context, _, _) => _buildActionRow(),
+            ),
+
+            // 任务状态条：仅在已有任务时出现（承载进度与暂停 / 继续 / 重试）。
+            // 未开始时「下载全部」已由动作行承担，两者同时出现等于同一动作两个入口。
+            ValueListenableBuilder<List<DownloadTask>>(
+              valueListenable: widget.tasks,
+              builder: (context, _, _) {
+                final task = widget.taskOf();
+                if (task == null) return const SizedBox.shrink();
+                return Padding(
+                  padding: const EdgeInsets.only(top: 10),
+                  child: DownloadBar(
+                    task: task,
+                    unitLabel: widget.unitLabel,
+                    onTap: _runTaskAction,
+                  ),
+                );
+              },
             ),
 
             if (widget.onOpenDownloads != null)
@@ -270,7 +275,7 @@ class _DownloadSheetBodyState extends State<_DownloadSheetBody> {
     );
   }
 
-  /// 选集区：标题行 + 勾选列表 + 「下载选中」
+  /// 选集区：标题行（摘要 + 全选 / 清空）+ 卡片列表（动作行由 [build] 统一给出）
   Widget _buildSelectionSection(bool isDark) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -313,93 +318,148 @@ class _DownloadSheetBodyState extends State<_DownloadSheetBody> {
             ),
           ],
         ),
-        const SizedBox(height: 2),
-        Container(
-          decoration: BoxDecoration(
-            color: isDark ? AppColors.darkCard : AppColors.lightSurface,
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: ConstrainedBox(
-            // 列表高度自适应，最多占 200：单元少时不留大片空白，多时可滚动
-            constraints: const BoxConstraints(maxHeight: 200),
-            child: ListView.builder(
-              shrinkWrap: true,
-              padding: const EdgeInsets.symmetric(vertical: 4),
-              itemCount: widget.units.length,
-              itemBuilder: (context, i) => _buildUnitRow(i, isDark),
+        const SizedBox(height: 8),
+        ConstrainedBox(
+          // 高度自适应，最多占 220：单元少时不留大片空白，多时网格内滚动
+          constraints: const BoxConstraints(maxHeight: 220),
+          child: GridView.builder(
+            shrinkWrap: true,
+            padding: EdgeInsets.zero,
+            gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+              // 对齐漫画章节目录的紧凑格子：高 40、间距 8，列数仍按可用宽度自适应
+              maxCrossAxisExtent: 112,
+              mainAxisExtent: 40,
+              mainAxisSpacing: 8,
+              crossAxisSpacing: 8,
             ),
-          ),
-        ),
-        const SizedBox(height: 10),
-        SizedBox(
-          width: double.infinity,
-          child: FilledButton(
-            onPressed: _selected.isEmpty ? null : _downloadSelected,
-            style: FilledButton.styleFrom(
-              backgroundColor: AppColors.primary,
-              padding: const EdgeInsets.symmetric(vertical: 10),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
-              ),
-            ),
-            child: Text(
-              _selected.isEmpty ? '下载选中' : '下载选中（${_selected.length} 项）',
-              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-            ),
+            itemCount: widget.units.length,
+            itemBuilder: (context, i) => _buildUnitCard(i, isDark),
           ),
         ),
       ],
     );
   }
 
-  Widget _buildUnitRow(int position, bool isDark) {
+  /// 单个可下载单元（紧凑网格格子，密度对齐漫画章节目录）
+  ///
+  /// **未选中不画边框线**（透明边框仅用于占位，切换时不跳尺寸）；
+  /// 选中态以颜色边框为主：主色描边 + 主色微底 + 主色加粗标题。边框在加色的同时
+  /// **加粗**（0.8 → 1.4）—— 颜色之外还有一处可辨差异，色弱用户同样分得清。
+  /// 格子窄且矮，故只放标题（单项大小仍在「已选 N 项 · 预计 X」摘要里给出）。
+  Widget _buildUnitCard(int position, bool isDark) {
     final unit = widget.units[position];
     final checked = _selected.contains(unit.index);
-    final sizes = _sizes;
-    final size = (sizes != null && position < sizes.length)
-        ? sizes[position]
-        : null;
 
-    return InkWell(
+    return AppCard.outlined(
+      key: ValueKey('download_unit_${unit.index}'),
+      padding: const EdgeInsets.symmetric(horizontal: 6),
+      borderRadius: 8,
+      color: checked
+          ? AppColors.primary.withValues(alpha: isDark ? 0.18 : 0.10)
+          // 未选中用「比面板深一档」的内嵌块底色：地面板是纯白，铺纯白等于没有边界
+          : (isDark ? AppColors.darkCard : AppColors.lightSurfaceVariant),
+      borderColor: checked ? AppColors.primary : Colors.transparent,
+      borderWidth: checked ? 1.4 : 0.8,
       onTap: () => _toggleUnit(unit.index),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-        child: Row(
-          children: [
-            Checkbox(
-              value: checked,
-              visualDensity: VisualDensity.compact,
-              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              onChanged: (_) => _toggleUnit(unit.index),
-            ),
-            const SizedBox(width: 6),
-            Expanded(
-              child: Text(
-                unit.title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 12.5,
-                  color: checked
-                      ? AppColors.primary
-                      : (isDark
-                            ? AppColors.darkTextPrimary
-                            : AppColors.lightTextPrimary),
-                ),
-              ),
-            ),
-            if (size != null && size > 0)
-              Text(
-                formatDownloadSize(size),
-                style: TextStyle(
-                  fontSize: 10.5,
-                  color: isDark
-                      ? AppColors.darkTextMuted
-                      : AppColors.lightTextMuted,
-                ),
-              ),
-          ],
+      child: Center(
+        child: Text(
+          unit.title,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: checked ? FontWeight.w600 : FontWeight.normal,
+            color: checked
+                ? AppColors.primary
+                : (isDark
+                      ? AppColors.darkTextPrimary
+                      : AppColors.lightTextPrimary),
+          ),
         ),
+      ),
+    );
+  }
+
+  /// 底部动作行：主按钮「下载选中」+ 次按钮「下载全部」
+  ///
+  /// 「下载全部」放在这里而不是选择工具栏（全选 / 清空）之后 —— 二者都是**发起下载**，
+  /// 只是范围不同；「清空」属于选区编辑，与它并列会让「清空」读起来像下载的前置步骤。
+  /// 已有任务时不再重复此入口：状态条本身承载「继续 / 重试」。
+  Widget _buildActionRow() {
+    final hasUnits = widget.units.isNotEmpty;
+    final showDownloadAll = hasUnits && widget.taskOf() == null;
+
+    if (!_canSelect && !hasUnits) return const SizedBox.shrink();
+
+    return Row(
+      children: [
+        if (_canSelect)
+          Expanded(
+            flex: showDownloadAll ? 3 : 1,
+            child: SizedBox(
+              height: 40,
+              child: FilledButton(
+                onPressed: _selected.isEmpty ? null : _downloadSelected,
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  padding: EdgeInsets.zero,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+                child: Text(
+                  _selected.isEmpty ? '下载选中' : '下载选中（${_selected.length} 项）',
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        if (_canSelect && showDownloadAll) const SizedBox(width: 10),
+        if (showDownloadAll)
+          Expanded(
+            flex: 2,
+            child: SizedBox(
+              height: 40,
+              child: OutlinedButton(
+                onPressed: () => _runTaskAction(null),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.primary,
+                  padding: EdgeInsets.zero,
+                  side: BorderSide(
+                    color: AppColors.primary.withValues(alpha: 0.5),
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+                child: Text(
+                  '下载全部 ${widget.units.length} ${widget.unitLabel}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  /// 触发一次任务动作并把宿主反馈以 SnackBar 呈现（「下载全部」与状态条共用）
+  Future<void> _runTaskAction(DownloadTask? task) async {
+    final message = await widget.onAction(task);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        duration: const Duration(milliseconds: 1800),
       ),
     );
   }

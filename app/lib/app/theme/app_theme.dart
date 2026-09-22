@@ -27,7 +27,7 @@ class AppTheme {
       onSurface: AppColors.lightTextPrimary,
       surfaceContainerHighest: AppColors.lightCard,
       outline: AppColors.lightCardBorder,
-      outlineVariant: const Color(0xFFF1F5F9),
+      outlineVariant: AppColors.lightSurfaceVariant,
       error: AppColors.danger,
     );
 

@@ -42,6 +42,11 @@ class AppColors {
   static const Color lightSurface = Colors.white;
   /// 浅色卡片底色
   static const Color lightCard = Color(0xFFFFFFFF);
+  /// 浅色内嵌块底色（白面板上需要可辨层次的小块，如选集格子）
+  ///
+  /// 白面板上直接铺 [lightSurface]（纯白）又不画边框时，区块**完全没有边界**；
+  /// 需要这层「比面板深一档」的底色来界定。
+  static const Color lightSurfaceVariant = Color(0xFFF1F5F9); // Slate 100
   /// 浅色卡片微边框
   static const Color lightCardBorder = Color(0xFFE2E8F0); // Slate 200
   /// 浅色卡片微边框别名
