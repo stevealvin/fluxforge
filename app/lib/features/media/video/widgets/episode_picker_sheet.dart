@@ -177,13 +177,13 @@ class _EpisodePickerSheetState extends State<EpisodePickerSheet> {
                 final ep = episodes[realIndex];
                 final isCurrent = realIndex == widget.currentEpisodeIndex;
 
-                // 选中态靠描边强调 → 边框只属于 AppCard.outlined
+                // 选中态靠描边强调；未选中不画默认边框线（透明边框仅占位，切换时不跳尺寸）
                 return AppCard.outlined(
                   padding: const EdgeInsets.symmetric(horizontal: 4),
                   borderRadius: 8,
                   borderColor: isCurrent
                       ? AppColors.primary
-                      : (isDark ? AppColors.darkBorder : AppColors.lightBorder),
+                      : Colors.transparent,
                   color: isCurrent
                       ? AppColors.primary.withValues(
                           alpha: isDark ? 0.25 : 0.15,

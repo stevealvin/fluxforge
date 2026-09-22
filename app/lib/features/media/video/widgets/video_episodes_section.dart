@@ -227,14 +227,10 @@ class VideoEpisodesSection extends StatelessWidget {
                               ? AppColors.darkCard
                               : AppColors.lightSurface),
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                      color: isCurrent
-                          ? AppColors.primary
-                          : (isDark
-                                ? AppColors.darkBorder
-                                : AppColors.lightBorder),
-                      width: 0.8,
-                    ),
+                    // 未选中不画默认边框线：底色已足以区分边界，选中才亮主色描边
+                    border: isCurrent
+                        ? Border.all(color: AppColors.primary, width: 0.8)
+                        : null,
                     boxShadow: isCurrent
                         ? [
                             BoxShadow(
