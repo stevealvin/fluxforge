@@ -104,17 +104,18 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
     super.dispose();
   }
 
-  Future<void> _toggleReadingMode() async {
-    final newMode = !_isContinuousMode;
+  /// 设定阅读方式（长漫画 / 左右翻页）并持久化
+  Future<void> _setReadingMode(bool continuous) async {
+    if (continuous == _isContinuousMode) return;
     setState(() {
-      _isContinuousMode = newMode;
+      _isContinuousMode = continuous;
     });
 
     try {
-      await AppStorage.setBool(_kComicReaderModeKey, newMode);
+      await AppStorage.setBool(_kComicReaderModeKey, continuous);
     } catch (_) {}
 
-    if (newMode) {
+    if (continuous) {
       _scrollToCurrentIndexAfterBuild();
     } else {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -125,7 +126,11 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
     }
   }
 
-  void _scrollToCurrentIndexAfterBuild() {
+  /// 滚到当前页
+  ///
+  /// [animated] 为 false 时瞬时定位：滑块松手后的定位必须瞬时，
+  /// 否则动画期间会持续触发滚动回写，页码来回跳。
+  void _scrollToCurrentIndexAfterBuild({bool animated = true}) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !_scrollController.hasClients) return;
       if (_currentIndex >= 0 && _currentIndex < _itemKeys.length) {
@@ -134,7 +139,9 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
           Scrollable.ensureVisible(
             keyContext,
             alignment: 0.0,
-            duration: const Duration(milliseconds: 200),
+            duration: animated
+                ? const Duration(milliseconds: 200)
+                : Duration.zero,
             curve: Curves.easeOut,
           );
         }
@@ -144,6 +151,8 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
 
   void _updateIndexOnScroll() {
     if (!mounted || _itemKeys.isEmpty) return;
+    // 拖动滑块期间一切以滑块为准，否则滚动回写会把滑块「拽回去」
+    if (_sliderValue != null) return;
     final screenCenterY = MediaQuery.of(context).size.height / 2;
 
     int bestIndex = _currentIndex;
@@ -220,7 +229,7 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
           AnimatedPositioned(
             duration: const Duration(milliseconds: 240),
             curve: Curves.easeOutCubic,
-            bottom: _showControls ? 0 : -90,
+            bottom: _showControls ? 0 : -160,
             left: 0,
             right: 0,
             child: _buildBottomBar(total),
@@ -448,6 +457,8 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
       physics: const BouncingScrollPhysics(),
       itemCount: widget.imageList.length,
       onPageChanged: (index) {
+        // 拖动滑块期间不接受页面回写（松手后由 [_seekToIndex] 统一定位）
+        if (_sliderValue != null) return;
         setState(() {
           _currentIndex = index;
         });
@@ -574,81 +585,211 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
-                Text(
-                  '${_currentIndex + 1} / $total 页',
-                  style: const TextStyle(color: Colors.white60, fontSize: 11),
-                ),
+                // 页码只由底部栏给出（与小说阅读器同构）：两处都显示会重复，
+                // 也容易在拖动进度条时出现两个数字不同步
               ],
             ),
           ),
 
-          // 章节目录入口（仅章节形态提供）
-          if (widget.onOpenCatalog != null)
-            IconButton(
-              tooltip: '目录',
-              icon: const Icon(
-                Ionicons.listOutline,
-                color: Colors.white,
-                size: 20,
-              ),
-              onPressed: widget.onOpenCatalog,
-            ),
+          // 目录与阅读方式入口统一放在**底部栏**（见 [_buildBottomBar]）：
+          // 沉浸阅读时顶栏只保留「返回 + 标题 + 页码」，不在右上角堆控件
+        ],
+      ),
+    );
+  }
 
-          GestureDetector(
-            onTap: _toggleReadingMode,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-              decoration: BoxDecoration(
-                color: _isContinuousMode
-                    ? AppColors.primary.withValues(alpha: 0.24)
-                    : Colors.white.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(
-                  color: _isContinuousMode ? AppColors.primary : Colors.white24,
-                  width: 1,
-                ),
-              ),
-              child: Row(
+  /// 拖动中的临时滑块值（`null` = 未拖动，跟随 [_currentIndex]）
+  ///
+  /// 拖动期间**不做任何跳页**：逐帧 `jumpToPage` / `ensureVisible` 会与
+  /// `onPageChanged`、滚动通知互相回写 —— 手指划得快时滑块会被拽回原处，
+  /// 表现就是「慢慢滑有反应、滑快了没效果」。松手时定位一次即可。
+  double? _sliderValue;
+
+  /// 滑块松手后定位一次
+  ///
+  /// 位置上报保持**单一来源**：横向模式交给 PageView 的 `onPageChanged`
+  /// （`jumpToPage` 本就会触发），长漫模式没有这个回调，才由这里上报 ——
+  /// 否则同一页会被登记两次。
+  void _seekToIndex(int target) {
+    final total = widget.imageList.length;
+    if (total == 0) return;
+    final index = target.clamp(0, total - 1);
+
+    if (_isContinuousMode) {
+      if (index != _currentIndex) {
+        setState(() => _currentIndex = index);
+        widget.onPageChanged?.call(index, total);
+      }
+      // 长漫用瞬时定位：动画期间会持续触发滚动回写，页码反而来回跳
+      _scrollToCurrentIndexAfterBuild(animated: false);
+      return;
+    }
+
+    if (index != _currentIndex) setState(() => _currentIndex = index);
+    _pageController.jumpToPage(index);
+  }
+
+  /// 上一页 / 下一页
+  ///
+  /// 与滑块走**同一条定位路径**（[_seekToIndex]）：边界自动夹紧，
+  /// 拖动中的闸门也一并生效。
+  void _goToPrevPage() => _seekToIndex(_currentIndex - 1);
+  void _goToNextPage() => _seekToIndex(_currentIndex + 1);
+
+  /// 底部功能按钮（与小说阅读器同款：图标在上、文案在下）
+  ///
+  /// 样式对齐小说阅读器的 `ReaderBarActionButton`，但**不跨 feature 复用**它 ——
+  /// comic 直接依赖 novel 的内部组件会形成 features 横向依赖。
+  Widget _buildBottomAction({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+    String? tooltip,
+    bool highlighted = false,
+  }) {
+    final color = highlighted ? AppColors.primaryLight : Colors.white;
+    final content = InkWell(
+      borderRadius: BorderRadius.circular(8),
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 20, color: color),
+            const SizedBox(height: 4),
+            Text(label, style: TextStyle(fontSize: 11, color: color)),
+          ],
+        ),
+      ),
+    );
+    if (tooltip == null) return content;
+    return Tooltip(message: tooltip, child: content);
+  }
+
+  /// 阅读方式：底部弹出选择（与章节目录同一交互层）
+  Future<void> _openReadingModeSheet() async {
+    final selected = await showModalBottomSheet<bool>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        final isDark = Theme.of(sheetContext).brightness == Brightness.dark;
+        return ClipRRect(
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+          // 跟随主题：原来写死深色底 + 白色字，浅色主题下会是一块突兀的黑
+          child: Material(
+            color: isDark ? AppColors.darkSurface : AppColors.lightSurface,
+            child: SafeArea(
+              top: false,
+              child: Column(
                 mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(
-                    _isContinuousMode
-                        ? Ionicons.readerOutline
-                        : Ionicons.bookOutline,
-                    color: _isContinuousMode
-                        ? AppColors.primaryLight
-                        : Colors.white,
-                    size: 13,
-                  ),
-                  const SizedBox(width: 5),
-                  Text(
-                    _isContinuousMode ? '长漫画' : '左右翻页',
-                    style: TextStyle(
-                      color: _isContinuousMode
-                          ? AppColors.primaryLight
-                          : Colors.white,
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.w600,
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
+                    child: Text(
+                      '阅读方式',
+                      style: TextStyle(
+                        color: isDark
+                            ? AppColors.darkTextPrimary
+                            : AppColors.lightTextPrimary,
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ),
+                  _buildReadingModeOption(
+                    sheetContext: sheetContext,
+                    value: false,
+                    icon: Ionicons.bookOutline,
+                    title: '左右翻页',
+                    subtitle: '单张横滑，适合短篇与图集',
+                  ),
+                  _buildReadingModeOption(
+                    sheetContext: sheetContext,
+                    value: true,
+                    icon: Ionicons.readerOutline,
+                    title: '长漫画',
+                    subtitle: '纵向连续，适合条漫与长图',
+                  ),
+                  const SizedBox(height: 6),
                 ],
               ),
             ),
           ),
-        ],
+        );
+      },
+    );
+
+    if (selected != null) await _setReadingMode(selected);
+  }
+
+  Widget _buildReadingModeOption({
+    required BuildContext sheetContext,
+    required bool value,
+    required IconData icon,
+    required String title,
+    required String subtitle,
+  }) {
+    final current = _isContinuousMode == value;
+    final isDark = Theme.of(sheetContext).brightness == Brightness.dark;
+    final textColor = isDark
+        ? AppColors.darkTextPrimary
+        : AppColors.lightTextPrimary;
+    final mutedColor = isDark
+        ? AppColors.darkTextMuted
+        : AppColors.lightTextMuted;
+
+    return ListTile(
+      dense: true,
+      leading: Icon(
+        icon,
+        size: 20,
+        color: current ? AppColors.primary : mutedColor,
       ),
+      title: Text(
+        title,
+        style: TextStyle(
+          fontSize: 14,
+          color: current ? AppColors.primary : textColor,
+          fontWeight: current ? FontWeight.bold : FontWeight.normal,
+        ),
+      ),
+      subtitle: Text(
+        subtitle,
+        style: TextStyle(fontSize: 11.5, color: mutedColor),
+      ),
+      trailing: current
+          ? const Icon(
+              Ionicons.checkmarkCircle,
+              size: 18,
+              color: AppColors.primary,
+            )
+          : null,
+      onTap: () => Navigator.pop(sheetContext, value),
     );
   }
 
   Widget _buildBottomBar(int total) {
     if (total == 0) return const SizedBox.shrink();
 
+    final maxIndex = (total - 1).toDouble();
+    final sliderValue = (_sliderValue ?? _currentIndex.toDouble()).clamp(
+      0.0,
+      maxIndex,
+    );
+    // 拖动中页码实时跟随滑块，给出「正在跳到第几页」的反馈
+    final displayIndex = (_sliderValue?.round() ?? _currentIndex) + 1;
+    final canGoPrev = _currentIndex > 0;
+    final canGoNext = _currentIndex < total - 1;
+
     return Container(
+      // 背景保持「顶部完全透明」的渐变遮罩：图片区与浅色主题之间不留生硬的色块分界
       padding: EdgeInsets.only(
-        top: 8,
-        bottom: MediaQuery.of(context).padding.bottom + 10,
-        left: 20,
-        right: 20,
+        top: 10,
+        bottom: MediaQuery.of(context).padding.bottom + 12,
+        left: 8,
+        right: 8,
       ),
       decoration: BoxDecoration(
         gradient: LinearGradient(
@@ -656,51 +797,87 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
           end: Alignment.topCenter,
           colors: [
             Colors.black.withValues(alpha: 0.85),
+            Colors.black.withValues(alpha: 0.5),
             Colors.black.withValues(alpha: 0.0),
           ],
+          stops: const [0.0, 0.72, 1.0],
         ),
       ),
-      child: Row(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Text(
-            '${_currentIndex + 1}',
-            style: const TextStyle(color: Colors.white70, fontSize: 12),
-          ),
-          Expanded(
-            child: SliderTheme(
-              data: SliderTheme.of(context).copyWith(
-                activeTrackColor: AppColors.primary,
-                inactiveTrackColor: Colors.white24,
-                thumbColor: Colors.white,
-                thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
-                trackHeight: 3,
+          // 进度行：上一页 / 进度条 / 下一页（与小说阅读器同构）
+          Row(
+            children: [
+              IconButton(
+                tooltip: '上一页',
+                icon: const Icon(Ionicons.chevronBackOutline, size: 20),
+                color: Colors.white,
+                disabledColor: Colors.white24,
+                onPressed: canGoPrev ? _goToPrevPage : null,
               ),
-              child: Slider(
-                value: _currentIndex.toDouble().clamp(
-                  0,
-                  (total - 1).toDouble(),
+              Expanded(
+                child: SliderTheme(
+                  data: SliderTheme.of(context).copyWith(
+                    activeTrackColor: AppColors.primary,
+                    inactiveTrackColor: Colors.white24,
+                    thumbColor: Colors.white,
+                    thumbShape: const RoundSliderThumbShape(
+                      enabledThumbRadius: 6,
+                    ),
+                    trackHeight: 3,
+                  ),
+                  child: Slider(
+                    value: sliderValue,
+                    min: 0,
+                    max: maxIndex,
+                    // 拖动只更新本地值，松手才定位：见 [_sliderValue] 的说明
+                    onChanged: (val) => setState(() => _sliderValue = val),
+                    onChangeEnd: (val) {
+                      setState(() => _sliderValue = null);
+                      _seekToIndex(val.round());
+                    },
+                  ),
                 ),
-                min: 0,
-                max: (total - 1).toDouble(),
-                onChanged: (val) {
-                  final target = val.round();
-                  if (target != _currentIndex) {
-                    setState(() {
-                      _currentIndex = target;
-                    });
-                    if (_isContinuousMode) {
-                      _scrollToCurrentIndexAfterBuild();
-                    } else {
-                      _pageController.jumpToPage(target);
-                    }
-                  }
-                },
               ),
-            ),
+              IconButton(
+                tooltip: '下一页',
+                icon: const Icon(Ionicons.chevronForwardOutline, size: 20),
+                color: Colors.white,
+                disabledColor: Colors.white24,
+                onPressed: canGoNext ? _goToNextPage : null,
+              ),
+            ],
           ),
+
+          // 进度文案（与小说阅读器一致：居中一行）
           Text(
-            '$total',
-            style: const TextStyle(color: Colors.white70, fontSize: 12),
+            '$displayIndex / $total',
+            style: const TextStyle(color: Colors.white70, fontSize: 11),
+          ),
+
+          const SizedBox(height: 4),
+
+          // 功能按钮行：目录（章节形态才有）与阅读方式，都从底部面板进入
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              if (widget.onOpenCatalog != null)
+                _buildBottomAction(
+                  icon: Ionicons.listOutline,
+                  label: '目录',
+                  tooltip: '目录',
+                  onTap: widget.onOpenCatalog!,
+                ),
+              _buildBottomAction(
+                icon: _isContinuousMode
+                    ? Ionicons.readerOutline
+                    : Ionicons.bookOutline,
+                label: _isContinuousMode ? '长漫画' : '左右翻页',
+                highlighted: _isContinuousMode,
+                onTap: _openReadingModeSheet,
+              ),
+            ],
           ),
         ],
       ),

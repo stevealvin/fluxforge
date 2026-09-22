@@ -148,89 +148,97 @@ class _ComicChapterReaderPageState extends State<ComicChapterReaderPage> {
       context: context,
       backgroundColor: Colors.transparent,
       // 用 Material 承载底色（而非带色 DecoratedBox）：ListTile 的墨溅画在最近的
-      // Material 上，被有底色的容器挡在外面会丢掉点击反馈（Flutter 会直接断言）
-      builder: (sheetContext) => ClipRRect(
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-        child: Material(
-          color: const Color(0xFF12161F),
-          child: SizedBox(
-            height: MediaQuery.of(sheetContext).size.height * 0.62,
-            child: Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 10, 8, 6),
-                  child: Row(
-                    children: [
-                      const Text(
-                        '章节目录',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 15,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        '共 ${widget.chapters.length} 章',
-                        style: const TextStyle(
-                          color: Colors.white38,
-                          fontSize: 12,
-                        ),
-                      ),
-                      const Spacer(),
-                      IconButton(
-                        icon: const Icon(
-                          Ionicons.closeOutline,
-                          color: Colors.white54,
-                          size: 20,
-                        ),
-                        onPressed: () => Navigator.pop(sheetContext),
-                      ),
-                    ],
-                  ),
-                ),
-                const Divider(height: 1, color: Colors.white12),
-                Expanded(
-                  child: ListView.builder(
-                    itemCount: widget.chapters.length,
-                    itemBuilder: (context, index) {
-                      final selected = index == _chapterIndex;
-                      return ListTile(
-                        dense: true,
-                        title: Text(
-                          widget.chapters[index].title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+      // Material 上，被有底色的容器挡在外面会丢掉点击反馈（Flutter 会直接断言）。
+      // 底色与文字**跟随主题**：原来写死深色底 + 白色字，浅色主题下是一块突兀的黑。
+      builder: (sheetContext) {
+        final isDark = Theme.of(sheetContext).brightness == Brightness.dark;
+        final titleColor = isDark
+            ? AppColors.darkTextPrimary
+            : AppColors.lightTextPrimary;
+        final mutedColor = isDark
+            ? AppColors.darkTextMuted
+            : AppColors.lightTextMuted;
+        return ClipRRect(
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+          child: Material(
+            color: isDark ? AppColors.darkSurface : AppColors.lightSurface,
+            child: SizedBox(
+              height: MediaQuery.of(sheetContext).size.height * 0.62,
+              child: Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 10, 8, 6),
+                    child: Row(
+                      children: [
+                        Text(
+                          '章节目录',
                           style: TextStyle(
-                            fontSize: 13.5,
-                            color: selected
-                                ? AppColors.primary
-                                : Colors.white70,
-                            fontWeight: selected
-                                ? FontWeight.bold
-                                : FontWeight.normal,
+                            color: titleColor,
+                            fontSize: 15,
+                            fontWeight: FontWeight.bold,
                           ),
                         ),
-                        trailing: selected
-                            ? const Icon(
-                                Ionicons.playCircle,
-                                size: 16,
-                                color: AppColors.primary,
-                              )
-                            : null,
-                        onTap: () {
-                          Navigator.pop(sheetContext);
-                          if (index != _chapterIndex) _loadChapter(index);
-                        },
-                      );
-                    },
+                        const SizedBox(width: 8),
+                        Text(
+                          '共 ${widget.chapters.length} 章',
+                          style: TextStyle(color: mutedColor, fontSize: 12),
+                        ),
+                        const Spacer(),
+                        IconButton(
+                          icon: Icon(
+                            Ionicons.closeOutline,
+                            color: mutedColor,
+                            size: 20,
+                          ),
+                          onPressed: () => Navigator.pop(sheetContext),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-              ],
+                  Divider(
+                    height: 1,
+                    color: isDark ? Colors.white12 : Colors.black12,
+                  ),
+                  Expanded(
+                    child: ListView.builder(
+                      itemCount: widget.chapters.length,
+                      itemBuilder: (context, index) {
+                        final selected = index == _chapterIndex;
+                        return ListTile(
+                          dense: true,
+                          title: Text(
+                            widget.chapters[index].title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 13.5,
+                              color: selected ? AppColors.primary : titleColor,
+                              fontWeight: selected
+                                  ? FontWeight.bold
+                                  : FontWeight.normal,
+                            ),
+                          ),
+                          trailing: selected
+                              ? const Icon(
+                                  Ionicons.playCircle,
+                                  size: 16,
+                                  color: AppColors.primary,
+                                )
+                              : null,
+                          onTap: () {
+                            Navigator.pop(sheetContext);
+                            if (index != _chapterIndex) _loadChapter(index);
+                          },
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
