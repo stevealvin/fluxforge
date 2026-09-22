@@ -26,24 +26,36 @@ class _DownloadManagerPageState extends State<DownloadManagerPage> {
   /// 沙盒中离线文件的总占用（字节）
   int _totalBytes = 0;
 
+  /// 各任务已落盘的体积（字节，按任务 id 索引）
+  final Map<String, int> _taskBytes = {};
+
   @override
   void initState() {
     super.initState();
     _refreshSize();
   }
 
-  /// 重新统计占用空间
+  /// 重新统计占用空间（总量 + 各任务体积）
   Future<void> _refreshSize() async {
     final bytes = await downloadService.totalBytes();
-    if (mounted) setState(() => _totalBytes = bytes);
+    final perTask = <String, int>{};
+    for (final task in downloadService.tasksNotifier.value) {
+      perTask[task.id] = await downloadService.taskBytes(task);
+    }
+    if (!mounted) return;
+    setState(() {
+      _totalBytes = bytes;
+      _taskBytes
+        ..clear()
+        ..addAll(perTask);
+    });
   }
 
-  /// 字节转可读体积
-  String _formatBytes(int bytes) {
-    if (bytes <= 0) return '0 MB';
-    final mb = bytes / (1024 * 1024);
-    if (mb < 1024) return '${mb.toStringAsFixed(1)} MB';
-    return '${(mb / 1024).toStringAsFixed(2)} GB';
+  /// 「 · 本地 1.2 GB」；尚无产物的任务不显示
+  String _localSizeLabel(DownloadTask task) {
+    final bytes = _taskBytes[task.id] ?? 0;
+    if (bytes <= 0) return '';
+    return ' · 本地 ${formatDownloadSize(bytes)}';
   }
 
   /// 清理全部下载（二次确认）
@@ -59,9 +71,8 @@ class _DownloadManagerPageState extends State<DownloadManagerPage> {
     await downloadService.clearAll();
     await _refreshSize();
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('已清空全部离线下载内容')),
-    );
+    ScaffoldMessenger.of(context)
+        .showSnackBar(const SnackBar(content: Text('已清空全部离线下载内容')));
   }
 
   /// 删除单个任务（连带本地文件）
@@ -77,9 +88,8 @@ class _DownloadManagerPageState extends State<DownloadManagerPage> {
     await downloadService.remove(task.id);
     await _refreshSize();
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('已删除该书离线内容')),
-    );
+    ScaffoldMessenger.of(context)
+        .showSnackBar(const SnackBar(content: Text('已删除该书离线内容')));
   }
 
   @override
@@ -89,7 +99,10 @@ class _DownloadManagerPageState extends State<DownloadManagerPage> {
     return Scaffold(
       backgroundColor: isDark ? AppColors.darkBg : AppColors.lightBg,
       appBar: AppBar(
-        title: const Text('离线下载', style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text(
+          '离线下载',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
         backgroundColor: isDark ? AppColors.darkBg : AppColors.lightBg,
         elevation: 0,
         leading: IconButton(
@@ -117,8 +130,7 @@ class _DownloadManagerPageState extends State<DownloadManagerPage> {
             return const AppEmptyState(
               icon: Ionicons.cloudDownloadOutline,
               title: '暂无离线下载',
-              description:
-                  '在小说、漫画或视频详情页点击「下载」，即可保存到手机沙盒离线观看或阅读',
+              description: '在小说、漫画或视频详情页点击「下载」，即可保存到手机沙盒离线观看或阅读',
             );
           }
 
@@ -151,7 +163,11 @@ class _DownloadManagerPageState extends State<DownloadManagerPage> {
               color: AppColors.accentBlue.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(12),
             ),
-            child: const Icon(Ionicons.archiveOutline, color: AppColors.accentBlue, size: 20),
+            child: const Icon(
+              Ionicons.archiveOutline,
+              color: AppColors.accentBlue,
+              size: 20,
+            ),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -159,11 +175,13 @@ class _DownloadManagerPageState extends State<DownloadManagerPage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '沙盒占用 ${_formatBytes(_totalBytes)}',
+                  '沙盒占用 ${formatDownloadSize(_totalBytes)}',
                   style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.bold,
-                    color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
+                    color: isDark
+                        ? AppColors.darkTextPrimary
+                        : AppColors.lightTextPrimary,
                   ),
                 ),
                 const SizedBox(height: 4),
@@ -171,7 +189,9 @@ class _DownloadManagerPageState extends State<DownloadManagerPage> {
                   '共 ${tasks.length} 项 · 已完成 $doneCount · 下载中 $activeCount',
                   style: TextStyle(
                     fontSize: 11,
-                    color: isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted,
+                    color: isDark
+                        ? AppColors.darkTextMuted
+                        : AppColors.lightTextMuted,
                   ),
                 ),
               ],
@@ -220,7 +240,10 @@ class _DownloadManagerPageState extends State<DownloadManagerPage> {
                       children: [
                         // 类型徽标
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
                           decoration: BoxDecoration(
                             color: AppColors.primary.withValues(alpha: 0.12),
                             borderRadius: BorderRadius.circular(5),
@@ -259,7 +282,9 @@ class _DownloadManagerPageState extends State<DownloadManagerPage> {
                       style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
-                        color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
+                        color: isDark
+                            ? AppColors.darkTextPrimary
+                            : AppColors.lightTextPrimary,
                       ),
                     ),
                     const SizedBox(height: 8),
@@ -268,17 +293,24 @@ class _DownloadManagerPageState extends State<DownloadManagerPage> {
                       child: LinearProgressIndicator(
                         value: task.progress,
                         minHeight: 4,
-                        backgroundColor: isDark ? Colors.white12 : Colors.black12,
-                        valueColor: const AlwaysStoppedAnimation<Color>(AppColors.primary),
+                        backgroundColor: isDark
+                            ? Colors.white12
+                            : Colors.black12,
+                        valueColor: const AlwaysStoppedAnimation<Color>(
+                          AppColors.primary,
+                        ),
                       ),
                     ),
                     const SizedBox(height: 6),
                     Text(
                       '${task.progressLabel} $unit'
-                      '${task.failed.isNotEmpty ? ' · 失败 ${task.failed.length} $unit' : ''}',
+                      '${task.failed.isNotEmpty ? ' · 失败 ${task.failed.length} $unit' : ''}'
+                      '${_localSizeLabel(task)}',
                       style: TextStyle(
                         fontSize: 11,
-                        color: isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted,
+                        color: isDark
+                            ? AppColors.darkTextMuted
+                            : AppColors.lightTextMuted,
                       ),
                     ),
                   ],
@@ -365,7 +397,10 @@ class _DownloadManagerPageState extends State<DownloadManagerPage> {
 
   void _showSnack(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), duration: const Duration(milliseconds: 1600)),
+      SnackBar(
+        content: Text(message),
+        duration: const Duration(milliseconds: 1600),
+      ),
     );
   }
 }

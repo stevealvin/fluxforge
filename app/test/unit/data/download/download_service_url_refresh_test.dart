@@ -165,10 +165,7 @@ void main() {
       // 重试确实请求了新地址
       expect(adapter.requested.where((u) => u.contains('fresh')), isNotEmpty);
       // 新地址已登记回任务，后续「重试失败」会用它
-      expect(
-        service.taskOf('refresh-ok')!.targetUrls.first,
-        contains('fresh'),
-      );
+      expect(service.taskOf('refresh-ok')!.targetUrls.first, contains('fresh'));
       // 产物正常落盘
       expect(await service.localVideoPath('refresh-ok', 0), isNotNull);
     });

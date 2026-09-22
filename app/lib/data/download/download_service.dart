@@ -41,6 +41,20 @@ enum DownloadStatus {
   final String label;
 }
 
+/// [DownloadTask.copyWith] 的「不修改」哨兵
+///
+/// 用来区分「没传这个参数」与「显式置空」（选集里的 `null` = 全选），
+/// 否则「改回全选」这个动作没法用 `copyWith` 表达。
+const Object _selectionUnchanged = Object();
+
+/// 字节 → 可读体积（下载相关的体积展示统一走这一份，避免各处口径不一）
+String formatDownloadSize(int bytes) {
+  if (bytes <= 0) return '0 MB';
+  final mb = bytes / (1024 * 1024);
+  if (mb < 1024) return '${mb.toStringAsFixed(1)} MB';
+  return '${(mb / 1024).toStringAsFixed(2)} GB';
+}
+
 /// 离线下载任务模型（小说全本 / 漫画整部）
 ///
 /// 存储位置：App 沙盒文档目录 `fluxforge_offline/`
@@ -87,6 +101,13 @@ class DownloadTask {
   /// 小说章节 / 漫画图片的单项都很快，恒为 0 即可，因此不影响既有行为。
   final double activeItemProgress;
 
+  /// 选集范围（[targetUrls] 的下标；`null` = 全选）
+  ///
+  /// 目标清单**始终是全量**，选集只决定「跑哪些项」与「进度怎么算」。
+  /// 若按选集去裁剪清单，下标就会与已完成集合错位 —— 用户只选第 5 集时，
+  /// 旧的 `completed = {0,1}` 会被当成「第 0、1 集已完成」而直接跳过。
+  final Set<int>? selection;
+
   const DownloadTask({
     required this.id,
     required this.title,
@@ -101,6 +122,7 @@ class DownloadTask {
     this.failed = const {},
     this.status = DownloadStatus.pending,
     this.activeItemProgress = 0,
+    this.selection,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -116,8 +138,12 @@ class DownloadTask {
   /// 计入当前项的项内进度（[activeItemProgress]），使长视频下载时进度条能持续前进；
   /// 小说 / 漫画的项内进度恒为 0，因此结果与改造前完全一致。
   double get progress {
-    if (total == 0) return 0.0;
-    return ((doneCount + activeItemProgress) / total).clamp(0.0, 1.0);
+    final selected = selectedTotal;
+    if (selected == 0) return 0.0;
+    return ((selectedDoneCount + activeItemProgress) / selected).clamp(
+      0.0,
+      1.0,
+    );
   }
 
   /// 是否处于可继续调度状态
@@ -127,8 +153,32 @@ class DownloadTask {
   /// 是否全部完成
   bool get isFinished => status == DownloadStatus.completed;
 
+  /// 本次要跑的项数（选集只算选中项；`null` = 全选）
+  int get selectedTotal {
+    final sel = selection;
+    if (sel == null) return total;
+    return sel.where((i) => i >= 0 && i < total).length;
+  }
+
+  /// 选中项中已完成的数量
+  int get selectedDoneCount {
+    final sel = selection;
+    if (sel == null) return doneCount;
+    return completed.where(sel.contains).length;
+  }
+
+  /// 是否为「选集下载」（用于文案区分：全本 / 选集）
+  bool get isPartialSelection => selection != null;
+
+  /// 某一项是否在本次下载范围内
+  bool isSelected(int index) {
+    if (index < 0 || index >= total) return false;
+    final sel = selection;
+    return sel == null || sel.contains(index);
+  }
+
   /// 进度文案
-  String get progressLabel => '$doneCount / $total';
+  String get progressLabel => '$selectedDoneCount / $selectedTotal';
 
   DownloadTask copyWith({
     String? title,
@@ -141,6 +191,7 @@ class DownloadTask {
     Set<int>? failed,
     DownloadStatus? status,
     double? activeItemProgress,
+    Object? selection = _selectionUnchanged,
     DateTime? updatedAt,
   }) {
     return DownloadTask(
@@ -157,6 +208,9 @@ class DownloadTask {
       failed: failed ?? this.failed,
       status: status ?? this.status,
       activeItemProgress: activeItemProgress ?? this.activeItemProgress,
+      selection: identical(selection, _selectionUnchanged)
+          ? this.selection
+          : selection as Set<int>?,
       createdAt: createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );
@@ -177,6 +231,7 @@ class DownloadTask {
       'failed': failed.toList(),
       'status': status.name,
       'activeItemProgress': activeItemProgress,
+      'selection': selection?.toList(),
       'createdAt': createdAt.toIso8601String(),
       'updatedAt': updatedAt.toIso8601String(),
     };
@@ -190,19 +245,46 @@ class DownloadTask {
       mediaType: json['mediaType']?.toString() ?? 'novel',
       ruleId: json['ruleId']?.toString() ?? '',
       sourceUrl: json['sourceUrl']?.toString() ?? '',
-      targetUrls: (json['targetUrls'] as List?)?.map((e) => e.toString()).toList() ?? const [],
-      targetTitles: (json['targetTitles'] as List?)?.map((e) => e.toString()).toList() ?? const [],
-      headers: (json['headers'] as Map?)?.map((k, v) => MapEntry(k.toString(), v.toString())) ?? const {},
-      completed: (json['completed'] as List?)?.map((e) => int.tryParse(e.toString()) ?? -1).where((e) => e >= 0).toSet() ?? const {},
-      failed: (json['failed'] as List?)?.map((e) => int.tryParse(e.toString()) ?? -1).where((e) => e >= 0).toSet() ?? const {},
+      targetUrls:
+          (json['targetUrls'] as List?)?.map((e) => e.toString()).toList() ??
+          const [],
+      targetTitles:
+          (json['targetTitles'] as List?)?.map((e) => e.toString()).toList() ??
+          const [],
+      headers:
+          (json['headers'] as Map?)?.map(
+            (k, v) => MapEntry(k.toString(), v.toString()),
+          ) ??
+          const {},
+      completed:
+          (json['completed'] as List?)
+              ?.map((e) => int.tryParse(e.toString()) ?? -1)
+              .where((e) => e >= 0)
+              .toSet() ??
+          const {},
+      failed:
+          (json['failed'] as List?)
+              ?.map((e) => int.tryParse(e.toString()) ?? -1)
+              .where((e) => e >= 0)
+              .toSet() ??
+          const {},
+      // 缺字段 = 改造前的老任务 = 全选（语义与从前一致，无需迁移）
+      selection: (json['selection'] as List?)
+          ?.map((e) => int.tryParse(e.toString()) ?? -1)
+          .where((e) => e >= 0)
+          .toSet(),
       status: DownloadStatus.values.firstWhere(
         (e) => e.name == json['status']?.toString(),
         orElse: () => DownloadStatus.pending,
       ),
       // 项内进度属瞬时状态：重启后旧值无意义，一律从 0 重新计
       activeItemProgress: 0,
-      createdAt: DateTime.tryParse(json['createdAt']?.toString() ?? '') ?? DateTime.now(),
-      updatedAt: DateTime.tryParse(json['updatedAt']?.toString() ?? '') ?? DateTime.now(),
+      createdAt:
+          DateTime.tryParse(json['createdAt']?.toString() ?? '') ??
+          DateTime.now(),
+      updatedAt:
+          DateTime.tryParse(json['updatedAt']?.toString() ?? '') ??
+          DateTime.now(),
     );
   }
 }
@@ -255,8 +337,8 @@ class DownloadService {
     required RuleService ruleService,
     ApiClient? apiClient,
     this.onUrlExpired,
-  })  : _ruleService = ruleService,
-        _apiClient = apiClient ?? ApiClient() {
+  }) : _ruleService = ruleService,
+       _apiClient = apiClient ?? ApiClient() {
     init();
   }
 
@@ -325,7 +407,10 @@ class DownloadService {
       final root = await _rootDir();
       if (!await root.exists()) return 0;
       int bytes = 0;
-      await for (final entity in root.list(recursive: true, followLinks: false)) {
+      await for (final entity in root.list(
+        recursive: true,
+        followLinks: false,
+      )) {
         if (entity is File) {
           bytes += await entity.length();
         }
@@ -334,6 +419,84 @@ class DownloadService {
     } catch (_) {
       return 0;
     }
+  }
+
+  /// 某任务已落盘的**成品**体积（字节）
+  ///
+  /// 只扫书目录**本层**：小说章节、漫画图片、视频成品都直接落在该层，
+  /// 而视频的分片工作目录是它的子目录（合并成功即整目录删除），
+  /// 因此非递归扫描天然排除中间产物，不会把"半截文件"算进已下载体积。
+  Future<int> taskBytes(DownloadTask task) async {
+    try {
+      final dir = await _bookDir(task.mediaType, task.id);
+      if (!await dir.exists()) return 0;
+      var bytes = 0;
+      await for (final entity in dir.list(followLinks: false)) {
+        if (entity is! File) continue;
+        bytes += await entity.length();
+      }
+      return bytes;
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  /// 探测一组直链的**预计大小**（字节；该项未知为 `null`）
+  ///
+  /// 只对单文件直链有效：`Content-Length` 就是文件大小。
+  /// HLS（`.m3u8`）要把清单里每一片都问一遍才知道总量，成本远高于收益，
+  /// 因此直接返回 `null` —— 宁可不显示，也不显示一个错得离谱的数字。
+  Future<List<int?>> probeUnitSizes(
+    List<String> urls, {
+    Map<String, String> headers = const {},
+  }) async {
+    final sizes = <int?>[];
+    for (final url in urls) {
+      sizes.add(await _probeSize(url, headers: headers));
+    }
+    return sizes;
+  }
+
+  Future<int?> _probeSize(
+    String url, {
+    required Map<String, String> headers,
+  }) async {
+    final target = url.trim();
+    if (target.isEmpty || target.contains('.m3u8')) return null;
+    try {
+      final response = await _apiClient.dio.head<void>(
+        target,
+        options: Options(
+          headers: headers,
+          // 探测只服务展示，绝不能拖住面板：短超时，失败即"未知"
+          sendTimeout: const Duration(seconds: 8),
+          receiveTimeout: const Duration(seconds: 8),
+        ),
+      );
+      final length = int.tryParse(
+        response.headers.value(Headers.contentLengthHeader) ?? '',
+      );
+      return (length != null && length > 0) ? length : null;
+    } catch (_) {
+      // 部分源站不支持 HEAD / 需要 Range 才回长度 → 视为未知
+      return null;
+    }
+  }
+
+  /// 把「原清单下标」的选集映射到「过滤后清单下标」
+  ///
+  /// 过滤掉空地址后下标会整体前移，直接沿用原下标会选错集。
+  static Set<int>? _remapSelection(
+    Set<int>? selection,
+    List<int> keptOriginalIndices,
+  ) {
+    if (selection == null) return null;
+    final mapped = <int>{};
+    for (int i = 0; i < keptOriginalIndices.length; i++) {
+      if (selection.contains(keptOriginalIndices[i])) mapped.add(i);
+    }
+    if (mapped.isEmpty) return const {};
+    return mapped;
   }
 
   // ==================== 任务创建与控制 ====================
@@ -345,13 +508,15 @@ class DownloadService {
     required String title,
     required String cover,
     required List<MediaEpisode> chapters,
+    Set<int>? selectedIndices,
   }) {
     return _startTask(
       id: bookId,
       title: title,
       cover: cover,
       mediaType: 'novel',
-      ruleId: rule.id?.toString() ?? rule.name,
+      selection: selectedIndices,
+      ruleId: rule.id?.toString() ?? '',
       sourceUrl: bookId,
       targetUrls: chapters.map((e) => e.url.trim()).toList(),
       targetTitles: chapters.map((e) => e.title).toList(),
@@ -402,11 +567,14 @@ class DownloadService {
     }
 
     // 登记完成状态（与全本下载共用同一份任务记录）
-    _mutate(bookId, (t) => t.copyWith(
-          completed: {...t.completed, index},
-          failed: t.failed.where((e) => e != index).toSet(),
-          updatedAt: DateTime.now(),
-        ));
+    _mutate(
+      bookId,
+      (t) => t.copyWith(
+        completed: {...t.completed, index},
+        failed: t.failed.where((e) => e != index).toSet(),
+        updatedAt: DateTime.now(),
+      ),
+    );
     await _persist();
     return true;
   }
@@ -424,19 +592,21 @@ class DownloadService {
   }) async {
     if (taskOf(bookId) != null) return;
 
-    _cache.add(DownloadTask(
-      id: bookId,
-      title: title,
-      cover: cover,
-      mediaType: 'novel',
-      ruleId: rule.id?.toString() ?? rule.name,
-      sourceUrl: bookId,
-      targetUrls: chapters.map((e) => e.url.trim()).toList(),
-      targetTitles: chapters.map((e) => e.title).toList(),
-      status: DownloadStatus.paused,
-      createdAt: DateTime.now(),
-      updatedAt: DateTime.now(),
-    ));
+    _cache.add(
+      DownloadTask(
+        id: bookId,
+        title: title,
+        cover: cover,
+        mediaType: 'novel',
+        ruleId: rule.id?.toString() ?? '',
+        sourceUrl: bookId,
+        targetUrls: chapters.map((e) => e.url.trim()).toList(),
+        targetTitles: chapters.map((e) => e.title).toList(),
+        status: DownloadStatus.paused,
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      ),
+    );
     _publish();
     await _persist();
   }
@@ -449,15 +619,20 @@ class DownloadService {
     required String cover,
     required List<String> imageUrls,
     Map<String, String> headers = const {},
+    Set<int>? selectedIndices,
   }) {
-    final urls = imageUrls.map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+    final urls = imageUrls
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toList();
     return _startTask(
       id: bookId,
       title: title,
       cover: cover,
       mediaType: 'comic',
-      ruleId: rule.id?.toString() ?? rule.name,
+      ruleId: rule.id?.toString() ?? '',
       sourceUrl: bookId,
+      selection: selectedIndices,
       targetUrls: urls,
       targetTitles: List<String>.generate(urls.length, (i) => '第 ${i + 1} 页'),
       headers: headers,
@@ -478,17 +653,23 @@ class DownloadService {
     required String cover,
     required List<MediaEpisode> episodes,
     Map<String, String> headers = const {},
+    Set<int>? selectedIndices,
   }) {
-    // 过滤掉无有效地址的分集：FFmpeg 面对空地址只会白跑一轮再失败
-    final valid =
-        episodes.where((e) => e.url.trim().isNotEmpty).toList();
+    // 过滤掉无有效地址的分集：FFmpeg 面对空地址只会白跑一轮再失败。
+    // 注意：过滤会改变下标，因此选集必须**按下标映射**（调用方传的是原清单下标）
+    final valid = episodes.where((e) => e.url.trim().isNotEmpty).toList();
+    final validIndices = <int>[
+      for (int i = 0; i < episodes.length; i++)
+        if (episodes[i].url.trim().isNotEmpty) i,
+    ];
     return _startTask(
       id: bookId,
       title: title,
       cover: cover,
       mediaType: 'video',
-      ruleId: rule.id?.toString() ?? rule.name,
+      ruleId: rule.id?.toString() ?? '',
       sourceUrl: bookId,
+      selection: _remapSelection(selectedIndices, validIndices),
       targetUrls: valid.map((e) => e.url.trim()).toList(),
       targetTitles: valid.map((e) => e.title).toList(),
       headers: headers,
@@ -524,13 +705,18 @@ class DownloadService {
     // 视频下行任务必须显式终止：FFmpeg 会话与直链流式请求两条通道都要打断，
     // 否则它会继续把整部视频拉完，白白消耗流量与电量
     final sessionId = _videoSessions.remove(id);
-    if (sessionId != null && sessionId > 0) unawaited(FFmpegKit.cancel(sessionId));
+    if (sessionId != null && sessionId > 0) {
+      unawaited(FFmpegKit.cancel(sessionId));
+    }
     _videoCancelTokens.remove(id)?.cancel('任务已暂停');
-    _mutate(id, (t) => t.copyWith(
-          status: DownloadStatus.paused,
-          // 项内进度属瞬时状态，暂停即作废
-          activeItemProgress: 0,
-        ));
+    _mutate(
+      id,
+      (t) => t.copyWith(
+        status: DownloadStatus.paused,
+        // 项内进度属瞬时状态，暂停即作废
+        activeItemProgress: 0,
+      ),
+    );
     unawaited(_persist());
   }
 
@@ -617,6 +803,7 @@ class DownloadService {
     required List<String> targetUrls,
     required List<String> targetTitles,
     required Map<String, String> headers,
+    Set<int>? selection,
   }) async {
     if (id.trim().isEmpty) {
       throw ArgumentError('下载任务缺少书籍唯一标识');
@@ -636,6 +823,9 @@ class DownloadService {
       // 保留已完成项实现续传；清空失败项以便重新尝试
       completed: existing?.completed ?? const <int>{},
       failed: const <int>{},
+      // 选集：本次显式传入即**替换**（目标清单始终全量，替换不会错位，
+      // 也不会丢掉已完成的项）；`null` 即「全部下载」
+      selection: selection,
       status: DownloadStatus.pending,
       createdAt: existing?.createdAt ?? DateTime.now(),
       updatedAt: DateTime.now(),
@@ -694,7 +884,11 @@ class DownloadService {
 
       final index = _nextIndex(task);
       if (index == null) {
-        final allDone = task.total > 0 && task.completed.length >= task.total;
+        // 只按**选中项**判定完成：选集下载时未选中的项本来就不会跑，
+        // 若拿全量计数作判据，任务会永远等不到「全部完成」
+        final allDone =
+            task.selectedTotal > 0 &&
+            task.selectedDoneCount >= task.selectedTotal;
         _mutate(
           id,
           (t) => t.copyWith(
@@ -711,7 +905,10 @@ class DownloadService {
       _mutate(
         id,
         (t) => ok
-            ? t.copyWith(completed: {...t.completed, index}, failed: {...t.failed}..remove(index))
+            ? t.copyWith(
+                completed: {...t.completed, index},
+                failed: {...t.failed}..remove(index),
+              )
             : t.copyWith(failed: {...t.failed, index}),
       );
       await _persistThrottled();
@@ -721,6 +918,8 @@ class DownloadService {
   /// 找出下一个待下载下标（跳过已完成与已失败项）
   int? _nextIndex(DownloadTask task) {
     for (int i = 0; i < task.total; i++) {
+      // 未选中的项直接跳过：它们不该被下载，也不该影响进度
+      if (!task.isSelected(i)) continue;
       if (task.completed.contains(i)) continue;
       if (task.failed.contains(i)) continue;
       return i;
@@ -802,11 +1001,7 @@ class DownloadService {
   /// - m3u8（HLS 清单）→ 分片级续传：逐分片落盘，已完成的跳过；
   /// - 其余（mp4 / mkv 等直链）→ HTTP Range 字节级续传。
   /// 两者的共同点：**任何中断都不会丢掉已下载的部分**。
-  Future<bool> _downloadVideoEpisode(
-    DownloadTask task,
-    int index,
-    String url,
-  ) {
+  Future<bool> _downloadVideoEpisode(DownloadTask task, int index, String url) {
     return _downloadVideoEpisodeGuarded(task, index, url, allowRefresh: true);
   }
 
@@ -845,8 +1040,7 @@ class DownloadService {
       if (_isHlsUrl(freshUrl)) {
         try {
           final workDir = await _videoWorkDir(task.id, index);
-          final stale =
-              File(p.join(workDir.path, 'remote.m3u8'));
+          final stale = File(p.join(workDir.path, 'remote.m3u8'));
           if (await stale.exists()) await stale.delete();
         } catch (_) {}
       }
@@ -984,10 +1178,13 @@ class DownloadService {
       if (now.difference(lastPublishAt).inMilliseconds >= 500) {
         lastPublishAt = now;
         if (mountedTask(task.id)) {
-          _mutate(task.id, (t) => t.copyWith(
-                activeItemProgress: (i + 1) / resources.length,
-                updatedAt: now,
-              ));
+          _mutate(
+            task.id,
+            (t) => t.copyWith(
+              activeItemProgress: (i + 1) / resources.length,
+              updatedAt: now,
+            ),
+          );
         }
       }
     }
@@ -1074,7 +1271,8 @@ class DownloadService {
     final canResume = code == 206;
     if (code != 206 && code != 200) return false;
 
-    final contentLength = int.tryParse(
+    final contentLength =
+        int.tryParse(
           response.headers.value(Headers.contentLengthHeader) ?? '',
         ) ??
         0;
@@ -1086,8 +1284,9 @@ class DownloadService {
       await partFile.delete();
     }
 
-    final sink =
-        partFile.openWrite(mode: canResume ? FileMode.append : FileMode.write);
+    final sink = partFile.openWrite(
+      mode: canResume ? FileMode.append : FileMode.write,
+    );
     var received = canResume ? downloaded : 0;
     var lastPublishAt = DateTime.fromMillisecondsSinceEpoch(0);
 
@@ -1100,10 +1299,13 @@ class DownloadService {
         if (now.difference(lastPublishAt).inMilliseconds < 500) continue;
         lastPublishAt = now;
         if (!mountedTask(task.id)) break;
-        _mutate(task.id, (t) => t.copyWith(
-              activeItemProgress: (received / totalBytes).clamp(0.0, 1.0),
-              updatedAt: now,
-            ));
+        _mutate(
+          task.id,
+          (t) => t.copyWith(
+            activeItemProgress: (received / totalBytes).clamp(0.0, 1.0),
+            updatedAt: now,
+          ),
+        );
       }
       await sink.flush();
       await sink.close();
@@ -1143,8 +1345,9 @@ class DownloadService {
         final ok = ReturnCode.isSuccess(returnCode);
         if (!ok && !ReturnCode.isCancel(returnCode)) {
           final allLogs = await session.getLogs();
-          final tail =
-              allLogs.length > 8 ? allLogs.sublist(allLogs.length - 8) : allLogs;
+          final tail = allLogs.length > 8
+              ? allLogs.sublist(allLogs.length - 8)
+              : allLogs;
           final tailText = tail
               .map((l) => l.getMessage())
               .where((m) => m.trim().isNotEmpty)
@@ -1157,8 +1360,9 @@ class DownloadService {
       },
       // 日志回调：只抓一次媒体总时长
       (log) {
-        totalDuration ??=
-            FfmpegCommandBuilder.parseDurationFromLog(log.getMessage());
+        totalDuration ??= FfmpegCommandBuilder.parseDurationFromLog(
+          log.getMessage(),
+        );
       },
       // 统计回调：换算项内进度（500ms 节流）
       (statistics) {
@@ -1171,10 +1375,10 @@ class DownloadService {
         if (now.difference(lastPublishAt).inMilliseconds < 500) return;
         lastPublishAt = now;
         if (!mountedTask(taskId)) return;
-        _mutate(taskId, (t) => t.copyWith(
-              activeItemProgress: ratio,
-              updatedAt: now,
-            ));
+        _mutate(
+          taskId,
+          (t) => t.copyWith(activeItemProgress: ratio, updatedAt: now),
+        );
       },
     );
 
@@ -1193,10 +1397,10 @@ class DownloadService {
 
     // 无论成败都清掉项内进度，避免任务收尾时进度条停在半路
     if (mountedTask(taskId)) {
-      _mutate(taskId, (t) => t.copyWith(
-            activeItemProgress: 0,
-            updatedAt: DateTime.now(),
-          ));
+      _mutate(
+        taskId,
+        (t) => t.copyWith(activeItemProgress: 0, updatedAt: DateTime.now()),
+      );
     }
     return ok;
   }
@@ -1287,7 +1491,9 @@ class DownloadService {
 
   Future<File> _comicImageFile(String bookId, String imageUrl) async {
     final dir = await _bookDir('comic', bookId);
-    return File(p.join(dir.path, '${_stableHash(imageUrl)}${_extFromUrl(imageUrl)}'));
+    return File(
+      p.join(dir.path, '${_stableHash(imageUrl)}${_extFromUrl(imageUrl)}'),
+    );
   }
 
   /// 书籍 ID 转安全目录名（保留可读前缀 + 稳定哈希后缀，杜绝碰撞）
@@ -1321,11 +1527,11 @@ class DownloadService {
   /// 视频沿用同一套根目录与任务记录，只是落在独立的 `videos/` 子树，
   /// 与小说 / 漫画互不干扰，也便于按类型清理。
   static String _mediaDirName(String mediaType) => switch (mediaType) {
-        'novel' => 'novels',
-        'comic' => 'comics',
-        'video' => 'videos',
-        _ => 'others',
-      };
+    'novel' => 'novels',
+    'comic' => 'comics',
+    'video' => 'videos',
+    _ => 'others',
+  };
 
   /// 视频分集文件路径（`videos/<bookId>/<index>.mp4`）
   ///

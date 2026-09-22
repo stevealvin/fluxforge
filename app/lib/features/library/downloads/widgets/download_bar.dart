@@ -19,7 +19,7 @@ class DownloadBar extends StatelessWidget {
     required this.task,
     required this.onTap,
     this.unitLabel = '章',
-    this.idleLabel = '下载全本（离线阅读，无网也能看）',
+    this.idleLabel,
   });
 
   /// 当前下载任务；`null` 表示尚未开始
@@ -31,8 +31,8 @@ class DownloadBar extends StatelessWidget {
   /// 进度单位（小说「章」/ 漫画「页」）
   final String unitLabel;
 
-  /// 未开始下载时的引导文案
-  final String idleLabel;
+  /// 未开始下载时的引导文案；`null` 用内置默认（「下载全本」）
+  final String? idleLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -48,10 +48,13 @@ class DownloadBar extends StatelessWidget {
     final String label;
     final IconData icon;
     if (task == null) {
-      label = idleLabel;
+      label = idleLabel ?? '下载全本（离线阅读，无网也能看）';
       icon = Ionicons.cloudDownloadOutline;
     } else if (isDone) {
-      label = '已下载全本（${task.progressLabel} $unitLabel）';
+      // 选集下载时别写成「全本」：用户只勾了几集，进度也按选中项计量
+      label = task.isPartialSelection
+          ? '已下载选集（${task.progressLabel} $unitLabel）'
+          : '已下载全本（${task.progressLabel} $unitLabel）';
       icon = Ionicons.cloudDoneOutline;
     } else if (isActive) {
       label = '下载中 ${task.progressLabel} · 点击暂停';
@@ -70,8 +73,6 @@ class DownloadBar extends StatelessWidget {
     return AppCard(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       borderRadius: 12,
-      showBorder: true,
-      borderColor: isDark ? AppColors.darkBorder : AppColors.lightBorder,
       color: isDark ? AppColors.darkCard : AppColors.lightSurface,
       onTap: () => onTap(task),
       child: Row(
@@ -89,7 +90,9 @@ class DownloadBar extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 fontSize: 12.5,
-                color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
+                color: isDark
+                    ? AppColors.darkTextSecondary
+                    : AppColors.lightTextSecondary,
               ),
             ),
           ),
@@ -104,7 +107,9 @@ class DownloadBar extends StatelessWidget {
                   value: task.progress,
                   minHeight: 3,
                   backgroundColor: isDark ? Colors.white12 : Colors.black12,
-                  valueColor: const AlwaysStoppedAnimation<Color>(AppColors.primary),
+                  valueColor: const AlwaysStoppedAnimation<Color>(
+                    AppColors.primary,
+                  ),
                 ),
               ),
             ),

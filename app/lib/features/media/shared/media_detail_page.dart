@@ -17,6 +17,7 @@ import 'package:fluxforge/features/media/novel/novel_detail_view.dart';
 import 'package:fluxforge/features/media/shared/media_download_actions.dart';
 import 'package:fluxforge/features/media/shared/media_download_sheet.dart';
 import 'package:fluxforge/features/media/shared/media_favorite_actions.dart';
+import 'package:fluxforge/features/media/shared/media_request_headers.dart';
 import 'package:fluxforge/features/media/video/video_detail_view.dart';
 
 /// 跨媒体统一详情调度容器页面 (MediaDetailPage)
@@ -67,17 +68,10 @@ class _MediaDetailPageState extends State<MediaDetailPage> {
       _error = null;
     });
 
-    if (_activeRule == null && ruleService.rules.isNotEmpty) {
-      try {
-        _activeRule = ruleService.rules.firstWhere(
-          (r) =>
-              widget.url.isNotEmpty &&
-              r.baseUrl.isNotEmpty &&
-              widget.url.contains(Uri.parse(r.baseUrl).host),
-          orElse: () => ruleService.rules.first,
-        );
-      } catch (_) {}
-    }
+    // 按 baseUrl 反查负责该地址的规则（判据见 Rule.matchesUrl）。
+    // 匹配不到就保持 null 并如实报「未指定对应解析规则」—— 拿错规则会让 baseUrl 全错，
+    // 解析结果只会更难排查。
+    _activeRule ??= ruleService.matchByUrl(widget.url);
 
     if (_activeRule == null) {
       if (widget.initialItem != null) {
@@ -122,7 +116,12 @@ class _MediaDetailPageState extends State<MediaDetailPage> {
   }
 
   void _parseSandboxResult(dynamic result) {
-    if (result == null) return;
+    if (result == null) {
+      // 无数据必须显式上报：静默返回会让页面停在"只有封面和标题"的空壳上，
+      // 用户既看不到数据、也看不到原因。
+      _error = '详情解析未返回数据（规则可能未实现详情解析，或源站返回为空）';
+      return;
+    }
 
     String parsedTitle = widget.title;
     String parsedCover = widget.cover;
@@ -164,17 +163,19 @@ class _MediaDetailPageState extends State<MediaDetailPage> {
         );
       }
 
-      // 智能识别并注入默认防盗链 Referer：若规则未显式声明，默认回退注入详情页 URL 或规则 baseUrl
-      final hasReferer = parsedHeaders.keys.any(
-        (k) => k.toLowerCase() == 'referer',
+      // 防盗链兜底：Referer 取**规则 baseUrl（站点根）**，与发现页同口径，并补齐默认 UA。
+      //
+      // 为什么不是详情页 URL：图片 / 视频直链由 ExtendedImage / 播放器**直连**，不经规则
+      // 引擎；图床校验 Referer 时只认站点根，而详情页 URL 是规则内部的页面/接口地址
+      // （可能是深层路径甚至 API），会被判成盗链 → 403。实测该图床
+      // `curl -H "Referer: <站点根>"` 能下载，正是发现页一直在用的那个值。
+      parsedHeaders = MediaRequestHeaders.withDefaults(
+        parsedHeaders,
+        referer: MediaRequestHeaders.resolveReferer(
+          ruleBaseUrl: _activeRule?.baseUrl,
+          pageUrl: widget.url,
+        ),
       );
-      if (!hasReferer) {
-        if (widget.url.isNotEmpty) {
-          parsedHeaders['Referer'] = widget.url;
-        } else if (_activeRule?.baseUrl.isNotEmpty ?? false) {
-          parsedHeaders['Referer'] = _activeRule!.baseUrl;
-        }
-      }
 
       if (result['previews'] is List) {
         parsedPreviews = (result['previews'] as List)
@@ -271,6 +272,20 @@ class _MediaDetailPageState extends State<MediaDetailPage> {
       previews: parsedPreviews,
       related: parsedRelated,
     );
+
+    // 解析成功但没有任何可读内容 → 同样明确上报，
+    // 便于区分"规则详情字段没写对"与"源站改版"。
+    final hasReadableContent =
+        _data.items.isNotEmpty ||
+        _data.imageList.isNotEmpty ||
+        _data.previews.isNotEmpty ||
+        _data.comicGroups.any((g) => g.items.isNotEmpty) ||
+        _data.videoGroups.any((g) => g.items.isNotEmpty) ||
+        (_data.textContent?.trim().isNotEmpty ?? false) ||
+        (_data.playUrl?.trim().isNotEmpty ?? false);
+    if (!hasReadableContent) {
+      _error = '已调度解析，但规则未返回章节 / 图片 / 正文（可检查规则的详情字段，或源站是否已改版）';
+    }
   }
 
   String _normalizeUrl(String raw) {
@@ -309,15 +324,21 @@ class _MediaDetailPageState extends State<MediaDetailPage> {
 
   /// 离线下载任务的唯一键（与动作层同源，保证「刚发起的任务查得到」）
   String get _downloadTaskKey =>
-      MediaDownloadActions.taskKey(_data, widget.title);
+      MediaDownloadActions.taskKey(_data, widget.title, rule: _activeRule);
 
-  /// 顶部栏下载入口：底部弹出下载面板
+  /// 顶部栏下载入口：底部弹出下载面板（选集下载 + 全部下载）
   Future<void> _openDownloadSheet() {
+    final units = MediaDownloadActions.unitsOf(_data);
+    final urls = MediaDownloadActions.unitUrls(_data);
     return showMediaDownloadSheet(
       context,
       title: _data.title.isNotEmpty ? _data.title : widget.title,
       bookId: _downloadTaskKey,
-      unitLabel: _data.mediaType == MediaType.comic ? '页' : '章',
+      unitLabel: switch (_data.mediaType) {
+        MediaType.novel => '章',
+        MediaType.comic => '页',
+        _ => '集',
+      },
       tasks: downloadService.tasksNotifier,
       taskOf: () => downloadService.taskOf(_downloadTaskKey),
       onAction: (task) => MediaDownloadActions.handleTap(
@@ -327,6 +348,23 @@ class _MediaDetailPageState extends State<MediaDetailPage> {
         fallbackTitle: widget.title,
         fallbackCover: widget.cover,
       ),
+      units: units,
+      onDownloadSelection: (selection) =>
+          MediaDownloadActions.downloadSelection(
+            data: _data,
+            rule: _activeRule,
+            selection: selection,
+            fallbackTitle: widget.title,
+            fallbackCover: widget.cover,
+          ),
+      // 大小预估：只对能直接问到长度的直链有效（视频 mp4 等），
+      // HLS 与「需再解析一层」的漫画章节返回 null —— 面板会显示「大小未知」
+      probeUnitSizes: urls.isEmpty
+          ? null
+          : () => downloadService.probeUnitSizes(
+              urls,
+              headers: _data.customHeaders,
+            ),
       onOpenDownloads: () => context.pushDownloads(),
     );
   }
@@ -398,6 +436,7 @@ class _MediaDetailPageState extends State<MediaDetailPage> {
                 final favorited = MediaFavoriteActions.isFavorited(
                   _data,
                   widget.title,
+                  rule: _activeRule,
                 );
                 return IconButton(
                   tooltip: favorited ? '取消收藏' : '收藏并开启追更',
