@@ -6,7 +6,9 @@ import 'package:fluxforge/core/logging/app_logger.dart';
 import 'package:fluxforge/features/settings/logs_page.dart';
 
 void main() {
-  testWidgets('LogsPage renders with AppTheme without crash', (WidgetTester tester) async {
+  testWidgets('LogsPage renders with AppTheme without crash', (
+    WidgetTester tester,
+  ) async {
     AppLogger.addLog(
       level: 'INFO',
       tag: 'Rule Sandbox',
