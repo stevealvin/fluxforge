@@ -58,13 +58,15 @@ class PlayerSettingSwitchRow extends StatelessWidget {
   const PlayerSettingSwitchRow({
     super.key,
     required this.title,
-    required this.subtitle,
+    this.subtitle,
     required this.value,
     required this.onChanged,
   });
 
   final String title;
-  final String subtitle;
+
+  /// 可选的补充说明；自解释的开关不传，避免每行都挂一句噪音
+  final String? subtitle;
   final bool value;
   final ValueChanged<bool> onChanged;
 
@@ -87,14 +89,16 @@ class PlayerSettingSwitchRow extends StatelessWidget {
                     fontWeight: FontWeight.w500,
                   ),
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  subtitle,
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.5),
-                    fontSize: 10.5,
+                if (subtitle != null && subtitle!.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle!,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.5),
+                      fontSize: 10.5,
+                    ),
                   ),
-                ),
+                ],
               ],
             ),
           ),
@@ -299,7 +303,6 @@ class _PlayerMoreSettingsPanelBodyState
               // 镜像翻转开关 (舞蹈/跟练神器)
               PlayerSettingSwitchRow(
                 title: '画面水平镜像',
-                subtitle: '适合舞蹈、跟练与教程视频左右镜像观看',
                 value: _isMirrored,
                 onChanged: (val) => _apply(
                   () => _isMirrored = val,
@@ -310,7 +313,6 @@ class _PlayerMoreSettingsPanelBodyState
               // 循环播放开关
               PlayerSettingSwitchRow(
                 title: '单视频循环播放',
-                subtitle: '播放结束时自动从头接力播放',
                 value: _isLooping,
                 onChanged: (val) => _apply(
                   () => _isLooping = val,
@@ -326,8 +328,7 @@ class _PlayerMoreSettingsPanelBodyState
               const _PanelSectionTitle('长按加速配置'),
               const SizedBox(height: 8),
               PlayerSettingSwitchRow(
-                title: '长按瞬时快进',
-                subtitle: '长按画面任意处即可按设定倍速快速播放',
+                title: '长按快进',
                 value: _preferences.longPressBoostEnabled,
                 onChanged: (val) => _applyPreferences(
                   _preferences.copyWith(longPressBoostEnabled: val),
@@ -379,11 +380,11 @@ class _PanelSectionTitle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Text(
-        text,
-        style: const TextStyle(
-          color: Colors.white60,
-          fontSize: 12,
-          fontWeight: FontWeight.w500,
-        ),
-      );
+    text,
+    style: const TextStyle(
+      color: Colors.white60,
+      fontSize: 12,
+      fontWeight: FontWeight.w500,
+    ),
+  );
 }
