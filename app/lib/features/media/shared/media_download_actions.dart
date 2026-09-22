@@ -6,6 +6,7 @@ import 'package:fluxforge/domain/rule/rule.dart';
 import 'package:fluxforge/features/library/downloads/engines/download_action_resolver.dart';
 import 'package:fluxforge/features/library/downloads/models/download_unit.dart';
 import 'package:fluxforge/features/media/comic/reader/controllers/comic_chapter_image_pipeline.dart';
+import 'package:fluxforge/features/media/shared/media_request_headers.dart';
 
 /// 详情页「离线下载」的统一动作层
 ///
@@ -213,22 +214,72 @@ class MediaDownloadActions {
           title: title,
           cover: cover,
           imageUrls: result.urls,
-          headers: data.customHeaders,
+          // 与视频同源：图片直链同样需要站点根 Referer，否则被判盗链
+          headers: downloadHeadersOf(data, rule: rule),
           selectedIndices: result.selection,
         );
       default:
-        final episodes = _videoEpisodes(data);
-        if (episodes.isEmpty) return '暂无可下载的剧集';
+        final request = videoRequestOf(data, rule: rule);
+        if (request.episodes.isEmpty) return '暂无可下载的剧集';
         await downloadService.startVideoDownload(
           rule: rule,
           bookId: bookId,
           title: title,
           cover: cover,
-          episodes: episodes,
+          episodes: request.episodes,
+          headers: request.headers,
           selectedIndices: selection,
         );
     }
     return null;
+  }
+
+  /// 直链资源的下载请求头：与播放器 / 图片链路**同源组装**
+  ///
+  /// 顺序：详情级 `customHeaders` → 单集独占头（可选）→ 防盗链兜底。
+  ///
+  /// **兜底这层不能省**：直链不走规则引擎，播放器与图片链路都经
+  /// [MediaRequestHeaders.withDefaults] 补上「站点根 Referer + UA」；下载侧若只带
+  /// 详情页 URL（深层页面 / 接口地址）当 Referer，或干脆不带，图床与 CDN 会判盗链
+  /// 回 403 —— 典型表现就是「同一集能播放，下载却立刻失败」。
+  static Map<String, String> downloadHeadersOf(
+    MediaDetailData data, {
+    Rule? rule,
+    Map<String, dynamic>? episodeExtra,
+  }) {
+    final headers = <String, String>{...data.customHeaders};
+
+    final extra = episodeExtra?['headers'];
+    if (extra is Map) {
+      extra.forEach((k, v) {
+        if (k != null && v != null) headers[k.toString()] = v.toString();
+      });
+    }
+
+    return MediaRequestHeaders.withDefaults(
+      headers,
+      referer: MediaRequestHeaders.resolveReferer(
+        ruleBaseUrl: rule?.baseUrl,
+        pageUrl: data.url,
+      ),
+    );
+  }
+
+  /// 视频下载的请求参数：待下载分集 + 与播放器同源的请求头
+  ///
+  /// 单独成方法是为了给 `headers` 留一个可断言的口子 —— 它曾在这里漏传。
+  static ({List<MediaEpisode> episodes, Map<String, String> headers})
+  videoRequestOf(MediaDetailData data, {Rule? rule}) {
+    final episodes = _videoEpisodes(data);
+    return (
+      episodes: episodes,
+      // 任务级只有一份头：单集鉴权头取首集（同线路各集在实践中一致）
+      headers: downloadHeadersOf(
+        data,
+        rule: rule,
+        episodeExtra: episodes.isEmpty ? null : episodes.first.extra,
+      ),
+    );
   }
 
   /// 视频待下载分集：以首条线路为准（详情页顶部栏不掌握线路切换状态）

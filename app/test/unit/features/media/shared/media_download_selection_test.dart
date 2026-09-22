@@ -140,6 +140,82 @@ void main() {
     });
   });
 
+  group('视频下载请求参数', () {
+    final videoRule = Rule(
+      id: 9,
+      name: '影视源',
+      baseUrl: 'https://v.example',
+      type: 'video',
+      code: '// noop',
+    );
+
+    MediaDetailData videoData({
+      Map<String, String> headers = const {},
+      Map<String, dynamic>? episodeExtra,
+    }) => MediaDetailData(
+      title: '剧名',
+      url: 'https://v.example/vod/detail/123',
+      cover: '',
+      mediaType: MediaType.video,
+      customHeaders: headers,
+      videoGroups: [
+        MediaGroup(
+          name: '线路1',
+          items: [
+            MediaEpisode(
+              title: '第 1 集',
+              url: 'https://cdn.v.example/1-1.m3u8',
+              extra: episodeExtra ?? const {},
+            ),
+          ],
+        ),
+      ],
+    );
+
+    test('补齐站点根 Referer 与 UA：缺了会被源站 403（表现为「能播放但下载立刻失败」）', () {
+      final request = MediaDownloadActions.videoRequestOf(
+        videoData(),
+        rule: videoRule,
+      );
+
+      expect(
+        request.headers['Referer'],
+        'https://v.example',
+        reason: '必须用站点根，而不是详情页的深层地址',
+      );
+      expect(request.headers['User-Agent']?.trim(), isNotEmpty);
+      expect(request.episodes.single.url, 'https://cdn.v.example/1-1.m3u8');
+    });
+
+    test('规则已声明的 Referer 与 UA 不被兜底覆盖', () {
+      final request = MediaDownloadActions.videoRequestOf(
+        videoData(
+          headers: const {
+            'Referer': 'https://custom.example/',
+            'User-Agent': 'CustomUA',
+          },
+        ),
+        rule: videoRule,
+      );
+
+      expect(request.headers['Referer'], 'https://custom.example/');
+      expect(request.headers['User-Agent'], 'CustomUA');
+    });
+
+    test('单集独占请求头并入任务头（部分源站把鉴权放在分集数据里）', () {
+      final request = MediaDownloadActions.videoRequestOf(
+        videoData(
+          episodeExtra: const {
+            'headers': {'Cookie': 'sid=abc'},
+          },
+        ),
+        rule: videoRule,
+      );
+
+      expect(request.headers['Cookie'], 'sid=abc');
+    });
+  });
+
   group('选中范围 → 图片下标', () {
     test('漫画：只选第 2 章时，图片下标对准该章，且清单仍是全量', () async {
       final pipeline = ComicChapterImagePipeline(
