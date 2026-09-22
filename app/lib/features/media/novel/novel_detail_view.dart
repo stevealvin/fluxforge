@@ -7,6 +7,7 @@ import 'package:fluxforge/domain/rule/rule.dart';
 import 'package:fluxforge/app/di/di.dart';
 import 'package:fluxforge/data/library/play_history_service.dart';
 import 'package:fluxforge/shared/widgets/app_card.dart';
+import 'package:fluxforge/features/media/shared/media_download_actions.dart';
 import 'package:fluxforge/features/media/shared/media_history_registrar.dart';
 import 'package:fluxforge/features/media/shared/media_meta_header.dart';
 import 'package:fluxforge/features/media/shared/media_related_grid.dart';
@@ -42,9 +43,11 @@ class _NovelDetailViewState extends State<NovelDetailView> {
 
   /// 当前书籍的唯一消费标识 (优先详情页 URL，兜底标题)
   String get _mediaId {
-    if (widget.data.url.isNotEmpty) return widget.data.url;
-    if (widget.fallbackTitle.isNotEmpty) return widget.fallbackTitle;
-    return widget.data.title;
+    return MediaDownloadActions.taskKey(
+      widget.data,
+      widget.fallbackTitle,
+      rule: widget.rule,
+    );
   }
 
   /// 是否存在可续读的历史章节进度
@@ -74,8 +77,13 @@ class _NovelDetailViewState extends State<NovelDetailView> {
   void _registerPlayRecord() {
     MediaHistoryRegistrar.register(
       id: _mediaId,
-      title: widget.data.title.isNotEmpty ? widget.data.title : widget.fallbackTitle,
-      cover: widget.data.cover.isNotEmpty ? widget.data.cover : widget.fallbackCover,
+      url: widget.data.url,
+      title: widget.data.title.isNotEmpty
+          ? widget.data.title
+          : widget.fallbackTitle,
+      cover: widget.data.cover.isNotEmpty
+          ? widget.data.cover
+          : widget.fallbackCover,
       mediaType: 'novel',
       ruleId: widget.rule?.id?.toString() ?? '',
       totalEpisodes: widget.data.chapters.length,
@@ -99,23 +107,24 @@ class _NovelDetailViewState extends State<NovelDetailView> {
     HapticFeedback.lightImpact();
 
     final readerChapters = widget.data.chapters.map((ch) {
-      return NovelChapter(
-        title: ch.title,
-        content: '',
-        url: ch.url,
-      );
+      return NovelChapter(title: ch.title, content: '', url: ch.url);
     }).toList();
 
     if (readerChapters.isEmpty) {
       readerChapters.add(
         NovelChapter(
-          title: widget.data.title.isNotEmpty ? widget.data.title : widget.fallbackTitle,
+          title: widget.data.title.isNotEmpty
+              ? widget.data.title
+              : widget.fallbackTitle,
           content: widget.data.textContent ?? '',
           url: widget.data.url,
         ),
       );
-    } else if (widget.data.textContent != null && widget.data.textContent!.isNotEmpty) {
-      readerChapters[0] = readerChapters[0].copyWith(content: widget.data.textContent);
+    } else if (widget.data.textContent != null &&
+        widget.data.textContent!.isNotEmpty) {
+      readerChapters[0] = readerChapters[0].copyWith(
+        content: widget.data.textContent,
+      );
     }
 
     // 记录本次进入阅读器的起始章节，保证退出后的阅读进度可续读
@@ -125,7 +134,9 @@ class _NovelDetailViewState extends State<NovelDetailView> {
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => NovelReaderPage(
-          bookTitle: widget.data.title.isNotEmpty ? widget.data.title : widget.fallbackTitle,
+          bookTitle: widget.data.title.isNotEmpty
+              ? widget.data.title
+              : widget.fallbackTitle,
           initialChapterIndex: safeIndex,
           chapters: readerChapters,
           rule: widget.rule,
@@ -172,8 +183,8 @@ class _NovelDetailViewState extends State<NovelDetailView> {
                 Text(
                   chapters.isNotEmpty
                       ? (_hasReadingProgress
-                          ? '继续阅读 (第 ${_resumeChapterIndex + 1} 章 / 共 ${chapters.length} 章)'
-                          : '开始阅读 (共 ${chapters.length} 章)')
+                            ? '继续阅读 (第 ${_resumeChapterIndex + 1} 章 / 共 ${chapters.length} 章)'
+                            : '开始阅读 (共 ${chapters.length} 章)')
                       : '立即畅读正文',
                   style: const TextStyle(
                     color: Colors.white,
@@ -191,7 +202,10 @@ class _NovelDetailViewState extends State<NovelDetailView> {
         // 3. 目录选章列表 (修复深色模式底色为 darkCard 实体材质与微光边框)
         if (chapters.isNotEmpty) ...[
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+            padding: const EdgeInsets.symmetric(
+              horizontal: 16.0,
+              vertical: 8.0,
+            ),
             child: Row(
               children: [
                 Container(
@@ -215,7 +229,9 @@ class _NovelDetailViewState extends State<NovelDetailView> {
                   '共 ${chapters.length} 章',
                   style: TextStyle(
                     fontSize: 12,
-                    color: isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted,
+                    color: isDark
+                        ? AppColors.darkTextMuted
+                        : AppColors.lightTextMuted,
                   ),
                 ),
                 const Spacer(),
@@ -229,16 +245,21 @@ class _NovelDetailViewState extends State<NovelDetailView> {
                   },
                   child: Row(
                     children: [
-                      Icon(Ionicons.swapVerticalOutline,
+                      Icon(
+                        Ionicons.swapVerticalOutline,
                         size: 13,
-                        color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
+                        color: isDark
+                            ? AppColors.darkTextSecondary
+                            : AppColors.lightTextSecondary,
                       ),
                       const SizedBox(width: 4),
                       Text(
                         _isReversed ? '倒序' : '正序',
                         style: TextStyle(
                           fontSize: 12,
-                          color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
+                          color: isDark
+                              ? AppColors.darkTextSecondary
+                              : AppColors.lightTextSecondary,
                         ),
                       ),
                     ],
@@ -258,12 +279,15 @@ class _NovelDetailViewState extends State<NovelDetailView> {
               separatorBuilder: (context, index) => const SizedBox(height: 6),
               itemBuilder: (context, index) {
                 final ch = displayChapters[index];
-                final realIndex = _isReversed ? (chapters.length - 1 - index) : index;
+                final realIndex = _isReversed
+                    ? (chapters.length - 1 - index)
+                    : index;
                 return AppCard(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 11,
+                  ),
                   borderRadius: 10,
-                  showBorder: true,
-                  borderColor: isDark ? AppColors.darkBorder : AppColors.lightBorder,
                   color: isDark ? AppColors.darkCard : AppColors.lightSurface,
                   onTap: () => _openReader(initialIndex: realIndex),
                   child: Row(
@@ -271,9 +295,7 @@ class _NovelDetailViewState extends State<NovelDetailView> {
                       Expanded(
                         child: Text(
                           ch.title,
-                          style: const TextStyle(
-                            fontSize: 13,
-                          ),
+                          style: const TextStyle(fontSize: 13),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -281,7 +303,9 @@ class _NovelDetailViewState extends State<NovelDetailView> {
                       Icon(
                         Icons.chevron_right_rounded,
                         size: 18,
-                        color: isDark ? AppColors.darkTextTertiary : AppColors.lightTextTertiary,
+                        color: isDark
+                            ? AppColors.darkTextTertiary
+                            : AppColors.lightTextTertiary,
                       ),
                     ],
                   ),
@@ -295,10 +319,14 @@ class _NovelDetailViewState extends State<NovelDetailView> {
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
               child: Center(
                 child: TextButton.icon(
-                  onPressed: () => _openReader(initialIndex: _resumeChapterIndex),
+                  onPressed: () =>
+                      _openReader(initialIndex: _resumeChapterIndex),
                   // 跟随主题解析品牌色，暗色下自动用更亮的 primaryGlow
-                  icon: Icon(Ionicons.listOutline, size: 14,
-                    color: Theme.of(context).colorScheme.primary),
+                  icon: Icon(
+                    Ionicons.listOutline,
+                    size: 14,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
                   label: Text(
                     '进入阅读器查看全部 ${chapters.length} 章节',
                     style: TextStyle(

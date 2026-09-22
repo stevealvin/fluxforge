@@ -1,4 +1,5 @@
 import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:dio/dio.dart';
 import 'package:fluxforge/core/network/api_client.dart';
@@ -14,13 +15,31 @@ class RuleService {
   final ApiClient _apiClient;
 
   /// 规则测速延迟映射表 (key: ruleId/ruleName, value: 毫秒数，-1 表示超时/错误)
-  final ValueNotifier<Map<String, int>> latenciesNotifier = ValueNotifier<Map<String, int>>({});
-  
+  final ValueNotifier<Map<String, int>> latenciesNotifier =
+      ValueNotifier<Map<String, int>>({});
+
   /// 是否正在并发测速
   final ValueNotifier<bool> isPingingNotifier = ValueNotifier<bool>(false);
 
   List<Rule> get rules => rulesNotifier.value;
   List<Rule> get enabledRules => rules.where((r) => r.enabled).toList();
+
+  /// 按 baseUrl 反查负责该地址的规则（优先启用中的）
+  ///
+  /// 详情页 / 历史页 / 收藏页共用同一套判据（见 [Rule.matchesUrl]）。
+  Rule? matchByUrl(String url) {
+    if (url.trim().isEmpty) return null;
+    for (final rule in enabledRules) {
+      if (rule.matchesUrl(url)) return rule;
+    }
+    // 启用中的都不匹配才回退到全量：作品可能来自被用户临时禁用的源，
+    // 此时"用对规则"比"尊重禁用状态"更重要（禁用状态在详情页仍会体现为解析结果异常）。
+    for (final rule in rules) {
+      if (rule.matchesUrl(url)) return rule;
+    }
+    return null;
+  }
+
   Map<String, int> get latencies => latenciesNotifier.value;
   bool get isPinging => isPingingNotifier.value;
 
@@ -85,9 +104,11 @@ class RuleService {
   /// 新增或覆盖更新单条规则
   Future<void> addOrUpdateRule(Rule rule) async {
     final current = List<Rule>.from(rules);
-    final index = current.indexWhere((r) =>
-        (r.id != null && rule.id != null && r.id == rule.id) ||
-        (r.name == rule.name && r.baseUrl == rule.baseUrl));
+    final index = current.indexWhere(
+      (r) =>
+          (r.id != null && rule.id != null && r.id == rule.id) ||
+          (r.name == rule.name && r.baseUrl == rule.baseUrl),
+    );
 
     if (index >= 0) {
       current[index] = rule;
@@ -99,9 +120,11 @@ class RuleService {
 
   /// 判断某规则是否已经在本地导入
   bool isRuleImported(Rule target) {
-    return rules.any((r) =>
-        (r.id != null && target.id != null && r.id == target.id) ||
-        (r.name == target.name && r.baseUrl == target.baseUrl));
+    return rules.any(
+      (r) =>
+          (r.id != null && target.id != null && r.id == target.id) ||
+          (r.name == target.name && r.baseUrl == target.baseUrl),
+    );
   }
 
   /// 批量从远程 URL 导入规则集 (支持 JSON 格式规则集)
@@ -138,7 +161,9 @@ class RuleService {
     List<dynamic> list = [];
     if (data is List) {
       list = data;
-    } else if (data is Map && data.containsKey('rules') && data['rules'] is List) {
+    } else if (data is Map &&
+        data.containsKey('rules') &&
+        data['rules'] is List) {
       list = data['rules'] as List;
     } else if (data is Map) {
       list = [data];
@@ -154,9 +179,11 @@ class RuleService {
     int count = 0;
 
     for (final rule in incoming) {
-      final idx = current.indexWhere((r) =>
-          (r.id != null && rule.id != null && r.id == rule.id) ||
-          (r.name == rule.name && r.baseUrl == rule.baseUrl));
+      final idx = current.indexWhere(
+        (r) =>
+            (r.id != null && rule.id != null && r.id == rule.id) ||
+            (r.name == rule.name && r.baseUrl == rule.baseUrl),
+      );
 
       if (idx >= 0) {
         current[idx] = rule;
@@ -275,7 +302,9 @@ class RuleService {
     if (failedKeys.isEmpty) return 0;
 
     final initialCount = rules.length;
-    final updated = rules.where((r) => !failedKeys.contains(getRuleKey(r))).toList();
+    final updated = rules
+        .where((r) => !failedKeys.contains(getRuleKey(r)))
+        .toList();
     final removedCount = initialCount - updated.length;
 
     await saveRules(updated);

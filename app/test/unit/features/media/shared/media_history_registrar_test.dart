@@ -10,18 +10,18 @@ void main() {
   final updatedAt = DateTime(2026, 9, 21, 12);
 
   PlayRecord existingRecord() => PlayRecord(
-        id: 'media-1',
-        title: '旧标题',
-        cover: 'old.jpg',
-        mediaType: 'video',
-        ruleId: 'rule-1',
-        episodeName: '第 8 集',
-        episodeIndex: 7,
-        totalEpisodes: 24,
-        positionSeconds: 620,
-        durationSeconds: 1400,
-        updatedAt: DateTime(2026, 9, 20),
-      );
+    id: 'media-1',
+    title: '旧标题',
+    cover: 'old.jpg',
+    mediaType: 'video',
+    ruleId: 'rule-1',
+    episodeName: '第 8 集',
+    episodeIndex: 7,
+    totalEpisodes: 24,
+    positionSeconds: 620,
+    durationSeconds: 1400,
+    updatedAt: DateTime(2026, 9, 20),
+  );
 
   PlayRecord merge({
     PlayRecord? existing,
@@ -94,9 +94,16 @@ void main() {
       preservePlaybackProgress: true,
     );
     expect(onlyProgress.positionSeconds, equals(620));
-    expect(onlyProgress.episodeIndex, equals(2), reason: '未开启 preserveEpisode 时用传入值');
+    expect(
+      onlyProgress.episodeIndex,
+      equals(2),
+      reason: '未开启 preserveEpisode 时用传入值',
+    );
 
-    final onlyEpisode = merge(existing: existingRecord(), preserveEpisode: true);
+    final onlyEpisode = merge(
+      existing: existingRecord(),
+      preserveEpisode: true,
+    );
     expect(onlyEpisode.episodeIndex, equals(7));
     expect(onlyEpisode.positionSeconds, equals(0));
   });

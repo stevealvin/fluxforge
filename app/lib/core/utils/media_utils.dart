@@ -60,3 +60,32 @@ class MediaDisplay {
     }
   }
 }
+
+/// 把详情 / parse 解析出的地址补全为绝对地址
+///
+/// 规则里的相对路径（`/static/upload/xxx.jpg`、`chapter/53996`、`//cdn.xx/a.jpg`）
+/// 必须先补全，否则会被当成站内相对路径直接请求失败。
+///
+/// 详情解析与漫画章节的图片解析都用这**同一套口径**，避免两处补全规则分叉。
+String resolveMediaUrl(String raw, {String baseUrl = ''}) {
+  final u = raw.trim();
+  if (u.isEmpty) return '';
+  if (u.startsWith('http://') || u.startsWith('https://')) return u;
+  if (u.startsWith('//')) return 'https:$u';
+
+  final base = baseUrl.trim();
+  if (base.isEmpty) return u;
+
+  try {
+    final baseUri = Uri.parse(base);
+    if (u.startsWith('/')) {
+      return '${baseUri.scheme}://${baseUri.host}'
+          '${baseUri.hasPort ? ":${baseUri.port}" : ""}$u';
+    }
+    return Uri.parse(base.endsWith('/') ? base : '$base/')
+        .resolve(u)
+        .toString();
+  } catch (_) {
+    return u;
+  }
+}

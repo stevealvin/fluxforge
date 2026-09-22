@@ -7,6 +7,8 @@ import 'package:fluxforge/data/settings/app_service.dart';
 import 'package:fluxforge/app/di/di.dart';
 import 'package:fluxforge/shared/widgets/player/aura_player.dart';
 import 'package:fluxforge/shared/widgets/player/player_preferences.dart';
+import 'package:fluxforge/features/media/shared/media_download_actions.dart';
+import 'package:fluxforge/features/media/shared/media_request_headers.dart';
 import 'package:fluxforge/features/media/shared/media_history_registrar.dart';
 import 'package:fluxforge/features/media/shared/media_related_grid.dart';
 import 'package:fluxforge/features/media/video/widgets/episode_picker_sheet.dart';
@@ -77,9 +79,11 @@ class _VideoDetailViewState extends State<VideoDetailView> {
 
   /// 当前媒体的唯一消费标识 (优先详情页 URL，兜底标题)
   String get _mediaId {
-    if (widget.data.url.isNotEmpty) return widget.data.url;
-    if (widget.fallbackTitle.isNotEmpty) return widget.fallbackTitle;
-    return _displayTitle;
+    return MediaDownloadActions.taskKey(
+      widget.data,
+      widget.fallbackTitle,
+      rule: widget.rule,
+    );
   }
 
   /// 当前集数标题 (用于消费记录与「继续观看」展示)
@@ -131,26 +135,25 @@ class _VideoDetailViewState extends State<VideoDetailView> {
       }
     }
 
-    // 防盗链保护：若规则未声明 Referer，智能注入详情页 URL 或规则 baseUrl
-    final hasReferer = headers.keys.any((k) => k.toLowerCase() == 'referer');
-    if (!hasReferer) {
-      if (widget.data.url.isNotEmpty) {
-        headers['Referer'] = widget.data.url;
-      } else if (widget.rule?.baseUrl.isNotEmpty ?? false) {
-        headers['Referer'] = widget.rule!.baseUrl;
-      }
-    }
-    return headers;
+    // 防盗链保护：与图片链路**同源**——规则未声明 Referer 时按「站点根优先」兜底，
+    // 并补齐默认 UA（直链不走规则引擎，缺 UA 同样会被判盗链）
+    return MediaRequestHeaders.withDefaults(
+      headers,
+      referer: MediaRequestHeaders.resolveReferer(
+        ruleBaseUrl: widget.rule?.baseUrl,
+        pageUrl: widget.data.url,
+      ),
+    );
   }
 
   /// 剧照 / 预览图的请求头（防盗链 Referer 兜底，同播放器口径）
-  Map<String, String> get _previewHeaders {
-    final referer = widget.rule?.baseUrl ?? '';
-    return {
-      if (referer.isNotEmpty) 'Referer': referer,
-      ...widget.data.customHeaders,
-    };
-  }
+  Map<String, String> get _previewHeaders => MediaRequestHeaders.withDefaults(
+    widget.data.customHeaders,
+    referer: MediaRequestHeaders.resolveReferer(
+      ruleBaseUrl: widget.rule?.baseUrl,
+      pageUrl: widget.data.url,
+    ),
+  );
 
   @override
   void initState() {
@@ -182,8 +185,11 @@ class _VideoDetailViewState extends State<VideoDetailView> {
   void _registerPlayRecord() {
     MediaHistoryRegistrar.register(
       id: _mediaId,
+      url: widget.data.url,
       title: _displayTitle,
-      cover: widget.data.cover.isNotEmpty ? widget.data.cover : widget.fallbackCover,
+      cover: widget.data.cover.isNotEmpty
+          ? widget.data.cover
+          : widget.fallbackCover,
       mediaType: 'video',
       ruleId: widget.rule?.id?.toString() ?? '',
       episodeName: _currentEpisodeTitle,
@@ -287,7 +293,8 @@ class _VideoDetailViewState extends State<VideoDetailView> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final episodes = _currentGroupEpisodes;
 
-    final currentEpTitle = (episodes.isNotEmpty &&
+    final currentEpTitle =
+        (episodes.isNotEmpty &&
             _currentEpisodeIndex >= 0 &&
             _currentEpisodeIndex < episodes.length)
         ? episodes[_currentEpisodeIndex].title
@@ -309,7 +316,9 @@ class _VideoDetailViewState extends State<VideoDetailView> {
                     key: _playerKey,
                     playUrl: _activePlayUrl!,
                     title: fullPlayerTitle,
-                    coverUrl: widget.data.cover.isNotEmpty ? widget.data.cover : widget.fallbackCover,
+                    coverUrl: widget.data.cover.isNotEmpty
+                        ? widget.data.cover
+                        : widget.fallbackCover,
                     httpHeaders: _activeHeaders,
                     initialPosition: _resumePosition,
                     autoResume: _autoResume,
@@ -320,14 +329,17 @@ class _VideoDetailViewState extends State<VideoDetailView> {
                     },
                     // 播放偏好由宿主注入（播放器已与设置仓储解耦，可复用于任意场景）
                     preferences: PlayerPreferences(
-                      longPressBoostEnabled: appService.settings.enableLongPress2x,
+                      longPressBoostEnabled:
+                          appService.settings.enableLongPress2x,
                       longPressSpeed: appService.settings.longPressSpeed,
                     ),
                     onPreferencesChanged: (prefs) {
-                      appService.updateSettings(appService.settings.copyWith(
-                        enableLongPress2x: prefs.longPressBoostEnabled,
-                        longPressSpeed: prefs.longPressSpeed,
-                      ));
+                      appService.updateSettings(
+                        appService.settings.copyWith(
+                          enableLongPress2x: prefs.longPressBoostEnabled,
+                          longPressSpeed: prefs.longPressSpeed,
+                        ),
+                      );
                     },
                     onProgress: _onPlayProgress,
                     onEnded: () {
@@ -340,7 +352,11 @@ class _VideoDetailViewState extends State<VideoDetailView> {
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(Ionicons.filmOutline, color: Colors.white38, size: 36),
+                        Icon(
+                          Ionicons.filmOutline,
+                          color: Colors.white38,
+                          size: 36,
+                        ),
                         SizedBox(height: 8),
                         Text(
                           '暂无有效播放地址',
@@ -355,7 +371,9 @@ class _VideoDetailViewState extends State<VideoDetailView> {
         // 2. 下方独立滚动内容区 (包含纯净元数据、选集面板、剧照与推荐，滚动不遮挡播放画面)
         Expanded(
           child: SingleChildScrollView(
-            physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
+            physics: const AlwaysScrollableScrollPhysics(
+              parent: BouncingScrollPhysics(),
+            ),
             padding: const EdgeInsets.symmetric(vertical: 12.0),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -439,5 +457,4 @@ class _VideoDetailViewState extends State<VideoDetailView> {
     HapticFeedback.lightImpact();
     setState(() => _isReversed = !_isReversed);
   }
-
 }

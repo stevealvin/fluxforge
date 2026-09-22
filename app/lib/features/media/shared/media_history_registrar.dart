@@ -24,6 +24,7 @@ class MediaHistoryRegistrar {
     required PlayRecord? existing,
     required String id,
     required String title,
+    String url = '',
     required String cover,
     required String mediaType,
     required String ruleId,
@@ -36,17 +37,24 @@ class MediaHistoryRegistrar {
   }) {
     return PlayRecord(
       id: id,
+      url: url,
       title: title,
       cover: cover,
       mediaType: mediaType,
       ruleId: ruleId,
-      episodeName: preserveEpisode ? (existing?.episodeName ?? '') : episodeName,
-      episodeIndex: preserveEpisode ? (existing?.episodeIndex ?? 0) : episodeIndex,
+      episodeName: preserveEpisode
+          ? (existing?.episodeName ?? '')
+          : episodeName,
+      episodeIndex: preserveEpisode
+          ? (existing?.episodeIndex ?? 0)
+          : episodeIndex,
       totalEpisodes: totalEpisodes,
-      positionSeconds:
-          preservePlaybackProgress ? (existing?.positionSeconds ?? 0) : 0,
-      durationSeconds:
-          preservePlaybackProgress ? (existing?.durationSeconds ?? 0) : 0,
+      positionSeconds: preservePlaybackProgress
+          ? (existing?.positionSeconds ?? 0)
+          : 0,
+      durationSeconds: preservePlaybackProgress
+          ? (existing?.durationSeconds ?? 0)
+          : 0,
       updatedAt: updatedAt,
     );
   }
@@ -57,6 +65,7 @@ class MediaHistoryRegistrar {
   static void register({
     required String id,
     required String title,
+    String url = '',
     required String cover,
     required String mediaType,
     required String ruleId,
@@ -73,6 +82,7 @@ class MediaHistoryRegistrar {
       merge(
         existing: playHistoryService.getById(id),
         id: id,
+        url: url,
         title: title,
         cover: cover,
         mediaType: mediaType,

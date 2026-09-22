@@ -27,6 +27,29 @@ enum MediaType {
   }
 }
 
+/// 图片类作品的内容形态
+///
+/// **由 detail 返回的元素类型推断，规则无需额外声明任何字段**：
+///
+/// | 规则返回 | 推断结果 | 含义 |
+/// |---|---|---|
+/// | `items: ["http...jpg"]` | [images] | 图集：整本书的图片已在 detail 里给全，不需要再解析 |
+/// | `items: [{title, url}]` | [chapters] | 漫画：只给了**章节页地址**，每章要再 parse 一层 |
+/// | `groups: [{name, items:[{...}]}]` | [chapters] | 同上（多分组形态） |
+///
+/// 判据与详情解析严格同源：`items` 里的**字符串**只会落进 `imageList`，
+/// 而**对象**只会落进 `chapters`，因此两个列表谁非空即代表形态。
+enum MediaContentShape {
+  /// detail 直接给出图片（图集）
+  images,
+
+  /// detail 给出章节表，每章需再解析一层才得到图片（漫画）
+  chapters,
+
+  /// 既没有图片也没有章节
+  none,
+}
+
 /// 选集/分集/章节单项数据模型
 class MediaEpisode {
   final String title;
@@ -177,6 +200,37 @@ class MediaDetailData {
 
   bool get isEmpty => title.isEmpty && url.isEmpty;
   bool get isNotEmpty => !isEmpty;
+
+  /// 图片类作品的内容形态（元素类型推断，见 [MediaContentShape]）
+  ///
+  /// 判定顺序即优先级：`groups` → `imageList` → `chapters`。
+  /// 注意图集形态下 `chapters` 同样非空（解析时每张图也生成了一条条目），
+  /// 所以 `imageList` 必须排在它前面。
+  MediaContentShape get contentShape {
+    if (comicGroups.any((g) => g.items.isNotEmpty)) {
+      return MediaContentShape.chapters;
+    }
+    if (imageList.isNotEmpty) return MediaContentShape.images;
+    if (chapters.isNotEmpty) return MediaContentShape.chapters;
+    return MediaContentShape.none;
+  }
+
+  /// 是否属于"章节形态"——即必须再解析一层才能拿到图片
+  bool get needsChapterParse => contentShape == MediaContentShape.chapters;
+
+  /// 章节形态下的**可读章表**
+  ///
+  /// 把规则的两种写法统一起来，UI 只需要读它：
+  /// - `groups: [...]` → 原样返回（多分组）；
+  /// - `items: [{title, url}]` → 合成单一分组（规则两种写法在此归一，
+  ///   调用方只需读这一个入口）。
+  List<MediaGroup> get readableComicGroups {
+    if (comicGroups.isNotEmpty) return comicGroups;
+    if (contentShape == MediaContentShape.chapters && chapters.isNotEmpty) {
+      return [MediaGroup(name: '章节列表', items: chapters)];
+    }
+    return const [];
+  }
 
   MediaDetailData copyWith({
     String? title,

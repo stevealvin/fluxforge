@@ -6,7 +6,15 @@ import 'package:fluxforge/core/storage/app_storage.dart';
 
 /// 统一多媒体收藏数据项模型
 class FavoriteItem {
-  final String id; // 媒体唯一标识 (直链URL或唯一ID)
+  /// 唯一键：**归一化后的作品绝对地址**（相对地址已用规则 baseUrl 补全）
+  ///
+  /// 它只做身份：收藏去重、消费记录关联、下载任务键。请求详情时用的是 [url]。
+  final String id;
+
+  /// 规则返回的**原文地址**（请求详情时原样交给规则）
+  ///
+  /// 规则自己负责拼 baseUrl，App 侧不要替它补全 —— 补全后规则再拼一次会变成两份。
+  final String url;
   final String title; // 媒体名称
   final String cover; // 封面海报图
   final String mediaType; // 媒体类型: video / novel / picture / comic
@@ -18,6 +26,7 @@ class FavoriteItem {
 
   const FavoriteItem({
     required this.id,
+    this.url = '',
     required this.title,
     this.cover = '',
     this.mediaType = 'video',
@@ -30,6 +39,7 @@ class FavoriteItem {
 
   FavoriteItem copyWith({
     String? id,
+    String? url,
     String? title,
     String? cover,
     String? mediaType,
@@ -41,6 +51,7 @@ class FavoriteItem {
   }) {
     return FavoriteItem(
       id: id ?? this.id,
+      url: url ?? this.url,
       title: title ?? this.title,
       cover: cover ?? this.cover,
       mediaType: mediaType ?? this.mediaType,
@@ -55,6 +66,7 @@ class FavoriteItem {
   Map<String, dynamic> toJson() {
     return {
       'id': id,
+      'url': url,
       'title': title,
       'cover': cover,
       'mediaType': mediaType,
@@ -69,6 +81,7 @@ class FavoriteItem {
   factory FavoriteItem.fromJson(Map<String, dynamic> json) {
     return FavoriteItem(
       id: json['id']?.toString() ?? '',
+      url: json['url']?.toString() ?? '',
       title: json['title']?.toString() ?? '未知媒体',
       cover: json['cover']?.toString() ?? '',
       mediaType: json['mediaType']?.toString() ?? 'video',

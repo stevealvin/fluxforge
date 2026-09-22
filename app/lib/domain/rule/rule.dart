@@ -25,8 +25,9 @@ class Rule {
     this.updatedAt,
   });
 
-  static List<Rule> fromArray(List<dynamic> list) =>
-      list.map((item) => Rule.fromJson(Map<String, dynamic>.from(item as Map))).toList();
+  static List<Rule> fromArray(List<dynamic> list) => list
+      .map((item) => Rule.fromJson(Map<String, dynamic>.from(item as Map)))
+      .toList();
 
   factory Rule.fromJson(Map<String, dynamic> json) {
     bool isEnabled = true;
@@ -51,6 +52,35 @@ class Rule {
       createdAt: json['created_at']?.toString(),
       updatedAt: json['updated_at']?.toString(),
     );
+  }
+
+  /// 该规则是否负责解析这个地址
+  ///
+  /// ### 为什么不是 `baseUrl == url`
+  /// 两者不是一个层级：[baseUrl] 是**站点根**（`https://site.com`），
+  /// 而 url 是**具体页面**（`https://site.com/manhua/1163.html`）—— 永远不相等。
+  /// 真正要判断的是「这个地址属于哪个站」，所以判据落在**域名**上。
+  ///
+  /// ### 归一化都做了什么
+  /// 补 scheme（容忍规则里写 `site.com`）、去 `www.`、统一小写。
+  /// 这几步是为了让 `http`/`https`、有无 `www.` 这类**同一站点的书写差异**不会
+  /// 被误判成"不匹配"——否则会出现"明明有规则却报未指定规则"。
+  ///
+  /// 判据是**域名相等**而非字符串包含：既不会因为 host 为空串而命中一切，
+  /// 也不会把 `notexample.com` 误判成 `example.com`。
+  bool matchesUrl(String url) {
+    final base = _hostOf(baseUrl);
+    if (base.isEmpty) return false;
+    return base == _hostOf(url);
+  }
+
+  /// 取站点域名：`https://www.site.com/manga/` → `site.com`
+  static String _hostOf(String raw) {
+    var value = raw.trim().toLowerCase();
+    if (value.isEmpty) return '';
+    if (!value.contains('://')) value = 'https://$value';
+    final host = Uri.tryParse(value)?.host ?? '';
+    return host.startsWith('www.') ? host.substring(4) : host;
   }
 
   Map<String, dynamic> toJson() => <String, dynamic>{

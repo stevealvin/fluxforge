@@ -89,12 +89,20 @@ class MediaDetailArgs {
     required this.url,
     this.type = 'video',
     this.cover = '',
+    this.rule,
   });
 
   final String type;
   final String title;
   final String url;
   final String cover;
+
+  /// 已解析出的规则（含 baseUrl）
+  ///
+  /// 这里必须能携带规则：详情页拿不到规则时会退化到"按 URL host 反查"，
+  /// 再不行就**随便挑一条规则**（`rules.first`）—— 那样 baseUrl 就是错的，
+  /// 相对地址补全与请求头都会跟着错。
+  final Rule? rule;
 
   static MediaDetailArgs? tryParse(Object? extra) {
     if (extra is MediaDetailArgs) return extra;
@@ -104,6 +112,7 @@ class MediaDetailArgs {
         title: extra['title']?.toString() ?? '媒体详情',
         url: extra['url']?.toString() ?? '',
         cover: extra['cover']?.toString() ?? '',
+        rule: _ruleFrom(extra),
       );
     }
     return null;

@@ -21,7 +21,8 @@ import 'package:fluxforge/features/splash/splash_page.dart';
 
 /// 全局路由监听器 (供 AuraPlayer 等多媒体组件实现 RouteAware 生命周期自治)
 /// 泛型显式约束为 `PageRoute<void>`，仅监听真正的页面级导航压栈，自动过滤 Dialog/BottomSheet/Drawer 等局部弹窗 PopupRoute
-final RouteObserver<PageRoute<void>> appRouteObserver = RouteObserver<PageRoute<void>>();
+final RouteObserver<PageRoute<void>> appRouteObserver =
+    RouteObserver<PageRoute<void>>();
 
 /// 全局 GoRouter 统一路由配置
 ///
@@ -35,7 +36,8 @@ final GoRouter router = GoRouter(
     // 启动闪屏页
     GoRoute(
       path: AppRoutes.splash,
-      builder: (BuildContext context, GoRouterState state) => const SplashPage(),
+      builder: (BuildContext context, GoRouterState state) =>
+          const SplashPage(),
     ),
 
     // 主页面外壳 (承载底部毛玻璃导航与三大核心业务 Tab)
@@ -74,9 +76,7 @@ final GoRouter router = GoRouter(
           builder: (BuildContext context, GoRouterState state) {
             final rule = RuleArgs.tryParse(state.extra);
             if (rule == null) {
-              return const Scaffold(
-                body: Center(child: Text('未指定有效规则')),
-              );
+              return const Scaffold(body: Center(child: Text('未指定有效规则')));
             }
             return RuleCatalogPage(rule: rule);
           },
@@ -88,9 +88,7 @@ final GoRouter router = GoRouter(
           builder: (BuildContext context, GoRouterState state) {
             final rule = RuleArgs.tryParse(state.extra);
             if (rule == null) {
-              return const Scaffold(
-                body: Center(child: Text('未指定有效规则进行测试')),
-              );
+              return const Scaffold(body: Center(child: Text('未指定有效规则进行测试')));
             }
             return RuleTesterPage(rule: rule);
           },
@@ -100,7 +98,8 @@ final GoRouter router = GoRouter(
         GoRoute(
           path: AppRoutes.ruleDetailSegment,
           builder: (BuildContext context, GoRouterState state) {
-            final args = RuleDetailArgs.tryParse(state.extra) ??
+            final args =
+                RuleDetailArgs.tryParse(state.extra) ??
                 const RuleDetailArgs(title: '', url: '');
             return MediaDetailPage(
               title: args.title,
@@ -115,13 +114,15 @@ final GoRouter router = GoRouter(
         GoRoute(
           path: AppRoutes.mediaDetailSegment,
           builder: (BuildContext context, GoRouterState state) {
-            final args = MediaDetailArgs.tryParse(state.extra) ??
+            final args =
+                MediaDetailArgs.tryParse(state.extra) ??
                 const MediaDetailArgs(title: '媒体详情', url: '');
             return MediaDetailPage(
               type: args.type,
               url: args.url,
               title: args.title,
               cover: args.cover,
+              rule: args.rule,
             );
           },
         ),
@@ -136,13 +137,15 @@ final GoRouter router = GoRouter(
         // 沙箱运行与系统诊断日志中心
         GoRoute(
           path: AppRoutes.logsSegment,
-          builder: (BuildContext context, GoRouterState state) => const LogsPage(),
+          builder: (BuildContext context, GoRouterState state) =>
+              const LogsPage(),
         ),
 
         // 规则市场
         GoRoute(
           path: AppRoutes.marketSegment,
-          builder: (BuildContext context, GoRouterState state) => const MarketPage(),
+          builder: (BuildContext context, GoRouterState state) =>
+              const MarketPage(),
         ),
 
         // 我的收藏与智能追更

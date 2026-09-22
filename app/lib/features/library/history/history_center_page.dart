@@ -21,33 +21,47 @@ import 'package:fluxforge/shared/widgets/app_image.dart';
 void openPlayRecord(BuildContext context, PlayRecord record) {
   HapticFeedback.lightImpact();
 
-  // 优先匹配记录绑定的规则，保证沙箱可继续调度详情解析
-  Rule? matchedRule;
-  for (final rule in ruleService.rules) {
-    if (record.ruleId.isNotEmpty && rule.id?.toString() == record.ruleId) {
-      matchedRule = rule;
-      break;
-    }
-  }
+  final matchedRule = matchRuleForRecord(record);
 
   // 有有效网络地址时走规则详情页（可自动解析详情并完成断点续播）
-  if (record.id.startsWith('http')) {
-    context.pushRuleDetail(RuleDetailArgs(
-      rule: matchedRule,
-      title: record.title,
-      url: record.id,
-      cover: record.cover,
-    ));
+  if (record.url.isNotEmpty) {
+    context.pushRuleDetail(
+      RuleDetailArgs(
+        rule: matchedRule,
+        title: record.title,
+        url: record.url,
+        cover: record.cover,
+      ),
+    );
     return;
   }
 
-  // 兜底：无有效地址时走通用详情分发
-  context.pushMediaDetail(MediaDetailArgs(
-    type: record.mediaType,
-    title: record.title,
-    url: record.id,
-    cover: record.cover,
-  ));
+  // 兜底：无有效地址时走通用详情分发（同样带上规则，别让详情页去猜）
+  context.pushMediaDetail(
+    MediaDetailArgs(
+      type: record.mediaType,
+      title: record.title,
+      url: record.url,
+      cover: record.cover,
+      rule: matchedRule,
+    ),
+  );
+}
+
+/// 消费记录 → 规则：先按 `ruleId` 精确匹配，匹配不到再按 URL host 反查
+///
+/// **为什么要做 host 兜底**：记录里的 `ruleId` 可能为空（早期数据、或规则被删后重建），
+/// 这时若只传 null，详情页会依次退化到「按 host 反查」→「`rules.first` 随便挑一条」，
+/// 后者会让 baseUrl 彻底错位。这里提前用与详情页同源的判据匹配好，把结果传下去。
+Rule? matchRuleForRecord(PlayRecord record) {
+  for (final rule in ruleService.rules) {
+    if (record.ruleId.isNotEmpty && rule.id?.toString() == record.ruleId) {
+      return rule;
+    }
+  }
+
+  // 兜底：直接用 baseUrl 反查（判据统一在 Rule.matchesUrl）
+  return ruleService.matchByUrl(record.id);
 }
 
 /// 历史管理中心页面 (HistoryCenterPage)
@@ -80,9 +94,8 @@ class _HistoryCenterPageState extends State<HistoryCenterPage> {
     await playHistoryService.clear();
     await historyService.clearHistory();
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('已清空全部历史记录')),
-    );
+    ScaffoldMessenger.of(context)
+        .showSnackBar(const SnackBar(content: Text('已清空全部历史记录')));
   }
 
   @override
@@ -92,7 +105,10 @@ class _HistoryCenterPageState extends State<HistoryCenterPage> {
     return Scaffold(
       backgroundColor: isDark ? AppColors.darkBg : AppColors.lightBg,
       appBar: AppBar(
-        title: const Text('历史中心', style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text(
+          '历史中心',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
         backgroundColor: isDark ? AppColors.darkBg : AppColors.lightBg,
         elevation: 0,
         leading: IconButton(
@@ -115,7 +131,9 @@ class _HistoryCenterPageState extends State<HistoryCenterPage> {
             builder: (context, keywords, _) {
               final filtered = _selectedFilter == 'all'
                   ? records
-                  : records.where((r) => r.mediaType == _selectedFilter).toList();
+                  : records
+                        .where((r) => r.mediaType == _selectedFilter)
+                        .toList();
 
               return ListView(
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
@@ -138,7 +156,9 @@ class _HistoryCenterPageState extends State<HistoryCenterPage> {
                           : '当前筛选类型下暂无记录',
                     )
                   else
-                    ...filtered.map((record) => _buildRecordCard(record, isDark)),
+                    ...filtered.map(
+                      (record) => _buildRecordCard(record, isDark),
+                    ),
 
                   const SizedBox(height: 24),
 
@@ -219,12 +239,16 @@ class _HistoryCenterPageState extends State<HistoryCenterPage> {
               label: Text(f[1]),
               selected: isSelected,
               selectedColor: AppColors.primary,
-              backgroundColor: isDark ? AppColors.darkCard : AppColors.lightSurface,
+              backgroundColor: isDark
+                  ? AppColors.darkCard
+                  : AppColors.lightSurface,
               labelStyle: TextStyle(
                 fontSize: 12,
                 color: isSelected
                     ? Colors.white
-                    : (isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary),
+                    : (isDark
+                          ? AppColors.darkTextSecondary
+                          : AppColors.lightTextSecondary),
               ),
               side: BorderSide(
                 color: isSelected
@@ -258,10 +282,7 @@ class _HistoryCenterPageState extends State<HistoryCenterPage> {
             child: SizedBox(
               width: 56,
               height: 74,
-              child: AppImage(
-                imageUrl: record.cover,
-                fit: BoxFit.cover,
-              ),
+              child: AppImage(imageUrl: record.cover, fit: BoxFit.cover),
             ),
           ),
           const SizedBox(width: 12),
@@ -278,7 +299,9 @@ class _HistoryCenterPageState extends State<HistoryCenterPage> {
                   style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
-                    color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
+                    color: isDark
+                        ? AppColors.darkTextPrimary
+                        : AppColors.lightTextPrimary,
                   ),
                 ),
                 const SizedBox(height: 6),
@@ -286,7 +309,10 @@ class _HistoryCenterPageState extends State<HistoryCenterPage> {
                   children: [
                     // 类型徽标
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
                       decoration: BoxDecoration(
                         color: AppColors.primary.withValues(alpha: 0.12),
                         borderRadius: BorderRadius.circular(5),
@@ -294,7 +320,11 @@ class _HistoryCenterPageState extends State<HistoryCenterPage> {
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(MediaDisplay.typeIcon(record.mediaType), size: 10, color: AppColors.primary),
+                          Icon(
+                            MediaDisplay.typeIcon(record.mediaType),
+                            size: 10,
+                            color: AppColors.primary,
+                          ),
                           const SizedBox(width: 3),
                           Text(
                             MediaDisplay.typeLabel(record.mediaType),
@@ -315,7 +345,9 @@ class _HistoryCenterPageState extends State<HistoryCenterPage> {
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           fontSize: 11.5,
-                          color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
+                          color: isDark
+                              ? AppColors.darkTextSecondary
+                              : AppColors.lightTextSecondary,
                         ),
                       ),
                     ),
@@ -329,7 +361,9 @@ class _HistoryCenterPageState extends State<HistoryCenterPage> {
                     value: record.progress,
                     minHeight: 3,
                     backgroundColor: isDark ? Colors.white12 : Colors.black12,
-                    valueColor: const AlwaysStoppedAnimation<Color>(AppColors.primary),
+                    valueColor: const AlwaysStoppedAnimation<Color>(
+                      AppColors.primary,
+                    ),
                   ),
                 ),
                 const SizedBox(height: 6),
@@ -337,7 +371,9 @@ class _HistoryCenterPageState extends State<HistoryCenterPage> {
                   AppUtils.formatRelativeTime(record.updatedAt),
                   style: TextStyle(
                     fontSize: 10.5,
-                    color: isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted,
+                    color: isDark
+                        ? AppColors.darkTextMuted
+                        : AppColors.lightTextMuted,
                   ),
                 ),
               ],
@@ -347,7 +383,11 @@ class _HistoryCenterPageState extends State<HistoryCenterPage> {
           // 删除单条
           IconButton(
             tooltip: '删除该条记录',
-            icon: const Icon(Ionicons.closeCircleOutline, size: 16, color: Colors.grey),
+            icon: const Icon(
+              Ionicons.closeCircleOutline,
+              size: 16,
+              color: Colors.grey,
+            ),
             onPressed: () => playHistoryService.remove(record.id),
           ),
         ],
@@ -364,7 +404,10 @@ class _HistoryCenterPageState extends State<HistoryCenterPage> {
         return InputChip(
           label: Text(keyword, style: const TextStyle(fontSize: 12)),
           backgroundColor: isDark ? AppColors.darkCard : AppColors.lightSurface,
-          side: BorderSide(color: isDark ? AppColors.darkBorder : AppColors.lightBorder, width: 0.8),
+          side: BorderSide(
+            color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
+            width: 0.8,
+          ),
           deleteIcon: const Icon(Ionicons.closeOutline, size: 14),
           onDeleted: () => historyService.removeHistory(keyword),
           onPressed: () {
@@ -389,14 +432,20 @@ class _HistoryCenterPageState extends State<HistoryCenterPage> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(icon, size: 16, color: isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted),
+          Icon(
+            icon,
+            size: 16,
+            color: isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted,
+          ),
           const SizedBox(width: 8),
           Flexible(
             child: Text(
               text,
               style: TextStyle(
                 fontSize: 12,
-                color: isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted,
+                color: isDark
+                    ? AppColors.darkTextMuted
+                    : AppColors.lightTextMuted,
               ),
             ),
           ),

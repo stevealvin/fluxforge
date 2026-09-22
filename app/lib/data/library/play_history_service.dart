@@ -10,8 +10,13 @@ import 'package:fluxforge/core/storage/app_storage.dart';
 /// - video：记录播放秒数与总时长，用于「继续观看」与断点秒级续播；
 /// - novel / comic：记录章节索引与总章节数，用于「继续阅读」与章节续读。
 class PlayRecord {
-  /// 媒体唯一标识 (优先采用详情页 URL，兜底 `标题|规则ID` 组合)
+  /// 唯一键：**归一化后的作品绝对地址**（相对地址已用规则 baseUrl 补全）
+  ///
+  /// 它只做身份：去重、进度关联、收藏与下载任务键。请求详情时用的是 [url]。
   final String id;
+
+  /// 规则返回的**原文地址**（请求详情时原样交给规则）
+  final String url;
 
   /// 媒体标题
   final String title;
@@ -37,6 +42,13 @@ class PlayRecord {
   /// 视频播放进度 (秒)，小说/漫画恒为 0
   final int positionSeconds;
 
+  /// 漫画 / 图集的**页内位置**（第几页，从 0 开始）；视频与小说恒为 0
+  ///
+  /// 与 [positionSeconds] 分开而不是复用：后者语义是"播放秒数"，「继续观看」卡片
+  /// 会按分钟格式化它，把页码塞进去就会渲染成"第 0 分钟"。
+  /// 该值只对「当前章」有意义，因此恢复时需同时校验 [episodeIndex] 是否匹配。
+  final int pageIndex;
+
   /// 视频总时长 (秒)
   final int durationSeconds;
 
@@ -45,6 +57,7 @@ class PlayRecord {
 
   const PlayRecord({
     required this.id,
+    this.url = '',
     required this.title,
     this.cover = '',
     this.mediaType = 'video',
@@ -54,6 +67,7 @@ class PlayRecord {
     this.totalEpisodes = 0,
     this.positionSeconds = 0,
     this.durationSeconds = 0,
+    this.pageIndex = 0,
     required this.updatedAt,
   });
 
@@ -76,7 +90,8 @@ class PlayRecord {
       if (positionSeconds > 0) {
         final m = positionSeconds ~/ 60;
         final s = positionSeconds % 60;
-        final text = '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+        final text =
+            '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
         return '看到 $text';
       }
       return '尚未开始';
@@ -87,6 +102,7 @@ class PlayRecord {
 
   PlayRecord copyWith({
     String? id,
+    String? url,
     String? title,
     String? cover,
     String? mediaType,
@@ -96,10 +112,12 @@ class PlayRecord {
     int? totalEpisodes,
     int? positionSeconds,
     int? durationSeconds,
+    int? pageIndex,
     DateTime? updatedAt,
   }) {
     return PlayRecord(
       id: id ?? this.id,
+      url: url ?? this.url,
       title: title ?? this.title,
       cover: cover ?? this.cover,
       mediaType: mediaType ?? this.mediaType,
@@ -109,6 +127,7 @@ class PlayRecord {
       totalEpisodes: totalEpisodes ?? this.totalEpisodes,
       positionSeconds: positionSeconds ?? this.positionSeconds,
       durationSeconds: durationSeconds ?? this.durationSeconds,
+      pageIndex: pageIndex ?? this.pageIndex,
       updatedAt: updatedAt ?? this.updatedAt,
     );
   }
@@ -116,6 +135,7 @@ class PlayRecord {
   Map<String, dynamic> toJson() {
     return {
       'id': id,
+      'url': url,
       'title': title,
       'cover': cover,
       'mediaType': mediaType,
@@ -125,6 +145,7 @@ class PlayRecord {
       'totalEpisodes': totalEpisodes,
       'positionSeconds': positionSeconds,
       'durationSeconds': durationSeconds,
+      'pageIndex': pageIndex,
       'updatedAt': updatedAt.toIso8601String(),
     };
   }
@@ -132,6 +153,7 @@ class PlayRecord {
   factory PlayRecord.fromJson(Map<String, dynamic> json) {
     return PlayRecord(
       id: json['id']?.toString() ?? '',
+      url: json['url']?.toString() ?? '',
       title: json['title']?.toString() ?? '未知媒体',
       cover: json['cover']?.toString() ?? '',
       mediaType: json['mediaType']?.toString() ?? 'video',
@@ -141,6 +163,7 @@ class PlayRecord {
       totalEpisodes: (json['totalEpisodes'] as num?)?.toInt() ?? 0,
       positionSeconds: (json['positionSeconds'] as num?)?.toInt() ?? 0,
       durationSeconds: (json['durationSeconds'] as num?)?.toInt() ?? 0,
+      pageIndex: (json['pageIndex'] as num?)?.toInt() ?? 0,
       updatedAt: json['updatedAt'] != null
           ? DateTime.tryParse(json['updatedAt'].toString()) ?? DateTime.now()
           : DateTime.now(),
@@ -234,6 +257,7 @@ class PlayHistoryService {
     int? totalEpisodes,
     int? positionSeconds,
     int? durationSeconds,
+    int? pageIndex,
     bool forceNotify = false,
   }) {
     if (id.isEmpty) return;
@@ -246,6 +270,7 @@ class PlayHistoryService {
       totalEpisodes: totalEpisodes,
       positionSeconds: positionSeconds,
       durationSeconds: durationSeconds,
+      pageIndex: pageIndex,
       updatedAt: DateTime.now(),
     );
 

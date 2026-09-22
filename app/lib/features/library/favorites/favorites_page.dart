@@ -238,7 +238,9 @@ class _FavoritesPageState extends State<FavoritesPage> {
               type: item.mediaType,
               title: item.title,
               cover: item.cover,
-              url: item.id.startsWith('http') ? item.id : '',
+              // 原样传入原文地址：拼接 baseUrl 是规则代码自己的职责，
+              // App 侧不要替它补全，否则规则会再拼一次，变成两份 baseUrl。
+              url: item.url,
               // 绑定收藏时记录的规则：否则详情页只能靠 baseUrl host 反查，
               // 命中不了就会报「未指定对应解析规则」
               rule: MediaFavoriteActions.ruleOf(item),
@@ -381,6 +383,8 @@ class _FavoritesPageState extends State<FavoritesPage> {
       ..showSnackBar(
         SnackBar(
           content: Text('已移除《${item.title}》'),
+          // 撤销窗口给足 5 秒：移除是可逆操作，时间太短会来不及点「撤销」
+          duration: const Duration(seconds: 5),
           action: SnackBarAction(
             label: '撤销',
             onPressed: () => favoriteService.addFavorite(item),

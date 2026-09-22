@@ -7,12 +7,9 @@ import 'package:fluxforge/domain/media/media.dart';
 import 'package:fluxforge/domain/rule/rule.dart';
 import 'package:fluxforge/features/media/shared/media_download_actions.dart';
 
-/// 详情页「收藏 / 追更」的统一动作层
+/// 详情页「收藏 / 追更」的统一动作层（收藏写入侧的唯一入口）
 ///
-/// 收藏此前只有读侧（收藏页能展示、能删除），**没有任何写入入口**：全仓没有一处
-/// 构造 [FavoriteItem]，`addFavorite` / `toggleFavorite` 零调用点，于是追更所依赖的
-/// `latestEpisode` 也永远没有写入者 —— 「智能追更」实际从未生效。本类补齐写入侧，
-/// 并把三件事一次定死：
+/// 三件事在此一次定死：
 ///
 /// 1. **唯一键同源**：[key] 直接复用 [MediaDownloadActions.taskKey]，与三类详情视图
 ///    登记消费记录用的 `_mediaId` 完全一致（`url → 标题` 回退）。三处必须同源，
@@ -25,12 +22,15 @@ class MediaFavoriteActions {
   const MediaFavoriteActions._();
 
   /// 收藏唯一键（与下载任务、消费记录三处同源）
-  static String key(MediaDetailData data, String fallbackTitle) =>
-      MediaDownloadActions.taskKey(data, fallbackTitle);
+  static String key(MediaDetailData data, String fallbackTitle, {Rule? rule}) =>
+      MediaDownloadActions.taskKey(data, fallbackTitle, rule: rule);
 
   /// 当前是否已收藏
-  static bool isFavorited(MediaDetailData data, String fallbackTitle) =>
-      favoriteService.isFavorite(key(data, fallbackTitle));
+  static bool isFavorited(
+    MediaDetailData data,
+    String fallbackTitle, {
+    Rule? rule,
+  }) => favoriteService.isFavorite(key(data, fallbackTitle, rule: rule));
 
   /// 详情数据里能表达「最新集 / 章」的文案（取末项标题；无法判断时返回空串）
   static String latestEpisodeOf(MediaDetailData data) {
@@ -67,7 +67,7 @@ class MediaFavoriteActions {
     String fallbackTitle = '',
     String fallbackCover = '',
   }) async {
-    final id = key(data, fallbackTitle);
+    final id = key(data, fallbackTitle, rule: rule);
     if (id.isEmpty) return '无法识别该媒体，收藏失败';
 
     if (favoriteService.isFavorite(id)) {
@@ -84,6 +84,8 @@ class MediaFavoriteActions {
     await favoriteService.addFavorite(
       FavoriteItem(
         id: id,
+        // 原文地址：进详情时原样交给规则（规则自己拼 baseUrl）
+        url: data.url.trim(),
         title: title,
         cover: data.cover.isNotEmpty ? data.cover : fallbackCover,
         mediaType: mediaType,
@@ -101,7 +103,7 @@ class MediaFavoriteActions {
   /// 未绑定规则或不是可访问 URL 时直接返回 null（不联网）。单项超时 / 异常一律吞掉
   /// 并返回 null —— 追更是锦上添花，不能让一个源站挂掉拖垮整次检查。
   static Future<String?> probeLatest(FavoriteItem item) async {
-    if (item.ruleId.isEmpty || !item.id.startsWith('http')) return null;
+    if (item.ruleId.isEmpty || item.url.isEmpty) return null;
 
     final rule = ruleOf(item);
     if (rule == null) return null;
@@ -143,12 +145,16 @@ class MediaFavoriteActions {
     return '共 ${raw.length} 项';
   }
 
-  /// 取收藏项绑定的规则（收藏页进入详情页时必须带上，否则只能靠 baseUrl host 反查）
+  /// 取收藏项绑定的规则（收藏页进入详情页时必须带上）
+  ///
+  /// 先按记录里的 `ruleId` 精确匹配；失配（规则被删后重建、早期数据没有 ruleId）
+  /// 再按 baseUrl 反查 —— 判据与详情页 / 历史页统一在 [Rule.matchesUrl]。
   static Rule? ruleOf(FavoriteItem item) {
-    if (item.ruleId.isEmpty) return null;
-    for (final rule in ruleService.rules) {
-      if (rule.id?.toString() == item.ruleId) return rule;
+    if (item.ruleId.isNotEmpty) {
+      for (final rule in ruleService.rules) {
+        if (rule.id?.toString() == item.ruleId) return rule;
+      }
     }
-    return null;
+    return ruleService.matchByUrl(item.id);
   }
 }
