@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:ionicons/ionicons.dart';
@@ -36,11 +38,12 @@ class _DownloadManagerPageState extends State<DownloadManagerPage> {
     _refreshSize();
   }
 
-  /// 重新统计占用空间（总量 + 各任务体积）
+  /// 重新统计占用空间（总量 + 各任务体积），并补探尚未探到总大小的任务
   Future<void> _refreshSize() async {
+    final tasks = downloadService.tasksNotifier.value;
     final bytes = await downloadService.totalBytes();
     final perTask = <String, int>{};
-    for (final task in downloadService.tasksNotifier.value) {
+    for (final task in tasks) {
       perTask[task.id] = await downloadService.taskBytes(task);
     }
     if (!mounted) return;
@@ -50,13 +53,35 @@ class _DownloadManagerPageState extends State<DownloadManagerPage> {
         ..clear()
         ..addAll(perTask);
     });
+
+    // 总大小探测只服务展示，故挂在「打开下载列表」这一刻：下载过程本身不必为显示
+    // 多发一轮 HEAD。服务侧有内存去重，重复打开列表不会重复探测。
+    for (final task in tasks) {
+      if (task.totalBytes == null) {
+        unawaited(downloadService.estimateTotalSize(task.id));
+      }
+    }
   }
 
-  /// 「 · 本地 1.2 GB」；尚无产物的任务不显示
+  /// 「 · 1.2 GB / 2.4 GB」（已下载 / 预计总量）
+  ///
+  /// 分母探测不到（HLS、需再解析的漫画章节）时只给已下载体积，
+  /// 两者都无（尚无产物且未探测到总量）时不显示。
   String _localSizeLabel(DownloadTask task) {
     final bytes = _taskBytes[task.id] ?? 0;
-    if (bytes <= 0) return '';
-    return ' · 本地 ${formatDownloadSize(bytes)}';
+    final total = task.totalBytes;
+    if (bytes <= 0 && (total == null || total <= 0)) return '';
+    return ' · ${formatDownloadBytes(bytes, total)}';
+  }
+
+  /// 「 · 2.4 MB/s」；非进行中或无采样时不显示
+  ///
+  /// 只在 [DownloadTask.isActive] 时展示：暂停 / 完成后的速率是过期值，
+  /// 留着会让人误以为还在下载。
+  String _speedLabel(DownloadTask task) {
+    if (!task.isActive) return '';
+    final text = formatDownloadSpeed(task.bytesPerSecond);
+    return text.isEmpty ? '' : ' · $text';
   }
 
   /// 清理全部下载（二次确认）
@@ -303,6 +328,7 @@ class _DownloadManagerPageState extends State<DownloadManagerPage> {
                     const SizedBox(height: 6),
                     Text(
                       '${task.progressLabel} $unit'
+                      '${_speedLabel(task)}'
                       '${task.failed.isNotEmpty ? ' · 失败 ${task.failed.length} $unit' : ''}'
                       '${_localSizeLabel(task)}',
                       style: TextStyle(

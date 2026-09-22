@@ -57,7 +57,10 @@ class DownloadBar extends StatelessWidget {
           : '已下载全本（${task.progressLabel} $unitLabel）';
       icon = Ionicons.cloudDoneOutline;
     } else if (isActive) {
-      label = '下载中 ${task.progressLabel} · 点击暂停';
+      final speed = formatDownloadSpeed(task.bytesPerSecond);
+      label = '下载中 ${task.progressLabel}'
+          '${speed.isEmpty ? '' : ' · $speed'}'
+          ' · 点击暂停';
       icon = Ionicons.cloudDownloadOutline;
     } else if (isPaused) {
       label = '已暂停 ${task.progressLabel} · 点击继续';

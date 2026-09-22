@@ -12,6 +12,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import 'package:fluxforge/core/network/api_client.dart';
+import 'package:fluxforge/data/download/download_rate_meter.dart';
 import 'package:fluxforge/data/download/ffmpeg_command_builder.dart';
 import 'package:fluxforge/data/download/hls_playlist_parser.dart';
 import 'package:fluxforge/core/storage/app_storage.dart';
@@ -53,6 +54,28 @@ String formatDownloadSize(int bytes) {
   final mb = bytes / (1024 * 1024);
   if (mb < 1024) return '${mb.toStringAsFixed(1)} MB';
   return '${(mb / 1024).toStringAsFixed(2)} GB';
+}
+
+/// 字节/秒 → 可读速率（「2.4 MB/s」）
+///
+/// 与 [formatDownloadSize] 同一换算口径（1024 进制），避免「体积一套、速率另一套」。
+/// 速率未知（≤ 0）时返回**空串**：调用方直接拼接即可，不必再判空。
+String formatDownloadSpeed(double bytesPerSecond) {
+  if (bytesPerSecond <= 0) return '';
+  final kb = bytesPerSecond / 1024;
+  if (kb < 1) return '${bytesPerSecond.round()} B/s';
+  if (kb < 1024) return '${kb.toStringAsFixed(0)} KB/s';
+  return '${(kb / 1024).toStringAsFixed(1)} MB/s';
+}
+
+/// 「1.2 GB / 2.4 GB」（已下载 / 预计总量）；分母未知时只给已下载
+///
+/// 分母来自 [DownloadService.estimateTotalSize] 的探测：HLS 与需再解析一层的
+/// 漫画章节拿不到长度，此时**只显示已下载**，不编造分母。
+String formatDownloadBytes(int doneBytes, int? totalBytes) {
+  final done = formatDownloadSize(doneBytes);
+  if (totalBytes == null || totalBytes <= 0) return done;
+  return '$done / ${formatDownloadSize(totalBytes)}';
 }
 
 /// 离线下载任务模型（小说全本 / 漫画整部）
@@ -101,6 +124,20 @@ class DownloadTask {
   /// 小说章节 / 漫画图片的单项都很快，恒为 0 即可，因此不影响既有行为。
   final double activeItemProgress;
 
+  /// 当前下行速率（字节/秒）；**瞬时状态**，不参与持久化
+  ///
+  /// 由 [DownloadRateMeter] 采样后写入（见 `DownloadService._reportBytes`）：
+  /// HLS 分片 / 直链流 / FFmpeg 统计三条通道共用同一入口。
+  /// 重启后旧值无意义，`fromJson` 一律归 0；UI 只在 [isActive] 时展示。
+  final double bytesPerSecond;
+
+  /// 预计总大小（字节）；`null` = 未知，此时不显示分母
+  ///
+  /// 由 [DownloadService.estimateTotalSize] 在创建任务后**异步探测一次**并持久化
+  /// （重启不必重探）。只对单文件直链有效：HLS 与需再解析一层的漫画章节拿不到长度，
+  /// 此时保持 `null` —— 宁可不显示，也不给一个错得离谱的分母。
+  final int? totalBytes;
+
   /// 选集范围（[targetUrls] 的下标；`null` = 全选）
   ///
   /// 目标清单**始终是全量**，选集只决定「跑哪些项」与「进度怎么算」。
@@ -122,6 +159,8 @@ class DownloadTask {
     this.failed = const {},
     this.status = DownloadStatus.pending,
     this.activeItemProgress = 0,
+    this.bytesPerSecond = 0,
+    this.totalBytes,
     this.selection,
     required this.createdAt,
     required this.updatedAt,
@@ -191,6 +230,8 @@ class DownloadTask {
     Set<int>? failed,
     DownloadStatus? status,
     double? activeItemProgress,
+    double? bytesPerSecond,
+    int? totalBytes,
     Object? selection = _selectionUnchanged,
     DateTime? updatedAt,
   }) {
@@ -208,6 +249,8 @@ class DownloadTask {
       failed: failed ?? this.failed,
       status: status ?? this.status,
       activeItemProgress: activeItemProgress ?? this.activeItemProgress,
+      bytesPerSecond: bytesPerSecond ?? this.bytesPerSecond,
+      totalBytes: totalBytes ?? this.totalBytes,
       selection: identical(selection, _selectionUnchanged)
           ? this.selection
           : selection as Set<int>?,
@@ -232,6 +275,7 @@ class DownloadTask {
       'status': status.name,
       'activeItemProgress': activeItemProgress,
       'selection': selection?.toList(),
+      'totalBytes': totalBytes,
       'createdAt': createdAt.toIso8601String(),
       'updatedAt': updatedAt.toIso8601String(),
     };
@@ -277,8 +321,11 @@ class DownloadTask {
         (e) => e.name == json['status']?.toString(),
         orElse: () => DownloadStatus.pending,
       ),
-      // 项内进度属瞬时状态：重启后旧值无意义，一律从 0 重新计
+      // 项内进度与下行速率都属瞬时状态：重启后旧值无意义，一律从 0 重新计
       activeItemProgress: 0,
+      bytesPerSecond: 0,
+      // 总大小是探测结果（成本高），持久化后沿用，避免每次启动重发 HEAD
+      totalBytes: int.tryParse(json['totalBytes']?.toString() ?? ''),
       createdAt:
           DateTime.tryParse(json['createdAt']?.toString() ?? '') ??
           DateTime.now(),
@@ -328,6 +375,18 @@ class DownloadService {
 
   /// URL 过期刷新回调（可空）：源站 401/403/410 时触发，宿主重新解析播放页换新地址
   final UrlExpiredRefresher? onUrlExpired;
+
+  /// 各任务的下行速率采样器（任务 id → 采样器）
+  ///
+  /// 速率只为 UI 服务，属可丢弃的瞬时值：任务结束后留在表里也无害
+  /// （同 id 再次下载会复用，窗口自行前移）。
+  final Map<String, DownloadRateMeter> _rateMeters = {};
+
+  /// 已尝试过「总大小探测」的任务（内存去重）
+  ///
+  /// 探测是逐项 HEAD，失败或全未知时不会写回 [DownloadTask.totalBytes]；
+  /// 若无此集合，每次续传都要重发一轮 HEAD。
+  final Set<String> _sizeProbed = {};
 
   DateTime _lastPersistAt = DateTime.fromMillisecondsSinceEpoch(0);
 
@@ -455,6 +514,35 @@ class DownloadService {
       sizes.add(await _probeSize(url, headers: headers));
     }
     return sizes;
+  }
+
+  /// 探测并记录任务的**预计总大小**（异步、一次性，不阻塞下载）
+  ///
+  /// 只在**每一项都拿到长度**时才写回：部分未知时求和只是下限，而下载列表里没有
+  /// 「以上」这类修饰位（面板的选集预估有），显示成分母会误导 —— 故宁可不显示。
+  Future<void> estimateTotalSize(String id) async {
+    if (!_sizeProbed.add(id)) return;
+    final task = taskOf(id);
+    if (task == null || task.totalBytes != null) return;
+    if (task.targetUrls.isEmpty) return;
+
+    try {
+      final sizes = await probeUnitSizes(
+        task.targetUrls,
+        headers: task.headers,
+      );
+      if (sizes.isEmpty ||
+          sizes.any((size) => size == null || size <= 0)) {
+        return;
+      }
+      final total = sizes.whereType<int>().fold<int>(0, (sum, size) => sum + size);
+      if (total <= 0) return;
+      _mutate(id, (t) => t.copyWith(totalBytes: total));
+      await _persist();
+    } catch (e) {
+      // 探测只服务展示：失败即「未知」，绝不影响下载本身
+      debugPrint('[DownloadService] 总大小探测失败《${task.title}》: $e');
+    }
   }
 
   Future<int?> _probeSize(
@@ -713,10 +801,12 @@ class DownloadService {
       id,
       (t) => t.copyWith(
         status: DownloadStatus.paused,
-        // 项内进度属瞬时状态，暂停即作废
+        // 项内进度与下行速率都属瞬时状态，暂停即作废
         activeItemProgress: 0,
+        bytesPerSecond: 0,
       ),
     );
+    _rateMeters.remove(id)?.reset();
     unawaited(_persist());
   }
 
@@ -827,6 +917,8 @@ class DownloadService {
       // 也不会丢掉已完成的项）；`null` 即「全部下载」
       selection: selection,
       status: DownloadStatus.pending,
+      // 续传沿用上次探测到的总量；没有则等本次异步探测补上
+      totalBytes: existing?.totalBytes,
       createdAt: existing?.createdAt ?? DateTime.now(),
       updatedAt: DateTime.now(),
     );
@@ -838,6 +930,9 @@ class DownloadService {
 
     if (!_queue.contains(id)) _queue.add(id);
     _pump();
+    // 总大小探测**不在这里**发起：它只服务展示，挂在「打开下载列表」那一刻
+    // （见 `DownloadManagerPage._refreshSize`）。否则每个任务一入队就多一轮 HEAD，
+    // 下载本身不值当为显示付这个成本。
     return task;
   }
 
@@ -990,6 +1085,9 @@ class DownloadService {
         receiveTimeout: const Duration(seconds: 60),
       ),
     );
+
+    // 图片下载没有进度回调：按落盘大小一次性上报，速率照常参与采样
+    if (await file.exists()) _reportBytes(task.id, await file.length());
 
     final code = response.statusCode ?? 0;
     if (code < 200 || code >= 300) return false;
@@ -1157,8 +1255,11 @@ class DownloadService {
             receiveTimeout: const Duration(seconds: 60),
           ),
         );
-        if (!await tmp.exists() || await tmp.length() <= 0) return false;
+        final written = await tmp.length();
+        if (written <= 0) return false;
         await tmp.rename(target.path);
+        // 分片落盘后按字节数上报（分片粒度天然限制了上报频率）
+        _reportBytes(task.id, written);
       } on DioException catch (e) {
         // 源站拒绝（401/403/410）→ 上抛交「URL 过期刷新」编排，临时文件照常清理
         if (await tmp.exists()) await tmp.delete();
@@ -1294,6 +1395,8 @@ class DownloadService {
       await for (final chunk in response.data!.stream) {
         sink.add(chunk);
         received += chunk.length;
+        // 字节级上报：采样器自带节流，这里按块喂即可（直链流可拿到最细的粒度）
+        _reportBytes(task.id, chunk.length);
         if (totalBytes <= 0) continue;
         final now = DateTime.now();
         if (now.difference(lastPublishAt).inMilliseconds < 500) continue;
@@ -1336,6 +1439,8 @@ class DownloadService {
     final completer = Completer<bool>();
     Duration? totalDuration;
     var lastPublishAt = DateTime.fromMillisecondsSinceEpoch(0);
+    // FFmpeg 的 size 是**累计**值：记住上次上报位置，取增量喂速率采样器
+    var ffmpegReportedBytes = 0;
 
     final session = await FFmpegKit.executeAsync(
       command,
@@ -1364,8 +1469,15 @@ class DownloadService {
           log.getMessage(),
         );
       },
-      // 统计回调：换算项内进度（500ms 节流）
+      // 统计回调：换算下行速率与项内进度（各自节流）
       (statistics) {
+        // 速率放在进度节流之前：两者节流口径不同，且这里需要每一次的增量
+        final size = statistics.getSize();
+        if (size > ffmpegReportedBytes) {
+          _reportBytes(taskId, size - ffmpegReportedBytes);
+          ffmpegReportedBytes = size;
+        }
+
         final ratio = FfmpegCommandBuilder.progressRatio(
           processedMillis: statistics.getTime(),
           totalDuration: totalDuration,
@@ -1415,6 +1527,20 @@ class DownloadService {
   }
 
   // ==================== 内部：状态与持久化 ====================
+
+  /// 上报已接收字节：统一换算下行速率并节流写回任务
+  ///
+  /// 三条下行通道（HLS 分片 / 直链流 / FFmpeg 统计）都从这里进 —— 各写一套换算
+  /// 必然会漂移，而速率对不上时很难看出是哪条通道算错了。
+  /// 换算与节流都在 [DownloadRateMeter] 内，本方法只做「任务是否还活着」的守卫。
+  void _reportBytes(String taskId, int delta) {
+    if (delta <= 0) return;
+    if (!mountedTask(taskId)) return;
+    final meter = _rateMeters.putIfAbsent(taskId, DownloadRateMeter.new);
+    final speed = meter.add(delta, DateTime.now());
+    if (speed == null) return;
+    _mutate(taskId, (t) => t.copyWith(bytesPerSecond: speed));
+  }
 
   void _mutate(String id, DownloadTask Function(DownloadTask) update) {
     final idx = _cache.indexWhere((e) => e.id == id);
