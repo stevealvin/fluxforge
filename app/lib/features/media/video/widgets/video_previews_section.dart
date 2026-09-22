@@ -51,7 +51,9 @@ class VideoPreviewsSection extends StatelessWidget {
               '(${previews.length})',
               style: TextStyle(
                 fontSize: 12,
-                color: isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted,
+                color: isDark
+                    ? AppColors.darkTextMuted
+                    : AppColors.lightTextMuted,
               ),
             ),
           ],

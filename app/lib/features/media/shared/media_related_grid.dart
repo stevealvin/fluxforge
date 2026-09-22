@@ -5,6 +5,7 @@ import 'package:fluxforge/app/theme/app_colors.dart';
 import 'package:fluxforge/domain/rule/rule.dart';
 import 'package:fluxforge/domain/media/media.dart';
 import 'package:fluxforge/shared/widgets/app_card.dart';
+import 'package:fluxforge/features/media/shared/media_request_headers.dart';
 import 'package:fluxforge/shared/widgets/app_image.dart';
 
 /// 跨媒体通用相关推荐网格 (全面采用 AppCard.flat 平铺卡片，支持 16:9 影视宽屏与 1:1.34 漫画小说黄金竖版两种布局)
@@ -72,7 +73,9 @@ class MediaRelatedGrid extends StatelessWidget {
                   '(${related.length})',
                   style: TextStyle(
                     fontSize: 12,
-                    color: isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted,
+                    color: isDark
+                        ? AppColors.darkTextMuted
+                        : AppColors.lightTextMuted,
                   ),
                 ),
               ],
@@ -106,10 +109,11 @@ class MediaRelatedGrid extends StatelessWidget {
   Widget _buildCard(BuildContext context, MediaRelatedItem item, bool isDark) {
     // 解码降采样：按「屏宽 / 列数 × devicePixelRatio」取目标像素宽 ——
     // 一屏 6 张海报若都按原图解码，是长列表掉帧的主要来源
-    final coverCacheWidth = (MediaQuery.sizeOf(context).width /
-            (isWide ? 2 : 3) *
-            MediaQuery.devicePixelRatioOf(context))
-        .round();
+    final coverCacheWidth =
+        (MediaQuery.sizeOf(context).width /
+                (isWide ? 2 : 3) *
+                MediaQuery.devicePixelRatioOf(context))
+            .round();
 
     return AppCard.flat(
       padding: EdgeInsets.zero,
@@ -132,23 +136,28 @@ class MediaRelatedGrid extends StatelessWidget {
                     ? AppImage(
                         imageUrl: item.cover,
                         // 与详情页同口径：优先用详情解析出的请求头（含 detail 返回的 Referer），
-                        // 缺省才回退 baseUrl —— 原先这里只读 baseUrl，是同页两套 Referer 的根源
-                        headers: headers ??
-                            {
-                              if (currentRule?.baseUrl.isNotEmpty == true)
-                                'Referer': currentRule!.baseUrl,
-                            },
+                        // 缺省才回退 baseUrl —— 同页只用一套请求头，避免同页两套 Referer
+                        headers:
+                            headers ??
+                            MediaRequestHeaders.withDefaults(
+                              const {},
+                              referer: currentRule?.baseUrl ?? '',
+                            ),
                         cacheWidth: coverCacheWidth,
                         errorWidget: Icon(
                           Ionicons.imageOutline,
-                          color: isDark ? AppColors.darkTextTertiary : AppColors.lightTextTertiary,
+                          color: isDark
+                              ? AppColors.darkTextTertiary
+                              : AppColors.lightTextTertiary,
                           size: 20,
                         ),
                       )
                     : Center(
                         child: Icon(
                           isWide ? Icons.movie_outlined : Icons.image_outlined,
-                          color: isDark ? AppColors.darkTextTertiary : AppColors.lightTextTertiary,
+                          color: isDark
+                              ? AppColors.darkTextTertiary
+                              : AppColors.lightTextTertiary,
                           size: 20,
                         ),
                       ),
@@ -177,7 +186,10 @@ class MediaRelatedGrid extends StatelessWidget {
                     right: 6,
                     bottom: 4,
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 5,
+                        vertical: 1.5,
+                      ),
                       decoration: BoxDecoration(
                         color: Colors.black.withValues(alpha: 0.75),
                         borderRadius: BorderRadius.circular(4),
@@ -223,7 +235,9 @@ class MediaRelatedGrid extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       fontSize: 10.5,
-                      color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
+                      color: isDark
+                          ? AppColors.darkTextSecondary
+                          : AppColors.lightTextSecondary,
                     ),
                   ),
                 ],

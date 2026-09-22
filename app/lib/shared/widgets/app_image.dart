@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:math';
 
 import 'package:extended_image/extended_image.dart';
@@ -31,7 +32,39 @@ class AppImage extends StatelessWidget {
     this.placeholder,
     this.errorWidget,
     this.onTap,
+    this.readerMode,
+    this.gestureConfig,
+    this.loadStateChanged,
   });
+
+  /// 阅读器专用构造：直通 `ExtendedImage`，支持手势与本地文件
+  ///
+  /// 为什么给它一个显式构造，而不是让阅读器自己 new `ExtendedImage`：
+  /// [AppImage] 的定位是全仓图片加载的**唯一出口**（协议校验、请求头、缓存、
+  /// 解码降采样、占位与失败兜底都收在这里）。手势缩放没法用纯显示组件表达，
+  /// 于是开一个受控出口；否则每个阅读器都会自己拼一套，策略又开始分叉。
+  ///
+  /// [mode] 传 `ExtendedImageMode.gesture` 得到可缩放的阅读视图；传 `none`
+  /// 用于纵向连续流（不抢滚动，仅沉浸渲染）。
+  const AppImage.reader({
+    super.key,
+    required this.imageUrl,
+    required ExtendedImageMode mode,
+    this.headers,
+    this.fit = BoxFit.contain,
+    this.cache = true,
+    this.cacheWidth,
+    this.cacheHeight,
+    this.gestureConfig,
+    this.loadStateChanged,
+    this.onTap,
+  }) : readerMode = mode,
+       borderRadius = null,
+       shape = BoxShape.rectangle,
+       width = null,
+       height = null,
+       placeholder = null,
+       errorWidget = null;
 
   final String imageUrl;
 
@@ -63,9 +96,53 @@ class AppImage extends StatelessWidget {
   /// 点击回调（可选，命中区域即整张图）
   final VoidCallback? onTap;
 
+  /// 阅读器模式：非空即走 `ExtendedImage` 直通路径
+  ///
+  /// - `ExtendedImageMode.gesture`：可双击 / 双指缩放的分页阅读视图；
+  /// - `ExtendedImageMode.none`：纵向连续流里只做沉浸渲染，**不抢滚动手势**。
+  ///
+  /// 仅 [AppImage.reader] 会设置它，普通构造恒为 null。
+  final ExtendedImageMode? readerMode;
+
+  /// 手势参数（仅阅读器模式生效）
+  final GestureConfig Function(ExtendedImageState)? gestureConfig;
+
+  /// 加载状态回调（仅阅读器模式透传；普通构造用内置占位与失败兜底）
+  final Widget? Function(ExtendedImageState)? loadStateChanged;
+
   @override
   Widget build(BuildContext context) {
     final trimmedUrl = imageUrl.trim();
+
+    // 阅读器模式：本地沙盒文件与网络地址都支持（离线漫画读的就是本地路径）
+    if (readerMode != null) {
+      if (trimmedUrl.isEmpty) {
+        return errorWidget ?? const _ImageLoadFallback();
+      }
+      final isRemote =
+          trimmedUrl.startsWith('http://') || trimmedUrl.startsWith('https://');
+      if (!isRemote) {
+        return ExtendedImage.file(
+          File(trimmedUrl),
+          fit: fit,
+          mode: readerMode!,
+          initGestureConfigHandler: gestureConfig,
+          loadStateChanged: loadStateChanged,
+        );
+      }
+      return ExtendedImage.network(
+        trimmedUrl,
+        cache: cache,
+        headers: headers,
+        fit: fit,
+        cacheWidth: cacheWidth,
+        cacheHeight: cacheHeight,
+        mode: readerMode!,
+        initGestureConfigHandler: gestureConfig,
+        loadStateChanged: loadStateChanged,
+      );
+    }
+
     // 防御性校验：空串或非 http(s) 协议 → 优雅回退内置占位图，杜绝底层抛错
     if (trimmedUrl.isEmpty ||
         (!trimmedUrl.startsWith('http://') && !trimmedUrl.startsWith('https://'))) {

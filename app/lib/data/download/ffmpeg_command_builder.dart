@@ -30,12 +30,17 @@ class FfmpegCommandBuilder {
   }) {
     return <String>[
       '-y',
-      '-protocol_whitelist', _quote(protocolWhitelist),
+      '-protocol_whitelist',
+      _quote(protocolWhitelist),
       ...buildHeaderArgs(headers),
-      '-i', _quote(url),
-      '-c', 'copy',
-      '-bsf:a', 'aac_adtstoasc',
-      '-movflags', '+faststart',
+      '-i',
+      _quote(url),
+      '-c',
+      'copy',
+      '-bsf:a',
+      'aac_adtstoasc',
+      '-movflags',
+      '+faststart',
       _quote(outputPath),
     ].join(' ');
   }
@@ -85,11 +90,16 @@ class FfmpegCommandBuilder {
   }) {
     return <String>[
       '-y',
-      '-protocol_whitelist', _quote('file,crypto,data'),
-      '-i', _quote(playlistPath),
-      '-c', 'copy',
-      '-bsf:a', 'aac_adtstoasc',
-      '-movflags', '+faststart',
+      '-protocol_whitelist',
+      _quote('file,crypto,data'),
+      '-i',
+      _quote(playlistPath),
+      '-c',
+      'copy',
+      '-bsf:a',
+      'aac_adtstoasc',
+      '-movflags',
+      '+faststart',
       _quote(outputPath),
     ].join(' ');
   }
@@ -101,8 +111,8 @@ class FfmpegCommandBuilder {
   /// **无需额外发起 FFprobe 请求** —— 对需要防盗链头的源，FFprobe 也无法带上请求头，
   /// 走日志解析反而是唯一可行的途径。
   static Duration? parseDurationFromLog(String line) {
-    final match =
-        RegExp(r'Duration:\s*(\d+):(\d{2}):(\d{2})\.(\d{1,3})').firstMatch(line);
+    final match = RegExp(r'Duration:\s*(\d+):(\d{2}):(\d{2})\.(\d{1,3})')
+        .firstMatch(line);
     if (match == null) return null;
 
     final hours = int.tryParse(match.group(1)!) ?? 0;

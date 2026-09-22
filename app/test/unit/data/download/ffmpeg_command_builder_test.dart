@@ -41,7 +41,10 @@ void main() {
         url: 'https://a.com/v.m3u8?token=abc&sign=def&uid=1',
         outputPath: '/tmp/a.mp4',
       );
-      expect(command, contains('-i "https://a.com/v.m3u8?token=abc&sign=def&uid=1"'));
+      expect(
+        command,
+        contains('-i "https://a.com/v.m3u8?token=abc&sign=def&uid=1"'),
+      );
     });
 
     test('输出路径含空格与中文时同样被引号包裹', () {
@@ -94,7 +97,15 @@ void main() {
         'Referer': 'https://a.com/',
       });
 
-      expect(args, equals(['-user_agent', '"Mozilla/5.0"', '-referer', '"https://a.com/"']));
+      expect(
+        args,
+        equals([
+          '-user_agent',
+          '"Mozilla/5.0"',
+          '-referer',
+          '"https://a.com/"',
+        ]),
+      );
       expect(args.join(' '), isNot(contains('-headers')));
     });
 
@@ -103,7 +114,10 @@ void main() {
         'user-agent': 'UA',
         'referrer': 'https://r.com/',
       });
-      expect(lower, equals(['-user_agent', '"UA"', '-referer', '"https://r.com/"']));
+      expect(
+        lower,
+        equals(['-user_agent', '"UA"', '-referer', '"https://r.com/"']),
+      );
     });
 
     test('Cookie 等其余头以 CRLF 分隔拼进 -headers 且末尾补 CRLF', () {
@@ -123,7 +137,15 @@ void main() {
         'Referer': 'https://a.com/',
       });
 
-      expect(args, equals(['-referer', '"https://a.com/"', '-headers', '"Cookie: sid=1\r\n"']));
+      expect(
+        args,
+        equals([
+          '-referer',
+          '"https://a.com/"',
+          '-headers',
+          '"Cookie: sid=1\r\n"',
+        ]),
+      );
     });
 
     test('空键或空值的头被丢弃，不污染命令', () {
@@ -144,7 +166,10 @@ void main() {
           '  Duration: 00:12:34.56, start: 0.000000, bitrate: 1234 kb/s';
       final duration = FfmpegCommandBuilder.parseDurationFromLog(line);
 
-      expect(duration, equals(const Duration(minutes: 12, seconds: 34, milliseconds: 560)));
+      expect(
+        duration,
+        equals(const Duration(minutes: 12, seconds: 34, milliseconds: 560)),
+      );
     });
 
     test('小数位为 1 位或 2 位时按毫秒右补齐，而不是当成个位毫秒', () {
@@ -171,7 +196,9 @@ void main() {
 
     test('Duration 为 N/A（直播流）时返回 null', () {
       expect(
-        FfmpegCommandBuilder.parseDurationFromLog('Duration: N/A, start: 0.000000'),
+        FfmpegCommandBuilder.parseDurationFromLog(
+          'Duration: N/A, start: 0.000000',
+        ),
         isNull,
       );
     });
@@ -180,7 +207,10 @@ void main() {
   group('progressRatio 进度换算', () {
     test('总时长未知时返回 null，绝不伪造 0.0', () {
       expect(
-        FfmpegCommandBuilder.progressRatio(processedMillis: 5000, totalDuration: null),
+        FfmpegCommandBuilder.progressRatio(
+          processedMillis: 5000,
+          totalDuration: null,
+        ),
         isNull,
       );
       expect(
