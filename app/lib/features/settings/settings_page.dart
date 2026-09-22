@@ -9,10 +9,11 @@ import 'package:fluxforge/data/settings/app_service.dart';
 import 'package:fluxforge/app/di/di.dart';
 import 'package:fluxforge/shared/widgets/app_card.dart';
 import 'package:fluxforge/features/settings/widgets/backup_sheet.dart';
+import 'package:fluxforge/features/settings/widgets/custom_ua_sheet.dart';
 import 'package:fluxforge/features/browser/engine/adblock_engine.dart';
 
 /// 全局偏好与系统设置中心 (SettingsPage)
-/// 
+///
 /// 定位为「参数配置 + 数据与诊断」的统一入口，涵盖播放视听偏好、阅读与图集偏好、
 /// 规则沙箱网络、外观主题，以及数据备份还原、沙箱日志与「关于」信息共五大现代圆角卡片；
 /// 「我的」页仅保留个人资产（收藏 / 历史 / 规则 / 缓存）与消费记录，避免职责重叠。
@@ -65,7 +66,9 @@ class _SettingsPageState extends State<SettingsPage> {
                     style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
-                      color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
+                      color: isDark
+                          ? AppColors.darkTextPrimary
+                          : AppColors.lightTextPrimary,
                     ),
                   ),
                 ),
@@ -134,8 +137,16 @@ class _SettingsPageState extends State<SettingsPage> {
                 borderRadius: BorderRadius.circular(10),
               ),
               child: icon is IconData
-                  ? Icon(icon, size: 20, color: isSelected ? AppColors.primary : Colors.grey)
-                  : Icon(icon as IconData, size: 20, color: isSelected ? AppColors.primary : Colors.grey),
+                  ? Icon(
+                      icon,
+                      size: 20,
+                      color: isSelected ? AppColors.primary : Colors.grey,
+                    )
+                  : Icon(
+                      icon as IconData,
+                      size: 20,
+                      color: isSelected ? AppColors.primary : Colors.grey,
+                    ),
             ),
             const SizedBox(width: 14),
             Expanded(
@@ -146,72 +157,59 @@ class _SettingsPageState extends State<SettingsPage> {
                     title,
                     style: TextStyle(
                       fontSize: 14,
-                      fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-                      color: isSelected ? AppColors.primary : (isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary),
+                      fontWeight: isSelected
+                          ? FontWeight.bold
+                          : FontWeight.w500,
+                      color: isSelected
+                          ? AppColors.primary
+                          : (isDark
+                                ? AppColors.darkTextPrimary
+                                : AppColors.lightTextPrimary),
                     ),
                   ),
                   const SizedBox(height: 2),
                   Text(
                     subtitle,
-                    style: TextStyle(fontSize: 11, color: isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted),
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: isDark
+                          ? AppColors.darkTextMuted
+                          : AppColors.lightTextMuted,
+                    ),
                   ),
                 ],
               ),
             ),
             if (isSelected)
-              const Icon(Icons.check_circle_rounded, color: AppColors.primary, size: 20),
+              const Icon(
+                Icons.check_circle_rounded,
+                color: AppColors.primary,
+                size: 20,
+              ),
           ],
         ),
       ),
     );
   }
 
-  /// 弹出自定义 User-Agent 设置对话框
-  void _showUADialog(BuildContext context, bool isDark) {
-    final controller = TextEditingController(text: appService.settings.customUserAgent);
-
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('自定义 User-Agent'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              '留空则默认使用内置高拟真 Chrome/Safari 移动端防爬伪装标头。',
-              style: TextStyle(fontSize: 12, color: Colors.grey),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: controller,
-              maxLines: 3,
-              style: const TextStyle(fontSize: 12),
-              decoration: const InputDecoration(
-                hintText: '输入自定义 UA 请求标头...',
-                border: OutlineInputBorder(),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: AppColors.primary),
-            onPressed: () {
-              final newSettings = appService.settings.copyWith(customUserAgent: controller.text.trim());
-              appService.updateSettings(newSettings);
-              Navigator.pop(ctx);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('已保存自定义 User-Agent')),
-              );
-            },
-            child: const Text('保存'),
-          ),
-        ],
+  /// 自定义 User-Agent：底部弹出输入（与「备份恢复」同一交互形态）
+  ///
+  /// 换成面板而不是居中对话框的三个理由与备份恢复一致：输入框贴底不挡键盘、
+  /// 顶部两角常驻 取消 / 确认、长串可整屏核对；另外 UA 串基本靠粘贴，
+  /// 面板里直接给了「粘贴剪贴板」与「恢复默认」。
+  Future<void> _showUASheet(BuildContext context) async {
+    final saved = await showCustomUaSheet(
+      context,
+      initialValue: appService.settings.customUserAgent,
+      onSave: (ua) => appService.updateSettings(
+        appService.settings.copyWith(customUserAgent: ua),
+      ),
+    );
+    // 取消返回 null；保存空串是合法值（表示恢复内置默认）
+    if (saved == null || !context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(saved.isEmpty ? '已恢复内置 User-Agent' : '已保存自定义 User-Agent'),
       ),
     );
   }
@@ -280,7 +278,11 @@ class _SettingsPageState extends State<SettingsPage> {
                         end: Alignment.bottomRight,
                       ),
                     ),
-                    child: const Icon(Ionicons.compassOutline, color: Colors.white, size: 24),
+                    child: const Icon(
+                      Ionicons.compassOutline,
+                      color: Colors.white,
+                      size: 24,
+                    ),
                   ),
                   const SizedBox(width: 12),
                   Column(
@@ -288,14 +290,19 @@ class _SettingsPageState extends State<SettingsPage> {
                     children: [
                       const Text(
                         'FluxForge 流光视界',
-                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                       const SizedBox(height: 3),
                       Text(
                         '轻量级沙箱规则驱动的跨媒体聚合平台',
                         style: TextStyle(
                           fontSize: 11,
-                          color: isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted,
+                          color: isDark
+                              ? AppColors.darkTextMuted
+                              : AppColors.lightTextMuted,
                         ),
                       ),
                     ],
@@ -309,15 +316,25 @@ class _SettingsPageState extends State<SettingsPage> {
               _buildAboutRow('运行平台', Theme.of(context).platform.name, isDark),
               _buildAboutRow('规则引擎', 'QuickJS-NG 极光微内核沙箱', isDark),
               _buildAboutRow('本地规则', '${ruleService.rules.length} 条', isDark),
-              _buildAboutRow('收藏条目', '${favoriteService.favorites.length} 部', isDark),
-              _buildAboutRow('消费记录', '${playHistoryService.records.length} 条', isDark),
+              _buildAboutRow(
+                '收藏条目',
+                '${favoriteService.favorites.length} 部',
+                isDark,
+              ),
+              _buildAboutRow(
+                '消费记录',
+                '${playHistoryService.records.length} 条',
+                isDark,
+              ),
               const SizedBox(height: 12),
               Center(
                 child: Text(
                   '本地自治 · 数据全量留存于设备',
                   style: TextStyle(
                     fontSize: 10.5,
-                    color: isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted,
+                    color: isDark
+                        ? AppColors.darkTextMuted
+                        : AppColors.lightTextMuted,
                   ),
                 ),
               ),
@@ -339,7 +356,9 @@ class _SettingsPageState extends State<SettingsPage> {
             label,
             style: TextStyle(
               fontSize: 12,
-              color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
+              color: isDark
+                  ? AppColors.darkTextSecondary
+                  : AppColors.lightTextSecondary,
             ),
           ),
           Text(
@@ -347,7 +366,9 @@ class _SettingsPageState extends State<SettingsPage> {
             style: TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w600,
-              color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
+              color: isDark
+                  ? AppColors.darkTextPrimary
+                  : AppColors.lightTextPrimary,
             ),
           ),
         ],
@@ -362,7 +383,10 @@ class _SettingsPageState extends State<SettingsPage> {
     return Scaffold(
       backgroundColor: isDark ? AppColors.darkBg : AppColors.lightBg,
       appBar: AppBar(
-        title: const Text('系统设置', style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text(
+          '系统设置',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
         backgroundColor: isDark ? AppColors.darkBg : AppColors.lightBg,
         elevation: 0,
         leading: IconButton(
@@ -401,7 +425,9 @@ class _SettingsPageState extends State<SettingsPage> {
                 child: Text(
                   'FluxForge v${appService.packageInfo?.version ?? "1.0.0"} (Build ${appService.packageInfo?.buildNumber ?? "1"}) · 极光轻量沙箱内核',
                   style: TextStyle(
-                    color: isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted,
+                    color: isDark
+                        ? AppColors.darkTextMuted
+                        : AppColors.lightTextMuted,
                     fontSize: 11,
                   ),
                 ),
@@ -428,13 +454,22 @@ class _SettingsPageState extends State<SettingsPage> {
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.bold,
-                color: isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted,
+                color: isDark
+                    ? AppColors.darkTextMuted
+                    : AppColors.lightTextMuted,
               ),
             ),
           ),
           SwitchListTile(
-            secondary: const Icon(Ionicons.flashOutline, color: Colors.amber, size: 20),
-            title: const Text('长按瞬时加速与触觉震动', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+            secondary: const Icon(
+              Ionicons.flashOutline,
+              color: Colors.amber,
+              size: 20,
+            ),
+            title: const Text(
+              '长按瞬时加速与触觉震动',
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+            ),
             subtitle: Text(
               '长按屏幕以 ${settings.longPressSpeed.toStringAsFixed(1)}x 加速播放，并触发原生轻微物理震动',
               style: const TextStyle(fontSize: 11),
@@ -442,44 +477,90 @@ class _SettingsPageState extends State<SettingsPage> {
             value: settings.enableLongPress2x,
             activeTrackColor: AppColors.primary,
             onChanged: (val) {
-              appService.updateSettings(settings.copyWith(enableLongPress2x: val));
+              appService.updateSettings(
+                settings.copyWith(enableLongPress2x: val),
+              );
             },
           ),
-          Divider(height: 1, indent: 56, color: isDark ? AppColors.darkBorder : AppColors.lightBorder),
+          Divider(
+            height: 1,
+            indent: 56,
+            color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
+          ),
           // 长按加速倍率 (2.0x / 3.0x / 5.0x)
           ListTile(
-            leading: const Icon(Ionicons.speedometerOutline, color: Colors.amber, size: 20),
-            title: const Text('长按加速倍率', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-            subtitle: const Text('长按屏幕时瞬时提升到的播放倍速', style: TextStyle(fontSize: 11)),
+            leading: const Icon(
+              Ionicons.speedometerOutline,
+              color: Colors.amber,
+              size: 20,
+            ),
+            title: const Text(
+              '长按加速倍率',
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+            ),
+            subtitle: const Text(
+              '长按屏幕时瞬时提升到的播放倍速',
+              style: TextStyle(fontSize: 11),
+            ),
             trailing: DropdownButton<double>(
               value: settings.longPressSpeed,
               underline: const SizedBox.shrink(),
               items: const [
-                DropdownMenuItem(value: 2.0, child: Text('2.0x', style: TextStyle(fontSize: 12))),
-                DropdownMenuItem(value: 3.0, child: Text('3.0x', style: TextStyle(fontSize: 12))),
-                DropdownMenuItem(value: 5.0, child: Text('5.0x', style: TextStyle(fontSize: 12))),
+                DropdownMenuItem(
+                  value: 2.0,
+                  child: Text('2.0x', style: TextStyle(fontSize: 12)),
+                ),
+                DropdownMenuItem(
+                  value: 3.0,
+                  child: Text('3.0x', style: TextStyle(fontSize: 12)),
+                ),
+                DropdownMenuItem(
+                  value: 5.0,
+                  child: Text('5.0x', style: TextStyle(fontSize: 12)),
+                ),
               ],
               onChanged: (val) {
                 if (val != null) {
-                  appService.updateSettings(settings.copyWith(longPressSpeed: val));
+                  appService.updateSettings(
+                    settings.copyWith(longPressSpeed: val),
+                  );
                 }
               },
             ),
           ),
-          Divider(height: 1, indent: 56, color: isDark ? AppColors.darkBorder : AppColors.lightBorder),
+          Divider(
+            height: 1,
+            indent: 56,
+            color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
+          ),
           ListTile(
-            leading: const Icon(Ionicons.refreshOutline, color: AppColors.accentTeal, size: 20),
-            title: const Text('断点续播行为', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-            subtitle: Text('当前策略：${settings.resumeBehavior.label}', style: const TextStyle(fontSize: 11)),
+            leading: const Icon(
+              Ionicons.refreshOutline,
+              color: AppColors.accentTeal,
+              size: 20,
+            ),
+            title: const Text(
+              '断点续播行为',
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+            ),
+            subtitle: Text(
+              '当前策略：${settings.resumeBehavior.label}',
+              style: const TextStyle(fontSize: 11),
+            ),
             trailing: DropdownButton<ResumeBehavior>(
               value: settings.resumeBehavior,
               underline: const SizedBox.shrink(),
               items: ResumeBehavior.values.map((r) {
-                return DropdownMenuItem(value: r, child: Text(r.label, style: const TextStyle(fontSize: 12)));
+                return DropdownMenuItem(
+                  value: r,
+                  child: Text(r.label, style: const TextStyle(fontSize: 12)),
+                );
               }).toList(),
               onChanged: (val) {
                 if (val != null) {
-                  appService.updateSettings(settings.copyWith(resumeBehavior: val));
+                  appService.updateSettings(
+                    settings.copyWith(resumeBehavior: val),
+                  );
                 }
               },
             ),
@@ -503,43 +584,85 @@ class _SettingsPageState extends State<SettingsPage> {
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.bold,
-                color: isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted,
+                color: isDark
+                    ? AppColors.darkTextMuted
+                    : AppColors.lightTextMuted,
               ),
             ),
           ),
           ListTile(
-            leading: const Icon(Ionicons.bookOutline, color: Color(0xFFF59E0B), size: 20),
-            title: const Text('小说默认翻页模式', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-            subtitle: Text(settings.novelPageMode == 'vertical' ? '上下连续长篇滚动' : '标准平滑横向翻页', style: const TextStyle(fontSize: 11)),
+            leading: const Icon(
+              Ionicons.bookOutline,
+              color: Color(0xFFF59E0B),
+              size: 20,
+            ),
+            title: const Text(
+              '小说默认翻页模式',
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+            ),
+            subtitle: Text(
+              settings.novelPageMode == 'vertical' ? '上下连续长篇滚动' : '标准平滑横向翻页',
+              style: const TextStyle(fontSize: 11),
+            ),
             trailing: DropdownButton<String>(
               value: settings.novelPageMode,
               underline: const SizedBox.shrink(),
               items: const [
-                DropdownMenuItem(value: 'horizontal', child: Text('平滑横翻', style: TextStyle(fontSize: 12))),
-                DropdownMenuItem(value: 'vertical', child: Text('上下滚动', style: TextStyle(fontSize: 12))),
+                DropdownMenuItem(
+                  value: 'horizontal',
+                  child: Text('平滑横翻', style: TextStyle(fontSize: 12)),
+                ),
+                DropdownMenuItem(
+                  value: 'vertical',
+                  child: Text('上下滚动', style: TextStyle(fontSize: 12)),
+                ),
               ],
               onChanged: (val) {
                 if (val != null) {
-                  appService.updateSettings(settings.copyWith(novelPageMode: val));
+                  appService.updateSettings(
+                    settings.copyWith(novelPageMode: val),
+                  );
                 }
               },
             ),
           ),
-          Divider(height: 1, indent: 56, color: isDark ? AppColors.darkBorder : AppColors.lightBorder),
+          Divider(
+            height: 1,
+            indent: 56,
+            color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
+          ),
           ListTile(
-            leading: const Icon(Ionicons.imageOutline, color: Color(0xFF8B5CF6), size: 20),
-            title: const Text('图集与画廊默认视图', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-            subtitle: Text(settings.galleryLayout == 'comicStrip' ? '垂直条漫连续拼接' : '瀑布流展厅网格', style: const TextStyle(fontSize: 11)),
+            leading: const Icon(
+              Ionicons.imageOutline,
+              color: Color(0xFF8B5CF6),
+              size: 20,
+            ),
+            title: const Text(
+              '图集与画廊默认视图',
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+            ),
+            subtitle: Text(
+              settings.galleryLayout == 'comicStrip' ? '垂直条漫连续拼接' : '瀑布流展厅网格',
+              style: const TextStyle(fontSize: 11),
+            ),
             trailing: DropdownButton<String>(
               value: settings.galleryLayout,
               underline: const SizedBox.shrink(),
               items: const [
-                DropdownMenuItem(value: 'grid', child: Text('展厅网格', style: TextStyle(fontSize: 12))),
-                DropdownMenuItem(value: 'comicStrip', child: Text('垂直条漫', style: TextStyle(fontSize: 12))),
+                DropdownMenuItem(
+                  value: 'grid',
+                  child: Text('展厅网格', style: TextStyle(fontSize: 12)),
+                ),
+                DropdownMenuItem(
+                  value: 'comicStrip',
+                  child: Text('垂直条漫', style: TextStyle(fontSize: 12)),
+                ),
               ],
               onChanged: (val) {
                 if (val != null) {
-                  appService.updateSettings(settings.copyWith(galleryLayout: val));
+                  appService.updateSettings(
+                    settings.copyWith(galleryLayout: val),
+                  );
                 }
               },
             ),
@@ -563,39 +686,78 @@ class _SettingsPageState extends State<SettingsPage> {
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.bold,
-                color: isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted,
+                color: isDark
+                    ? AppColors.darkTextMuted
+                    : AppColors.lightTextMuted,
               ),
             ),
           ),
           ListTile(
-            leading: const Icon(Ionicons.stopwatchOutline, color: AppColors.primary, size: 20),
-            title: const Text('沙箱请求超时时限', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-            subtitle: Text('针对复杂网络源弹性宽容 (${settings.requestTimeoutSeconds}秒)', style: const TextStyle(fontSize: 11)),
+            leading: const Icon(
+              Ionicons.stopwatchOutline,
+              color: AppColors.primary,
+              size: 20,
+            ),
+            title: const Text(
+              '沙箱请求超时时限',
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+            ),
+            subtitle: Text(
+              '针对复杂网络源弹性宽容 (${settings.requestTimeoutSeconds}秒)',
+              style: const TextStyle(fontSize: 11),
+            ),
             trailing: DropdownButton<int>(
               value: settings.requestTimeoutSeconds,
               underline: const SizedBox.shrink(),
               items: const [
-                DropdownMenuItem(value: 15, child: Text('15 秒', style: TextStyle(fontSize: 12))),
-                DropdownMenuItem(value: 30, child: Text('30 秒 (推荐)', style: TextStyle(fontSize: 12))),
-                DropdownMenuItem(value: 60, child: Text('60 秒 (宽容)', style: TextStyle(fontSize: 12))),
+                DropdownMenuItem(
+                  value: 15,
+                  child: Text('15 秒', style: TextStyle(fontSize: 12)),
+                ),
+                DropdownMenuItem(
+                  value: 30,
+                  child: Text('30 秒 (推荐)', style: TextStyle(fontSize: 12)),
+                ),
+                DropdownMenuItem(
+                  value: 60,
+                  child: Text('60 秒 (宽容)', style: TextStyle(fontSize: 12)),
+                ),
               ],
               onChanged: (val) {
                 if (val != null) {
-                  appService.updateSettings(settings.copyWith(requestTimeoutSeconds: val));
+                  appService.updateSettings(
+                    settings.copyWith(requestTimeoutSeconds: val),
+                  );
                 }
               },
             ),
           ),
-          Divider(height: 1, indent: 56, color: isDark ? AppColors.darkBorder : AppColors.lightBorder),
+          Divider(
+            height: 1,
+            indent: 56,
+            color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
+          ),
           ListTile(
-            leading: const Icon(Ionicons.shieldCheckmarkOutline, color: Colors.green, size: 20),
-            title: const Text('内置网页广告拦截', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-            subtitle: const Text('智能阻断小说/影视网页弹窗、牛皮癣横幅与恶意外链', style: TextStyle(fontSize: 11)),
+            leading: const Icon(
+              Ionicons.shieldCheckmarkOutline,
+              color: Colors.green,
+              size: 20,
+            ),
+            title: const Text(
+              '内置网页广告拦截',
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+            ),
+            subtitle: const Text(
+              '智能阻断小说/影视网页弹窗、牛皮癣横幅与恶意外链',
+              style: TextStyle(fontSize: 11),
+            ),
             trailing: Switch(
               value: settings.enableAdBlock,
               activeTrackColor: AppColors.primary,
               onChanged: (val) {
-                appService.updateSettings(settings.copyWith(enableAdBlock: val));
+                appService.updateSettings(
+                  settings.copyWith(enableAdBlock: val),
+                );
               },
             ),
           ),
@@ -608,7 +770,9 @@ class _SettingsPageState extends State<SettingsPage> {
                   color: isDark ? AppColors.darkCard : AppColors.lightCard,
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
-                    color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
+                    color: isDark
+                        ? AppColors.darkBorder
+                        : AppColors.lightBorder,
                   ),
                 ),
                 child: Column(
@@ -617,25 +781,36 @@ class _SettingsPageState extends State<SettingsPage> {
                       children: [
                         Expanded(
                           child: ValueListenableBuilder<int>(
-                            valueListenable: AdBlockEngine.instance.totalRulesNotifier,
+                            valueListenable:
+                                AdBlockEngine.instance.totalRulesNotifier,
                             builder: (context, totalRules, _) {
                               return ValueListenableBuilder<DateTime?>(
-                                valueListenable: AdBlockEngine.instance.lastUpdatedNotifier,
+                                valueListenable:
+                                    AdBlockEngine.instance.lastUpdatedNotifier,
                                 builder: (context, lastSync, _) {
                                   final syncText = lastSync != null
                                       ? '${lastSync.month}-${lastSync.day} ${lastSync.hour.toString().padLeft(2, "0")}:${lastSync.minute.toString().padLeft(2, "0")}'
                                       : '内置种子名单';
                                   return Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
                                       Text(
                                         '当前生效规则: $totalRules 条',
-                                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.bold,
+                                        ),
                                       ),
                                       const SizedBox(height: 2),
                                       Text(
                                         '上次更新: $syncText',
-                                        style: TextStyle(fontSize: 10, color: isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted),
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          color: isDark
+                                              ? AppColors.darkTextMuted
+                                              : AppColors.lightTextMuted,
+                                        ),
                                       ),
                                     ],
                                   );
@@ -645,22 +820,33 @@ class _SettingsPageState extends State<SettingsPage> {
                           ),
                         ),
                         ValueListenableBuilder<bool>(
-                          valueListenable: AdBlockEngine.instance.isUpdatingNotifier,
+                          valueListenable:
+                              AdBlockEngine.instance.isUpdatingNotifier,
                           builder: (context, isUpdating, _) {
                             return FilledButton.tonal(
                               style: FilledButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 6,
+                                ),
                                 minimumSize: Size.zero,
                                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                               ),
-                              onPressed: isUpdating ? null : () => _triggerAdBlockUpdate(context),
+                              onPressed: isUpdating
+                                  ? null
+                                  : () => _triggerAdBlockUpdate(context),
                               child: isUpdating
                                   ? const SizedBox(
                                       width: 12,
                                       height: 12,
-                                      child: CircularProgressIndicator(strokeWidth: 2),
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
                                     )
-                                  : const Text('立即同步', style: TextStyle(fontSize: 11)),
+                                  : const Text(
+                                      '立即同步',
+                                      style: TextStyle(fontSize: 11),
+                                    ),
                             );
                           },
                         ),
@@ -677,9 +863,17 @@ class _SettingsPageState extends State<SettingsPage> {
                           children: [
                             Text(
                               '管理广告过滤规则与订阅源...',
-                              style: TextStyle(fontSize: 11, color: AppColors.primary, fontWeight: FontWeight.w500),
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: AppColors.primary,
+                                fontWeight: FontWeight.w500,
+                              ),
                             ),
-                            Icon(Icons.arrow_forward_ios_rounded, size: 11, color: AppColors.primary),
+                            Icon(
+                              Icons.arrow_forward_ios_rounded,
+                              size: 11,
+                              color: AppColors.primary,
+                            ),
                           ],
                         ),
                       ),
@@ -689,28 +883,57 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
             ),
           ],
-          Divider(height: 1, indent: 56, color: isDark ? AppColors.darkBorder : AppColors.lightBorder),
+          Divider(
+            height: 1,
+            indent: 56,
+            color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
+          ),
           ListTile(
-            leading: const Icon(Ionicons.globeOutline, color: Colors.blueAccent, size: 20),
-            title: const Text('自定义 User-Agent', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+            leading: const Icon(
+              Ionicons.globeOutline,
+              color: Colors.blueAccent,
+              size: 20,
+            ),
+            title: const Text(
+              '自定义 User-Agent',
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+            ),
             subtitle: Text(
-              settings.customUserAgent.isNotEmpty ? settings.customUserAgent : '使用内置移动端伪装标头',
+              settings.customUserAgent.isNotEmpty
+                  ? settings.customUserAgent
+                  : '使用内置移动端伪装标头',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(fontSize: 11),
             ),
             trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 14),
-            onTap: () => _showUADialog(context, isDark),
+            onTap: () => _showUASheet(context),
           ),
-          Divider(height: 1, indent: 56, color: isDark ? AppColors.darkBorder : AppColors.lightBorder),
+          Divider(
+            height: 1,
+            indent: 56,
+            color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
+          ),
           SwitchListTile(
-            secondary: const Icon(Ionicons.refreshOutline, color: AppColors.accentTeal, size: 20),
-            title: const Text('启动时自动同步规则', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-            subtitle: const Text('从规则市场同步已订阅源的最新解析补丁', style: TextStyle(fontSize: 11)),
+            secondary: const Icon(
+              Ionicons.refreshOutline,
+              color: AppColors.accentTeal,
+              size: 20,
+            ),
+            title: const Text(
+              '启动时自动同步规则',
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+            ),
+            subtitle: const Text(
+              '从规则市场同步已订阅源的最新解析补丁',
+              style: TextStyle(fontSize: 11),
+            ),
             value: settings.autoCheckRuleUpdates,
             activeTrackColor: AppColors.primary,
             onChanged: (val) {
-              appService.updateSettings(settings.copyWith(autoCheckRuleUpdates: val));
+              appService.updateSettings(
+                settings.copyWith(autoCheckRuleUpdates: val),
+              );
             },
           ),
         ],
@@ -732,14 +955,26 @@ class _SettingsPageState extends State<SettingsPage> {
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.bold,
-                color: isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted,
+                color: isDark
+                    ? AppColors.darkTextMuted
+                    : AppColors.lightTextMuted,
               ),
             ),
           ),
           ListTile(
-            leading: const Icon(Ionicons.colorPaletteOutline, color: AppColors.primary, size: 20),
-            title: const Text('界面风格主题', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-            subtitle: Text(_getThemeModeLabel(settings.themeMode, isDark), style: const TextStyle(fontSize: 11)),
+            leading: const Icon(
+              Ionicons.colorPaletteOutline,
+              color: AppColors.primary,
+              size: 20,
+            ),
+            title: const Text(
+              '界面风格主题',
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+            ),
+            subtitle: Text(
+              _getThemeModeLabel(settings.themeMode, isDark),
+              style: const TextStyle(fontSize: 11),
+            ),
             trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 14),
             onTap: () => _showThemeDialog(context, isDark),
           ),
@@ -762,19 +997,35 @@ class _SettingsPageState extends State<SettingsPage> {
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.bold,
-                color: isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted,
+                color: isDark
+                    ? AppColors.darkTextMuted
+                    : AppColors.lightTextMuted,
               ),
             ),
           ),
           // 数据备份与还原（自「我的」页迁移，数据类操作统一收敛至设置页）
           ListTile(
-            leading: const Icon(Ionicons.hardwareChipOutline, color: AppColors.accentPurple, size: 20),
-            title: const Text('数据备份与还原', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-            subtitle: const Text('规则库、收藏、搜索历史与观看进度单文件 JSON 导出/导入', style: TextStyle(fontSize: 11)),
+            leading: const Icon(
+              Ionicons.hardwareChipOutline,
+              color: AppColors.accentPurple,
+              size: 20,
+            ),
+            title: const Text(
+              '数据备份与还原',
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+            ),
+            subtitle: const Text(
+              '规则库、收藏、搜索历史与观看进度单文件 JSON 导出/导入',
+              style: TextStyle(fontSize: 11),
+            ),
             trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 14),
             onTap: () => showBackupSheet(context),
           ),
-          Divider(height: 1, indent: 56, color: isDark ? AppColors.darkBorder : AppColors.lightBorder),
+          Divider(
+            height: 1,
+            indent: 56,
+            color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
+          ),
           ValueListenableBuilder<List<LogEntry>>(
             valueListenable: AppLogger.logsNotifier,
             builder: (context, logs, _) {
@@ -784,23 +1035,40 @@ class _SettingsPageState extends State<SettingsPage> {
                   : '已记录 ${logs.length} 条日志${errorCount > 0 ? " (含 $errorCount 项异常)" : ""}';
 
               return ListTile(
-                leading: const Icon(Ionicons.documentOutline, color: Colors.blueAccent, size: 20),
-                title: const Text('沙箱与系统日志中心', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-                subtitle: Text(subtitleText, style: const TextStyle(fontSize: 11)),
+                leading: const Icon(
+                  Ionicons.documentOutline,
+                  color: Colors.blueAccent,
+                  size: 20,
+                ),
+                title: const Text(
+                  '沙箱与系统日志中心',
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                ),
+                subtitle: Text(
+                  subtitleText,
+                  style: const TextStyle(fontSize: 11),
+                ),
                 trailing: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     if (errorCount > 0)
                       Container(
                         margin: const EdgeInsets.only(right: 6),
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
                         decoration: BoxDecoration(
                           color: Colors.redAccent.withValues(alpha: 0.15),
                           borderRadius: BorderRadius.circular(6),
                         ),
                         child: Text(
                           '$errorCount ERROR',
-                          style: const TextStyle(color: Colors.redAccent, fontSize: 9, fontWeight: FontWeight.bold),
+                          style: const TextStyle(
+                            color: Colors.redAccent,
+                            fontSize: 9,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ),
                     const Icon(Icons.arrow_forward_ios_rounded, size: 14),
@@ -810,12 +1078,26 @@ class _SettingsPageState extends State<SettingsPage> {
               );
             },
           ),
-          Divider(height: 1, indent: 56, color: isDark ? AppColors.darkBorder : AppColors.lightBorder),
+          Divider(
+            height: 1,
+            indent: 56,
+            color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
+          ),
           // 关于信息面板（自「我的」页迁移）
           ListTile(
-            leading: const Icon(Ionicons.informationCircleOutline, color: AppColors.accentAmber, size: 20),
-            title: const Text('关于 FluxForge', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-            subtitle: const Text('版本信息、运行底座与本地资产概览', style: TextStyle(fontSize: 11)),
+            leading: const Icon(
+              Ionicons.informationCircleOutline,
+              color: AppColors.accentAmber,
+              size: 20,
+            ),
+            title: const Text(
+              '关于 FluxForge',
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+            ),
+            subtitle: const Text(
+              '版本信息、运行底座与本地资产概览',
+              style: TextStyle(fontSize: 11),
+            ),
             trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 14),
             onTap: _showAboutSheet,
           ),
