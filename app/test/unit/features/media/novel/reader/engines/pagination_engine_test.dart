@@ -12,12 +12,8 @@ void main() {
 
   const style = TextStyle(fontSize: 16, height: 1.5);
 
-  List<String> slice(
-    String text, {
-    double width = 320,
-    double height = 240,
-  }) {
-    return PaginationEngine.sliceIntoPages(
+  List<int> slice(String text, {double width = 320, double height = 240}) {
+    return PaginationEngine.sliceIntoPageStarts(
       text: text,
       maxWidth: width,
       maxHeight: height,
@@ -25,27 +21,40 @@ void main() {
     );
   }
 
-  group('PaginationEngine.sliceIntoPages', () {
-    test('空文本返回单页空串', () {
-      expect(slice(''), ['']);
+  /// 按偏移还原每一页文本（与视图渲染同源）
+  List<String> pagesOf(String text, List<int> starts) => [
+    for (var i = 0; i < starts.length; i++)
+      PaginationEngine.pageText(text, starts, i),
+  ];
+
+  group('PaginationEngine.sliceIntoPageStarts', () {
+    test('空文本返回单页（偏移表首项恒为 0）', () {
+      expect(slice(''), [0]);
     });
 
-    test('可用尺寸非法时原样返回单页全文，交由调用方兜底', () {
+    test('可用尺寸非法时返回单页全文，交由调用方兜底', () {
       const text = '尚未测量到视口尺寸时的正文';
-      expect(slice(text, width: 0), [text]);
-      expect(slice(text, height: -1), [text]);
+      expect(slice(text, width: 0), [0]);
+      expect(slice(text, height: -1), [0]);
     });
 
-    test('长文本切分为多页，且拼接后与原文完全一致（不丢字符）', () {
+    test('长文本切分为多页：偏移严格递增，且拼接后与原文完全一致（不丢字符）', () {
       final text = List.generate(
         200,
         (i) => '第 $i 行测试正文内容，用于验证分页切分是否完整无遗漏。',
       ).join('\n');
 
-      final pages = slice(text);
+      final starts = slice(text);
 
-      expect(pages.length, greaterThan(1), reason: '长文本应被切分为多页');
-      expect(pages.join(), text, reason: '分页拼接必须能还原全文');
+      expect(starts.length, greaterThan(1), reason: '长文本应被切分为多页');
+      expect(starts.first, 0, reason: '首页起始偏移恒为 0');
+      for (var i = 1; i < starts.length; i++) {
+        expect(starts[i], greaterThan(starts[i - 1]), reason: '偏移必须严格递增');
+      }
+      // 页起始偏移恒 < 正文长度：末页的**结束位置**不属于页起始，
+      // 误记进表里会让页数+1，进而使扁平下标整体偏移
+      expect(starts.last, lessThan(text.length), reason: '不得出现越界页起始');
+      expect(pagesOf(text, starts).join(), text, reason: '分页拼接必须能还原全文');
     });
 
     test('可用高度越小，分页数量越多（单调性）', () {
@@ -69,12 +78,12 @@ void main() {
       const oneLineHeight = 24.0;
 
       double measuredHeight(String content) => (TextPainter(
-            text: TextSpan(text: content, style: style),
-            textDirection: TextDirection.ltr,
-          )..layout(maxWidth: 320))
-              .height;
+        text: TextSpan(text: content, style: style),
+        textDirection: TextDirection.ltr,
+      )..layout(maxWidth: 320)).height;
 
-      for (final page in slice(text, height: maxHeight)) {
+      final starts = slice(text, height: maxHeight);
+      for (final page in pagesOf(text, starts)) {
         final fullHeight = measuredHeight(page);
 
         // 断言 1（真正的不变量）：去掉末尾换行后必须完全放得下 ——
@@ -89,8 +98,11 @@ void main() {
         // 断言 2：整页高度至多多一行，且这一行只可能是末尾空白
         expect(fullHeight, lessThanOrEqualTo(maxHeight + oneLineHeight));
         if (fullHeight > maxHeight) {
-          expect(page.endsWith('\n'), isTrue,
-              reason: '超限页必须以换行结尾（末尾空白行），不得是正文被挤出');
+          expect(
+            page.endsWith('\n'),
+            isTrue,
+            reason: '超限页必须以换行结尾（末尾空白行），不得是正文被挤出',
+          );
         }
       }
     });
@@ -105,16 +117,15 @@ void main() {
       int pageCount = 5,
       bool wholeContent = false,
       int contentLength = 1000,
-    }) =>
-        PaginationEngine.needsRepaginate(
-          currentWidth: currentWidth,
-          currentHeight: currentHeight,
-          nextWidth: nextWidth,
-          nextHeight: nextHeight,
-          pageCount: pageCount,
-          firstPageIsWholeContent: wholeContent,
-          contentLength: contentLength,
-        );
+    }) => PaginationEngine.needsRepaginate(
+      currentWidth: currentWidth,
+      currentHeight: currentHeight,
+      nextWidth: nextWidth,
+      nextHeight: nextHeight,
+      pageCount: pageCount,
+      firstPageIsWholeContent: wholeContent,
+      contentLength: contentLength,
+    );
 
     test('视口尺寸变化必须重排（首次渲染 / 横竖屏旋转 / 分屏）', () {
       expect(need(nextWidth: 400), isTrue);
@@ -129,9 +140,15 @@ void main() {
 
     test('「单页即全文」的兜底结果：长文重排，短文保持', () {
       // 尚未测量尺寸时产生的兜底单页 → 长文必须重切
-      expect(need(pageCount: 1, wholeContent: true, contentLength: 800), isTrue);
+      expect(
+        need(pageCount: 1, wholeContent: true, contentLength: 800),
+        isTrue,
+      );
       // 短文本本就只有一页，重排没有意义
-      expect(need(pageCount: 1, wholeContent: true, contentLength: 200), isFalse);
+      expect(
+        need(pageCount: 1, wholeContent: true, contentLength: 200),
+        isFalse,
+      );
     });
 
     test('已正常分页且尺寸未变时不重排', () {

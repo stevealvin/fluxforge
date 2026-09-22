@@ -100,7 +100,9 @@ class ReaderSettingsPanel extends StatelessWidget {
                         th.name,
                         style: TextStyle(
                           fontSize: 11,
-                          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                          fontWeight: isSelected
+                              ? FontWeight.bold
+                              : FontWeight.normal,
                           color: th.text,
                         ),
                       ),
@@ -115,7 +117,10 @@ class ReaderSettingsPanel extends StatelessWidget {
             // 翻页模式选择（与底栏快捷切换共享同一套位置保持逻辑）
             Row(
               children: [
-                Text('翻页', style: TextStyle(fontSize: 13, color: readerTheme.text)),
+                Text(
+                  '翻页',
+                  style: TextStyle(fontSize: 13, color: readerTheme.text),
+                ),
                 const SizedBox(width: 16),
                 Expanded(
                   child: Row(
@@ -124,13 +129,18 @@ class ReaderSettingsPanel extends StatelessWidget {
                       return Padding(
                         padding: const EdgeInsets.only(right: 8),
                         child: ChoiceChip(
-                          label: Text(mode.label, style: const TextStyle(fontSize: 12)),
+                          label: Text(
+                            mode.label,
+                            style: const TextStyle(fontSize: 12),
+                          ),
                           selected: isSelected,
                           selectedColor: AppColors.primary,
                           backgroundColor: readerTheme.bg,
                           labelStyle: TextStyle(
                             color: isSelected ? Colors.white : readerTheme.text,
-                            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                            fontWeight: isSelected
+                                ? FontWeight.bold
+                                : FontWeight.normal,
                           ),
                           side: BorderSide(
                             color: isSelected
@@ -153,7 +163,10 @@ class ReaderSettingsPanel extends StatelessWidget {
             // 字号调节
             Row(
               children: [
-                Text('字号', style: TextStyle(fontSize: 13, color: readerTheme.text)),
+                Text(
+                  '字号',
+                  style: TextStyle(fontSize: 13, color: readerTheme.text),
+                ),
                 const SizedBox(width: 16),
                 Expanded(
                   child: Row(
@@ -162,10 +175,15 @@ class ReaderSettingsPanel extends StatelessWidget {
                         style: OutlinedButton.styleFrom(
                           minimumSize: const Size(40, 32),
                           padding: EdgeInsets.zero,
-                          side: BorderSide(color: readerTheme.subText.withValues(alpha: 0.4)),
+                          side: BorderSide(
+                            color: readerTheme.subText.withValues(alpha: 0.4),
+                          ),
                         ),
                         onPressed: onDecreaseFont,
-                        child: Text('A-', style: TextStyle(color: readerTheme.text)),
+                        child: Text(
+                          'A-',
+                          style: TextStyle(color: readerTheme.text),
+                        ),
                       ),
                       Expanded(
                         child: Center(
@@ -183,10 +201,15 @@ class ReaderSettingsPanel extends StatelessWidget {
                         style: OutlinedButton.styleFrom(
                           minimumSize: const Size(40, 32),
                           padding: EdgeInsets.zero,
-                          side: BorderSide(color: readerTheme.subText.withValues(alpha: 0.4)),
+                          side: BorderSide(
+                            color: readerTheme.subText.withValues(alpha: 0.4),
+                          ),
                         ),
                         onPressed: onIncreaseFont,
-                        child: Text('A+', style: TextStyle(color: readerTheme.text)),
+                        child: Text(
+                          'A+',
+                          style: TextStyle(color: readerTheme.text),
+                        ),
                       ),
                     ],
                   ),
@@ -199,16 +222,23 @@ class ReaderSettingsPanel extends StatelessWidget {
             // 行高间距
             Row(
               children: [
-                Text('行距', style: TextStyle(fontSize: 13, color: readerTheme.text)),
+                Text(
+                  '行距',
+                  style: TextStyle(fontSize: 13, color: readerTheme.text),
+                ),
                 const SizedBox(width: 16),
                 Expanded(
                   child: SliderTheme(
                     data: SliderTheme.of(context).copyWith(
                       trackHeight: 3,
                       activeTrackColor: AppColors.primary,
-                      inactiveTrackColor: readerTheme.subText.withValues(alpha: 0.2),
+                      inactiveTrackColor: readerTheme.subText.withValues(
+                        alpha: 0.2,
+                      ),
                       thumbColor: AppColors.primary,
-                      thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+                      thumbShape: const RoundSliderThumbShape(
+                        enabledThumbRadius: 6,
+                      ),
                     ),
                     child: Slider(
                       value: lineHeight,

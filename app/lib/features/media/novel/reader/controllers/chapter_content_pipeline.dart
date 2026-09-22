@@ -58,16 +58,15 @@ class GlobalOfflineChapterStore implements OfflineChapterStore {
     required List<MediaEpisode> chapters,
     required int index,
     required String content,
-  }) =>
-      downloadService.saveNovelChapterContent(
-        rule: rule,
-        bookId: bookId,
-        title: title,
-        cover: '',
-        chapters: chapters,
-        index: index,
-        content: content,
-      );
+  }) => downloadService.saveNovelChapterContent(
+    rule: rule,
+    bookId: bookId,
+    title: title,
+    cover: '',
+    chapters: chapters,
+    index: index,
+    content: content,
+  );
 }
 
 /// 章节正文获取管道
@@ -92,8 +91,8 @@ class ChapterContentPipeline {
     OfflineChapterStore? offlineStore,
     Future<Object?> Function(Rule rule, String url)? parseRule,
     this.onPersisted,
-  })  : offlineStore = offlineStore ?? const GlobalOfflineChapterStore(),
-        _parseRule = parseRule ?? _defaultParseRule;
+  }) : offlineStore = offlineStore ?? const GlobalOfflineChapterStore(),
+       _parseRule = parseRule ?? _defaultParseRule;
 
   static Future<Object?> _defaultParseRule(Rule rule, String url) =>
       RuleEngine.parse(rule, url);

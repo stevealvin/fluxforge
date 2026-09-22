@@ -154,8 +154,9 @@ class VerticalFlowEngine {
     // 末端：保留当前章之后 radius 章，且**不得吞掉锚点本身** ——
     // 用户向上读到锚点之上时（currentPos < anchorPos），锚点及其之后的内容整体位于
     // 视口下方、看似「可以摘」，但锚点是坐标原点，摘掉会让滚动位置被重置。
-    final trailStart =
-        math.max(currentPos + radius + 1, anchorPos + 1).clamp(0, sequence.length);
+    final trailStart = math
+        .max(currentPos + radius + 1, anchorPos + 1)
+        .clamp(0, sequence.length);
 
     if (leadEnd <= 0 && trailStart >= sequence.length) {
       return VerticalWindowTrim.none;
@@ -175,8 +176,10 @@ class VerticalWindowTrim {
   const VerticalWindowTrim({required this.leading, required this.trailing});
 
   /// 空裁剪结果（无需摘除任何章节）
-  static const VerticalWindowTrim none =
-      VerticalWindowTrim(leading: [], trailing: []);
+  static const VerticalWindowTrim none = VerticalWindowTrim(
+    leading: [],
+    trailing: [],
+  );
 
   /// 从序列**首端**摘除的章节（当前章上方、已远离视口的部分）
   final List<int> leading;

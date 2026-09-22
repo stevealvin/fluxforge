@@ -8,36 +8,31 @@ import 'package:fluxforge/features/media/novel/reader/models/chapter_metrics.dar
 class ReaderProgress {
   const ReaderProgress._();
 
-  /// 横向：当前页码之前各页的字符长度之和
+  /// 横向：页码 → 该页起始字符偏移
   ///
-  /// 页码超出范围时按已有切片累加，空切片返回 0，调用方无需再做边界判断。
-  static int charOffsetFromPage(List<String> pageSlices, int pageIndex) {
-    if (pageSlices.isEmpty) return 0;
-    int offset = 0;
-    for (int i = 0; i < pageIndex && i < pageSlices.length; i++) {
-      offset += pageSlices[i].length;
-    }
-    return offset;
+  /// 页 = 偏移后这变成一次查表（O(1)）：页码越界时返回 0，空表返回 0，
+  /// 调用方无需再做边界判断。
+  static int charOffsetFromPage(List<int> pageStarts, int pageIndex) {
+    if (pageStarts.isEmpty) return 0;
+    if (pageIndex <= 0) return pageStarts.first;
+    // 越界收敛到末页起始偏移（比返回 0 更有意义：不会把位置悄悄拉回章首）
+    if (pageIndex >= pageStarts.length) return pageStarts.last;
+    return pageStarts[pageIndex];
   }
 
   /// 横向：由字符偏移反查所在页码
   ///
   /// 边界语义：偏移**恰好落在页边界**时归入下一页（用户可见的正是下一页首字）；
-  /// 偏移超出正文总长时归入末页；空切片返回 0。
-  static int pageIndexFromCharOffset(List<String> pageSlices, int charOffset) {
-    if (pageSlices.isEmpty) return 0;
+  /// 偏移超出正文总长时归入末页；空表返回 0。
+  static int pageIndexFromCharOffset(List<int> pageStarts, int charOffset) {
+    if (pageStarts.isEmpty) return 0;
 
-    int target = 0;
-    int acc = 0;
-    for (int i = 0; i < pageSlices.length; i++) {
-      if (acc + pageSlices[i].length > charOffset) {
-        target = i;
-        break;
-      }
-      acc += pageSlices[i].length;
+    var target = 0;
+    for (var i = 0; i < pageStarts.length; i++) {
+      if (pageStarts[i] > charOffset) break;
       target = i;
     }
-    return target.clamp(0, pageSlices.length - 1);
+    return target.clamp(0, pageStarts.length - 1);
   }
 
   /// 横向章内进度（读完第 [pageIndex] 页即为该页占比）
@@ -64,8 +59,10 @@ class ReaderProgress {
     required ChapterMetrics metrics,
   }) {
     if (metrics.scrollable <= 0) return 1.0;
-    final scrolled =
-        (currentOffset - metrics.top).clamp(0.0, metrics.scrollable);
+    final scrolled = (currentOffset - metrics.top).clamp(
+      0.0,
+      metrics.scrollable,
+    );
     return (scrolled / metrics.scrollable).clamp(0.0, 1.0);
   }
 
@@ -75,8 +72,7 @@ class ReaderProgress {
   static double verticalOffsetFromRatio({
     required double ratio,
     required ChapterMetrics metrics,
-  }) =>
-      metrics.top + ratio.clamp(0.0, 1.0) * metrics.scrollable;
+  }) => metrics.top + ratio.clamp(0.0, 1.0) * metrics.scrollable;
 
   /// 纵向：字符偏移 → 章内比例
   static double ratioFromCharOffset(int charOffset, int contentLength) {

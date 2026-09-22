@@ -8,23 +8,24 @@ import 'package:fluxforge/features/media/novel/reader/models/chapter_metrics.dar
 /// 覆盖跨页 / 跨章的边界语义：页边界归入下一页、偏移超出正文归入末页、
 /// 章块不足一屏视为读完、进度条拖到两端不越界。
 void main() {
-  // 三页切片：长度 3 / 4 / 2，累计边界 3 与 7
-  const slices = ['abc', 'defg', 'hi'];
+  // 三页正文（长度 3 / 4 / 2）→ 页起始偏移表
+  const slices = [0, 3, 7];
 
   group('charOffsetFromPage 页码 → 字符偏移', () {
     test('首页偏移为 0', () {
       expect(ReaderProgress.charOffsetFromPage(slices, 0), 0);
     });
 
-    test('累加当前页之前各页长度', () {
+    test('直接查表得到该页起始偏移', () {
+      expect(ReaderProgress.charOffsetFromPage(slices, 1), 3);
       expect(ReaderProgress.charOffsetFromPage(slices, 2), 7);
     });
 
-    test('页码越界时按全部切片累加', () {
-      expect(ReaderProgress.charOffsetFromPage(slices, 99), 9);
+    test('页码越界时收敛到末页起始偏移（不把位置拉回章首）', () {
+      expect(ReaderProgress.charOffsetFromPage(slices, 99), 7);
     });
 
-    test('空切片返回 0', () {
+    test('空表返回 0', () {
       expect(ReaderProgress.charOffsetFromPage(const [], 3), 0);
     });
   });

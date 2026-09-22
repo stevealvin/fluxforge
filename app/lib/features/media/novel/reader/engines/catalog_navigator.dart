@@ -18,8 +18,7 @@ class CatalogNavigator {
     required int chapterIndex,
     required int chapterCount,
     required bool reversed,
-  }) =>
-      reversed ? chapterCount - 1 - chapterIndex : chapterIndex;
+  }) => reversed ? chapterCount - 1 - chapterIndex : chapterIndex;
 
   /// 目录应停靠的滚动偏移
   ///
@@ -29,6 +28,5 @@ class CatalogNavigator {
   static double offsetFor({
     required int displayIndex,
     required int chapterCount,
-  }) =>
-      ((displayIndex - contextRows).clamp(0, chapterCount)) * itemHeight;
+  }) => ((displayIndex - contextRows).clamp(0, chapterCount)) * itemHeight;
 }

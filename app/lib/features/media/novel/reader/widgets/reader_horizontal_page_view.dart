@@ -1,6 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fluxforge/features/media/novel/reader/engines/horizontal_window.dart';
+import 'package:fluxforge/features/media/novel/reader/engines/pagination_engine.dart';
 import 'package:fluxforge/features/media/novel/reader/models/reader_theme.dart';
 
 /// 横向翻页视图（滑窗跨章连续渲染）
@@ -13,7 +14,8 @@ class ReaderHorizontalPageView extends StatelessWidget {
     super.key,
     required this.bookTitle,
     required this.windowChapters,
-    required this.windowSlices,
+    required this.windowPageStarts,
+    required this.contentOf,
     required this.chapterTitleOf,
     required this.chapterCount,
     required this.currentChapterIndex,
@@ -32,8 +34,14 @@ class ReaderHorizontalPageView extends StatelessWidget {
   /// 滑窗内的章号序列（按渲染顺序：上一章 → 当前章 → 下一章）
   final List<int> windowChapters;
 
-  /// 章号 → 该章已分好的正文页；缺失或为空表示正文未就绪（渲染加载占位页）
-  final Map<int, List<String>> windowSlices;
+  /// 章号 → 该章的**页起始偏移表**；缺失或为空表示正文未就绪（渲染加载占位页）
+  ///
+  /// 只存偏移不存文本：页码 → 位置、位置 → 页码都是廉价运算，
+  /// 且不再为每页复制一份正文（取文本见 [contentOf] + [PaginationEngine.pageText]）。
+  final Map<int, List<int>> windowPageStarts;
+
+  /// 章号 → 该章正文原文（按页偏移切出当前页文本）
+  final String Function(int chapter) contentOf;
 
   /// 章号 → 章节标题（页眉与占位页展示用）
   final String Function(int chapter) chapterTitleOf;
@@ -68,7 +76,10 @@ class ReaderHorizontalPageView extends StatelessWidget {
   Widget build(BuildContext context) {
     // 总页数统一走引擎：与页面侧「扁平索引 → (章, 页)」反解同源，
     // 避免「未分片章占 1 页」的规则在此处再写一遍（口径漂移会让翻页落点错位）
-    final totalCount = HorizontalWindow.totalPages(windowChapters, windowSlices);
+    final totalCount = HorizontalWindow.totalPages(
+      windowChapters,
+      windowPageStarts,
+    );
 
     return Column(
       children: [
@@ -101,10 +112,14 @@ class ReaderHorizontalPageView extends StatelessWidget {
         Expanded(
           child: LayoutBuilder(
             builder: (context, constraints) {
-              final renderWidth =
-                  (constraints.maxWidth - 40).clamp(100.0, 4000.0);
-              final renderHeight =
-                  (constraints.maxHeight - 16).clamp(100.0, 4000.0);
+              final renderWidth = (constraints.maxWidth - 40).clamp(
+                100.0,
+                4000.0,
+              );
+              final renderHeight = (constraints.maxHeight - 16).clamp(
+                100.0,
+                4000.0,
+              );
 
               // 上抛实测视口，由上层决定是否需要按新尺寸重排
               onViewportResolved(renderWidth, renderHeight);
@@ -131,15 +146,18 @@ class ReaderHorizontalPageView extends StatelessWidget {
                   onPageChanged: onPageChanged,
                   itemBuilder: (context, index) {
                     // 扁平索引 → (章, 章内页) 与页面侧同源（见 [HorizontalWindow]）
-                    final (chapter, pageInChapter) = HorizontalWindow.resolveFlat(
+                    final (
+                      chapter,
+                      pageInChapter,
+                    ) = HorizontalWindow.resolveFlat(
                       windowChapters,
-                      windowSlices,
+                      windowPageStarts,
                       index,
                     );
-                    final slices = windowSlices[chapter];
+                    final starts = windowPageStarts[chapter];
 
-                    // 未就绪章：渲染上层提供的占位页（就绪后由上层补切片自动原地顶替）
-                    if (slices == null || slices.isEmpty) {
+                    // 未就绪章：渲染上层提供的占位页（就绪后由上层补分片自动原地顶替）
+                    if (starts == null || starts.isEmpty) {
                       return KeyedSubtree(
                         key: ValueKey('bridge_$chapter'),
                         child: bridgeBuilder(context, chapter),
@@ -155,7 +173,11 @@ class ReaderHorizontalPageView extends StatelessWidget {
                       // 单击手势统一由上层的三区点击热层接管；
                       // 长按划词与跨页选择由外层 SelectionArea 统一提供
                       child: Text(
-                        slices[pageInChapter],
+                        PaginationEngine.pageText(
+                          contentOf(chapter),
+                          starts,
+                          pageInChapter,
+                        ),
                         style: bodyTextStyle,
                       ),
                     );
@@ -180,21 +202,28 @@ class ReaderHorizontalPageView extends StatelessWidget {
                 children: [
                   // 全书最后一页给出明确收尾提示，避免用户反复滑动却无反馈
                   if (currentChapterIndex >= chapterCount - 1 &&
-                      windowSlices[currentChapterIndex]?.isNotEmpty == true &&
+                      windowPageStarts[currentChapterIndex]?.isNotEmpty ==
+                          true &&
                       currentPageIndex >=
-                          windowSlices[currentChapterIndex]!.length - 1)
+                          windowPageStarts[currentChapterIndex]!.length - 1)
                     Text(
                       '已是最后一章 · ',
-                      style: TextStyle(fontSize: 11, color: readerTheme.subText),
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: readerTheme.subText,
+                      ),
                     ),
                   if (currentChapterIndex == 0 && currentPageIndex == 0)
                     Text(
                       '全书起始 · ',
-                      style: TextStyle(fontSize: 11, color: readerTheme.subText),
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: readerTheme.subText,
+                      ),
                     ),
                   Text(
-                    windowSlices[currentChapterIndex]?.isNotEmpty == true
-                        ? '${currentPageIndex + 1} / ${windowSlices[currentChapterIndex]!.length}'
+                    windowPageStarts[currentChapterIndex]?.isNotEmpty == true
+                        ? '${currentPageIndex + 1} / ${windowPageStarts[currentChapterIndex]!.length}'
                         : '',
                     style: TextStyle(fontSize: 11, color: readerTheme.subText),
                   ),

@@ -61,14 +61,25 @@ class ReaderChapterBridge extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           if (_hasError)
-            Icon(Ionicons.alertCircleOutline, size: 26, color: readerTheme.subText)
+            Icon(
+              Ionicons.alertCircleOutline,
+              size: 26,
+              color: readerTheme.subText,
+            )
           else if (isReady)
-            const Icon(Ionicons.checkmarkCircle, size: 26, color: AppColors.primary)
+            const Icon(
+              Ionicons.checkmarkCircle,
+              size: 26,
+              color: AppColors.primary,
+            )
           else
             const SizedBox(
               width: 26,
               height: 26,
-              child: CircularProgressIndicator(strokeWidth: 2.4, color: AppColors.primary),
+              child: CircularProgressIndicator(
+                strokeWidth: 2.4,
+                color: AppColors.primary,
+              ),
             ),
           const SizedBox(height: 18),
           Text(
@@ -101,8 +112,13 @@ class ReaderChapterBridge extends StatelessWidget {
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.primary,
                 foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
               ),
               onPressed: onRetry,
               icon: const Icon(Ionicons.refreshOutline, size: 14),

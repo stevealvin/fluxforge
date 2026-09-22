@@ -31,7 +31,10 @@ class ReaderPreferencesSnapshot {
 
   /// 是否一项都没有持久化过
   bool get isEmpty =>
-      fontSize == null && lineHeight == null && theme == null && pageMode == null;
+      fontSize == null &&
+      lineHeight == null &&
+      theme == null &&
+      pageMode == null;
 }
 
 /// 阅读偏好持久化
@@ -79,8 +82,8 @@ class ReaderPreferences {
         pageMode: savedPageMode == null
             ? null
             : (savedPageMode == pageModeVertical
-                ? PageTurnMode.verticalScroll
-                : PageTurnMode.horizontal),
+                  ? PageTurnMode.verticalScroll
+                  : PageTurnMode.horizontal),
       );
     } catch (_) {
       // 存储不可用等异常静默忽略：保持默认排版继续阅读
@@ -98,7 +101,7 @@ class ReaderPreferences {
       AppStorage.setString(themeKey, theme.name);
 
   static Future<void> savePageMode(PageTurnMode mode) => AppStorage.setString(
-        pageModeKey,
-        mode == PageTurnMode.verticalScroll ? pageModeVertical : pageModeHorizontal,
-      );
+    pageModeKey,
+    mode == PageTurnMode.verticalScroll ? pageModeVertical : pageModeHorizontal,
+  );
 }

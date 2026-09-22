@@ -16,7 +16,8 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   setUp(() {
-    SharedPreferencesAsyncPlatform.instance = InMemorySharedPreferencesAsync.empty();
+    SharedPreferencesAsyncPlatform.instance =
+        InMemorySharedPreferencesAsync.empty();
   });
 
   test('未持久化时所有字段为 null（不覆盖页面默认值）', () async {
@@ -57,10 +58,7 @@ void main() {
     );
 
     await ReaderPreferences.savePageMode(PageTurnMode.horizontal);
-    expect(
-      (await ReaderPreferences.load()).pageMode,
-      PageTurnMode.horizontal,
-    );
+    expect((await ReaderPreferences.load()).pageMode, PageTurnMode.horizontal);
   });
 
   test('无法识别的配色名回落到 parchment', () async {
@@ -72,9 +70,6 @@ void main() {
   test('无法识别的翻页模式标识回落到横向', () async {
     await AppStorage.setString(ReaderPreferences.pageModeKey, 'weird');
 
-    expect(
-      (await ReaderPreferences.load()).pageMode,
-      PageTurnMode.horizontal,
-    );
+    expect((await ReaderPreferences.load()).pageMode, PageTurnMode.horizontal);
   });
 }

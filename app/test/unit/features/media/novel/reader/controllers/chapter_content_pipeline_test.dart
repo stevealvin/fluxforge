@@ -14,8 +14,8 @@ class _FakeOfflineStore implements OfflineChapterStore {
     Set<int>? downloaded,
     Map<int, String>? contents,
     this.throwOnRead = false,
-  })  : downloaded = {...?downloaded},
-        contents = {...?contents};
+  }) : downloaded = {...?downloaded},
+       contents = {...?contents};
 
   /// 已落盘章节集合（save 成功后会真实增长，便于断言「加载即下载」）
   final Set<int> downloaded;
@@ -64,9 +64,9 @@ void main() {
   );
 
   NovelChapter chapterOf(int index) => NovelChapter(
-        title: '第${index + 1}章',
-        url: 'https://example.com/chapter/$index',
-      );
+    title: '第${index + 1}章',
+    url: 'https://example.com/chapter/$index',
+  );
 
   /// 组装管道；[parseCalls] 用于断言是否真的走了网络
   (ChapterContentPipeline, ChapterCache, List<String>) buildPipeline({
@@ -94,10 +94,7 @@ void main() {
 
   group('ensureContent 三级来源优先级', () {
     test('内存缓存命中时直接返回，不碰离线也不碰网络', () async {
-      final store = _FakeOfflineStore(
-        downloaded: {0},
-        contents: {0: '离线正文'},
-      );
+      final store = _FakeOfflineStore(downloaded: {0}, contents: {0: '离线正文'});
       final (pipeline, cache, parseUrls) = buildPipeline(store: store);
       cache[0] = '内存缓存正文';
 
@@ -109,10 +106,7 @@ void main() {
     });
 
     test('缓存未命中但已离线下载时，直接读离线且绝不发起网络请求', () async {
-      final store = _FakeOfflineStore(
-        downloaded: {1},
-        contents: {1: '离线下载正文'},
-      );
+      final store = _FakeOfflineStore(downloaded: {1}, contents: {1: '离线下载正文'});
       final (pipeline, cache, parseUrls) = buildPipeline(store: store);
 
       final content = await pipeline.ensureContent(1);

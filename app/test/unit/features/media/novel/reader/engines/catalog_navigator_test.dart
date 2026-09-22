@@ -41,10 +41,7 @@ void main() {
 
   group('offsetFor 停靠滚动偏移', () {
     test('首章被 clamp 到顶部，留白不为负', () {
-      expect(
-        CatalogNavigator.offsetFor(displayIndex: 0, chapterCount: 10),
-        0,
-      );
+      expect(CatalogNavigator.offsetFor(displayIndex: 0, chapterCount: 10), 0);
     });
 
     test('第 5 行停靠时上方保留 2 行上下文', () {
@@ -72,10 +69,7 @@ void main() {
     });
 
     test('行号为负（无章节时的兜底）也被 clamp', () {
-      expect(
-        CatalogNavigator.offsetFor(displayIndex: -1, chapterCount: 0),
-        0,
-      );
+      expect(CatalogNavigator.offsetFor(displayIndex: -1, chapterCount: 0), 0);
     });
 
     test('固定行高为 56，保证 initialScrollOffset 可精确跳转', () {

@@ -99,7 +99,10 @@ class ReaderCatalogDrawer extends StatelessWidget {
                         const SizedBox(height: 4),
                         Text(
                           '共 ${chapters.length} 章 · 已下载 $downloadedCount 章',
-                          style: TextStyle(fontSize: 11, color: readerTheme.subText),
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: readerTheme.subText,
+                          ),
                         ),
                       ],
                     ),
@@ -110,11 +113,15 @@ class ReaderCatalogDrawer extends StatelessWidget {
                     icon: const Icon(Ionicons.swapVerticalOutline, size: 14),
                     label: Text(
                       isReversed ? '倒序' : '正序',
-                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                     style: TextButton.styleFrom(
-                      foregroundColor:
-                          isReversed ? AppColors.primary : readerTheme.subText,
+                      foregroundColor: isReversed
+                          ? AppColors.primary
+                          : readerTheme.subText,
                       padding: const EdgeInsets.symmetric(horizontal: 8),
                       minimumSize: Size.zero,
                       tapTargetSize: MaterialTapTargetSize.shrinkWrap,
@@ -122,14 +129,21 @@ class ReaderCatalogDrawer extends StatelessWidget {
                     ),
                   ),
                   IconButton(
-                    icon: Icon(Ionicons.closeOutline, color: readerTheme.subText, size: 20),
+                    icon: Icon(
+                      Ionicons.closeOutline,
+                      color: readerTheme.subText,
+                      size: 20,
+                    ),
                     tooltip: '关闭目录',
                     onPressed: onClose,
                   ),
                 ],
               ),
             ),
-            Divider(height: 1, color: readerTheme.subText.withValues(alpha: 0.18)),
+            Divider(
+              height: 1,
+              color: readerTheme.subText.withValues(alpha: 0.18),
+            ),
 
             // 章节列表（固定行高，便于用 initialScrollOffset 精确定位到当前章）
             Expanded(
@@ -160,7 +174,10 @@ class ReaderCatalogDrawer extends StatelessWidget {
       statusIcon = const SizedBox(
         width: 16,
         height: 16,
-        child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primary),
+        child: CircularProgressIndicator(
+          strokeWidth: 2,
+          color: AppColors.primary,
+        ),
       );
     } else if (isDownloaded) {
       // 已下载到沙盒：断网也可阅读

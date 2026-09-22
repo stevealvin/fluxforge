@@ -365,7 +365,12 @@ void main() {
     });
 
     test('radius 为 0 时只保留当前章与锚点', () {
-      final result = trim(sequence: const [10, 11, 12], current: 11, anchor: 11, radius: 0);
+      final result = trim(
+        sequence: const [10, 11, 12],
+        current: 11,
+        anchor: 11,
+        radius: 0,
+      );
 
       expect(result.leading, [10]);
       expect(result.trailing, [12]);

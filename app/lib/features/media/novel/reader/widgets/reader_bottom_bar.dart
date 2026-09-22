@@ -92,7 +92,10 @@ class ReaderBottomBar extends StatelessWidget {
             Row(
               children: [
                 IconButton(
-                  icon: Icon(Ionicons.chevronBackOutline, color: readerTheme.text),
+                  icon: Icon(
+                    Ionicons.chevronBackOutline,
+                    color: readerTheme.text,
+                  ),
                   onPressed: canGoPrev ? onPrevChapter : null,
                 ),
                 Expanded(
@@ -100,19 +103,23 @@ class ReaderBottomBar extends StatelessWidget {
                     data: SliderTheme.of(context).copyWith(
                       trackHeight: 3,
                       activeTrackColor: AppColors.primary,
-                      inactiveTrackColor: readerTheme.subText.withValues(alpha: 0.3),
+                      inactiveTrackColor: readerTheme.subText.withValues(
+                        alpha: 0.3,
+                      ),
                       thumbColor: AppColors.primary,
-                      thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+                      thumbShape: const RoundSliderThumbShape(
+                        enabledThumbRadius: 6,
+                      ),
                     ),
                     // 进度条语义为「当前章节内的阅读进度」（横向=页码比例，纵向=滚动比例）
-                    child: Slider(
-                      value: progress,
-                      onChanged: onSeek,
-                    ),
+                    child: Slider(value: progress, onChanged: onSeek),
                   ),
                 ),
                 IconButton(
-                  icon: Icon(Ionicons.chevronForwardOutline, color: readerTheme.text),
+                  icon: Icon(
+                    Ionicons.chevronForwardOutline,
+                    color: readerTheme.text,
+                  ),
                   onPressed: canGoNext ? onNextChapter : null,
                 ),
               ],
@@ -195,10 +202,7 @@ class ReaderBarActionButton extends StatelessWidget {
           children: [
             Icon(icon, size: 20, color: color),
             const SizedBox(height: 4),
-            Text(
-              label,
-              style: TextStyle(fontSize: 11, color: color),
-            ),
+            Text(label, style: TextStyle(fontSize: 11, color: color)),
           ],
         ),
       ),

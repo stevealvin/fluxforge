@@ -11,17 +11,9 @@ class NovelChapter {
   /// 章节正文的远程地址（沙箱按需抓取用）
   final String? url;
 
-  const NovelChapter({
-    required this.title,
-    this.content = '',
-    this.url,
-  });
+  const NovelChapter({required this.title, this.content = '', this.url});
 
-  NovelChapter copyWith({
-    String? title,
-    String? content,
-    String? url,
-  }) {
+  NovelChapter copyWith({String? title, String? content, String? url}) {
     return NovelChapter(
       title: title ?? this.title,
       content: content ?? this.content,

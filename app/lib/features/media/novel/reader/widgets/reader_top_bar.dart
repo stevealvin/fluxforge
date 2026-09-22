@@ -47,7 +47,11 @@ class ReaderTopBar extends StatelessWidget {
         child: Row(
           children: [
             IconButton(
-              icon: Icon(Icons.arrow_back_ios_new_rounded, color: readerTheme.text, size: 20),
+              icon: Icon(
+                Icons.arrow_back_ios_new_rounded,
+                color: readerTheme.text,
+                size: 20,
+              ),
               onPressed: onBack,
             ),
             Expanded(
@@ -65,14 +69,22 @@ class ReaderTopBar extends StatelessWidget {
 
             // 重新刷新加载当前章
             IconButton(
-              icon: Icon(Ionicons.refreshOutline, color: readerTheme.text, size: 18),
+              icon: Icon(
+                Ionicons.refreshOutline,
+                color: readerTheme.text,
+                size: 18,
+              ),
               tooltip: '刷新章节',
               onPressed: onRefresh,
             ),
 
             // 章节目录抽屉
             IconButton(
-              icon: Icon(Ionicons.reorderFourOutline, color: readerTheme.text, size: 20),
+              icon: Icon(
+                Ionicons.reorderFourOutline,
+                color: readerTheme.text,
+                size: 20,
+              ),
               tooltip: '章节目录',
               onPressed: onOpenCatalog,
             ),
