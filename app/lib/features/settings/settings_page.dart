@@ -7,7 +7,7 @@ import 'package:fluxforge/app/theme/app_colors.dart';
 import 'package:fluxforge/core/logging/app_logger.dart';
 import 'package:fluxforge/data/settings/app_service.dart';
 import 'package:fluxforge/app/di/di.dart';
-import 'package:fluxforge/shared/widgets/app_card.dart';
+import 'package:fluxforge/shared/widgets/setting_tile.dart';
 import 'package:fluxforge/features/settings/widgets/backup_sheet.dart';
 import 'package:fluxforge/features/settings/widgets/custom_ua_sheet.dart';
 import 'package:fluxforge/features/browser/engine/adblock_engine.dart';
@@ -77,7 +77,6 @@ class _SettingsPageState extends State<SettingsPage> {
                   subtitle: '与手机系统的深浅模式自动同步',
                   icon: Ionicons.phonePortraitOutline,
                   isSelected: currentMode == ThemeMode.system,
-                  isDark: isDark,
                   onTap: () {
                     appService.updateThemeMode(ThemeMode.system);
                     Navigator.pop(ctx);
@@ -88,7 +87,6 @@ class _SettingsPageState extends State<SettingsPage> {
                   subtitle: '清爽通透的高雅浅色视觉风格',
                   icon: Ionicons.sunnyOutline,
                   isSelected: currentMode == ThemeMode.light,
-                  isDark: isDark,
                   onTap: () {
                     appService.updateThemeMode(ThemeMode.light);
                     Navigator.pop(ctx);
@@ -99,7 +97,6 @@ class _SettingsPageState extends State<SettingsPage> {
                   subtitle: '沉浸舒适的极夜暗色与翡翠光辉',
                   icon: Ionicons.moonOutline,
                   isSelected: currentMode == ThemeMode.dark,
-                  isDark: isDark,
                   onTap: () {
                     appService.updateThemeMode(ThemeMode.dark);
                     Navigator.pop(ctx);
@@ -113,82 +110,31 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 
+  /// 主题选择面板的单个选项（复用统一行组件，避免第二套行样式）
+  ///
+  /// 选中态**只留尾部一个勾**：模式名本身已写明是哪种，再给标题染色 / 加粗是对
+  /// 同一信息的重复强调（理由同「首页规则卡」那次收敛）。
   Widget _buildThemeTile({
     required String title,
     required String subtitle,
-    required dynamic icon,
+    required IconData icon,
     required bool isSelected,
-    required bool isDark,
     required VoidCallback onTap,
   }) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(12),
+    return SettingRow(
+      icon: icon,
+      color: AppColors.primary,
+      title: title,
+      subtitle: subtitle,
       onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        child: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: isSelected
-                    ? AppColors.primary.withValues(alpha: 0.15)
-                    : (isDark ? AppColors.darkCard : AppColors.lightCard),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: icon is IconData
-                  ? Icon(
-                      icon,
-                      size: 20,
-                      color: isSelected ? AppColors.primary : Colors.grey,
-                    )
-                  : Icon(
-                      icon as IconData,
-                      size: 20,
-                      color: isSelected ? AppColors.primary : Colors.grey,
-                    ),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: isSelected
-                          ? FontWeight.bold
-                          : FontWeight.w500,
-                      color: isSelected
-                          ? AppColors.primary
-                          : (isDark
-                                ? AppColors.darkTextPrimary
-                                : AppColors.lightTextPrimary),
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    subtitle,
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: isDark
-                          ? AppColors.darkTextMuted
-                          : AppColors.lightTextMuted,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            if (isSelected)
-              const Icon(
-                Icons.check_circle_rounded,
-                color: AppColors.primary,
-                size: 20,
-              ),
-          ],
-        ),
-      ),
+      // 未选中用零尺寸占位：尾部非 null 即不画箭头，同时不占横向空间
+      trailing: isSelected
+          ? const Icon(
+              Icons.check_circle_rounded,
+              color: AppColors.primary,
+              size: 20,
+            )
+          : const SizedBox.shrink(),
     );
   }
 
@@ -397,27 +343,34 @@ class _SettingsPageState extends State<SettingsPage> {
       body: ValueListenableBuilder<AppSettings>(
         valueListenable: appService.settingsNotifier,
         builder: (context, settings, _) {
+          // 分组标题在卡片**外**（[SettingSectionTitle]），卡内不再自绘小标题 ——
+          // 与「我的」页同构，同一套视觉语言只有一处实现。
           return ListView(
             padding: const EdgeInsets.all(16),
             children: [
-              // 1. 播放视听偏好卡片 (联动 AuraPlayer)
-              _buildPlayerPrefCard(isDark, settings),
-              const SizedBox(height: 16),
+              // 1. 播放与视听偏好（联动 AuraPlayer）
+              const SettingSectionTitle(title: '播放与视听'),
+              _buildPlayerPrefSection(isDark, settings),
+              const SizedBox(height: 24),
 
-              // 2. 浏览与阅读偏好卡片 (联动 FluxReader & FluxGallery)
-              _buildReaderPrefCard(isDark, settings),
-              const SizedBox(height: 16),
+              // 2. 浏览与阅读偏好（联动 FluxReader & FluxGallery）
+              const SettingSectionTitle(title: '浏览与阅读'),
+              _buildReaderPrefSection(isDark, settings),
+              const SizedBox(height: 24),
 
-              // 3. 规则沙箱与网络解析卡片
-              _buildSandboxNetworkCard(isDark, settings),
-              const SizedBox(height: 16),
+              // 3. 规则沙箱与网络解析
+              const SettingSectionTitle(title: '规则沙箱与网络'),
+              _buildSandboxNetworkSection(isDark, settings),
+              const SizedBox(height: 24),
 
-              // 4. 外观与主题系统卡片
-              _buildThemeCard(isDark, settings),
-              const SizedBox(height: 16),
+              // 4. 外观与主题系统
+              const SettingSectionTitle(title: '外观与主题'),
+              _buildThemeSection(isDark, settings),
+              const SizedBox(height: 24),
 
-              // 5. 关于与系统诊断卡片
-              _buildAboutDiagnosisCard(isDark),
+              // 5. 数据备份、系统诊断与关于
+              const SettingSectionTitle(title: '数据、诊断与关于'),
+              _buildAboutDiagnosisSection(isDark),
               const SizedBox(height: 24),
 
               // 底部版本信息
@@ -440,40 +393,20 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 
-  /// 1. 播放与视听偏好卡片 (AuraPlayer)
-  Widget _buildPlayerPrefCard(bool isDark, AppSettings settings) {
-    return AppCard(
-      padding: EdgeInsets.zero,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-            child: Text(
-              '播放与视听偏好 (AuraPlayer)',
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.bold,
-                color: isDark
-                    ? AppColors.darkTextMuted
-                    : AppColors.lightTextMuted,
-              ),
-            ),
+  /// 1. 播放与视听偏好（AuraPlayer）
+  Widget _buildPlayerPrefSection(bool isDark, AppSettings settings) {
+    return SettingSection(
+      children: [
+        SettingRow(
+          icon: Ionicons.flashOutline,
+          color: AppColors.accentAmber,
+          title: '长按瞬时加速与触觉震动',
+          subtitle: '长按屏幕瞬时加速播放，并触发原生轻微物理震动',
+          // 整行可点：点行内任意处即可切换，不必精准点中开关
+          onTap: () => appService.updateSettings(
+            settings.copyWith(enableLongPress2x: !settings.enableLongPress2x),
           ),
-          SwitchListTile(
-            secondary: const Icon(
-              Ionicons.flashOutline,
-              color: Colors.amber,
-              size: 20,
-            ),
-            title: const Text(
-              '长按瞬时加速与触觉震动',
-              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-            ),
-            subtitle: Text(
-              '长按屏幕以 ${settings.longPressSpeed.toStringAsFixed(1)}x 加速播放，并触发原生轻微物理震动',
-              style: const TextStyle(fontSize: 11),
-            ),
+          trailing: Switch(
             value: settings.enableLongPress2x,
             activeTrackColor: AppColors.primary,
             onChanged: (val) {
@@ -482,452 +415,204 @@ class _SettingsPageState extends State<SettingsPage> {
               );
             },
           ),
-          Divider(
-            height: 1,
-            indent: 56,
-            color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
-          ),
-          // 长按加速倍率 (2.0x / 3.0x / 5.0x)
-          ListTile(
-            leading: const Icon(
-              Ionicons.speedometerOutline,
-              color: Colors.amber,
-              size: 20,
-            ),
-            title: const Text(
-              '长按加速倍率',
-              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-            ),
-            subtitle: const Text(
-              '长按屏幕时瞬时提升到的播放倍速',
-              style: TextStyle(fontSize: 11),
-            ),
-            trailing: DropdownButton<double>(
-              value: settings.longPressSpeed,
-              underline: const SizedBox.shrink(),
-              items: const [
-                DropdownMenuItem(
-                  value: 2.0,
-                  child: Text('2.0x', style: TextStyle(fontSize: 12)),
-                ),
-                DropdownMenuItem(
-                  value: 3.0,
-                  child: Text('3.0x', style: TextStyle(fontSize: 12)),
-                ),
-                DropdownMenuItem(
-                  value: 5.0,
-                  child: Text('5.0x', style: TextStyle(fontSize: 12)),
-                ),
-              ],
-              onChanged: (val) {
-                if (val != null) {
-                  appService.updateSettings(
-                    settings.copyWith(longPressSpeed: val),
-                  );
-                }
-              },
-            ),
-          ),
-          Divider(
-            height: 1,
-            indent: 56,
-            color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
-          ),
-          ListTile(
-            leading: const Icon(
-              Ionicons.refreshOutline,
-              color: AppColors.accentTeal,
-              size: 20,
-            ),
-            title: const Text(
-              '断点续播行为',
-              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-            ),
-            subtitle: Text(
-              '当前策略：${settings.resumeBehavior.label}',
-              style: const TextStyle(fontSize: 11),
-            ),
-            trailing: DropdownButton<ResumeBehavior>(
-              value: settings.resumeBehavior,
-              underline: const SizedBox.shrink(),
-              items: ResumeBehavior.values.map((r) {
-                return DropdownMenuItem(
-                  value: r,
-                  child: Text(r.label, style: const TextStyle(fontSize: 12)),
-                );
-              }).toList(),
-              onChanged: (val) {
-                if (val != null) {
-                  appService.updateSettings(
-                    settings.copyWith(resumeBehavior: val),
-                  );
-                }
-              },
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// 2. 浏览与阅读偏好卡片 (FluxReader & Gallery)
-  Widget _buildReaderPrefCard(bool isDark, AppSettings settings) {
-    return AppCard(
-      padding: EdgeInsets.zero,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-            child: Text(
-              '浏览与阅读偏好 (FluxReader & Gallery)',
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.bold,
-                color: isDark
-                    ? AppColors.darkTextMuted
-                    : AppColors.lightTextMuted,
+        ),
+        // 长按加速倍率 (2.0x / 3.0x / 5.0x)
+        SettingRow(
+          icon: Ionicons.speedometerOutline,
+          color: AppColors.accentAmber,
+          title: '长按加速倍率',
+          subtitle: '长按屏幕时瞬时提升到的播放倍速',
+          trailing: DropdownButton<double>(
+            value: settings.longPressSpeed,
+            underline: const SizedBox.shrink(),
+            items: const [
+              DropdownMenuItem(
+                value: 2.0,
+                child: Text('2.0x', style: TextStyle(fontSize: 12)),
               ),
-            ),
-          ),
-          ListTile(
-            leading: const Icon(
-              Ionicons.bookOutline,
-              color: Color(0xFFF59E0B),
-              size: 20,
-            ),
-            title: const Text(
-              '小说默认翻页模式',
-              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-            ),
-            subtitle: Text(
-              settings.novelPageMode == 'vertical' ? '上下连续长篇滚动' : '标准平滑横向翻页',
-              style: const TextStyle(fontSize: 11),
-            ),
-            trailing: DropdownButton<String>(
-              value: settings.novelPageMode,
-              underline: const SizedBox.shrink(),
-              items: const [
-                DropdownMenuItem(
-                  value: 'horizontal',
-                  child: Text('平滑横翻', style: TextStyle(fontSize: 12)),
-                ),
-                DropdownMenuItem(
-                  value: 'vertical',
-                  child: Text('上下滚动', style: TextStyle(fontSize: 12)),
-                ),
-              ],
-              onChanged: (val) {
-                if (val != null) {
-                  appService.updateSettings(
-                    settings.copyWith(novelPageMode: val),
-                  );
-                }
-              },
-            ),
-          ),
-          Divider(
-            height: 1,
-            indent: 56,
-            color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
-          ),
-          ListTile(
-            leading: const Icon(
-              Ionicons.imageOutline,
-              color: Color(0xFF8B5CF6),
-              size: 20,
-            ),
-            title: const Text(
-              '图集与画廊默认视图',
-              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-            ),
-            subtitle: Text(
-              settings.galleryLayout == 'comicStrip' ? '垂直条漫连续拼接' : '瀑布流展厅网格',
-              style: const TextStyle(fontSize: 11),
-            ),
-            trailing: DropdownButton<String>(
-              value: settings.galleryLayout,
-              underline: const SizedBox.shrink(),
-              items: const [
-                DropdownMenuItem(
-                  value: 'grid',
-                  child: Text('展厅网格', style: TextStyle(fontSize: 12)),
-                ),
-                DropdownMenuItem(
-                  value: 'comicStrip',
-                  child: Text('垂直条漫', style: TextStyle(fontSize: 12)),
-                ),
-              ],
-              onChanged: (val) {
-                if (val != null) {
-                  appService.updateSettings(
-                    settings.copyWith(galleryLayout: val),
-                  );
-                }
-              },
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// 3. 规则沙箱与网络解析卡片
-  Widget _buildSandboxNetworkCard(bool isDark, AppSettings settings) {
-    return AppCard(
-      padding: EdgeInsets.zero,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-            child: Text(
-              '规则沙箱与网络解析',
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.bold,
-                color: isDark
-                    ? AppColors.darkTextMuted
-                    : AppColors.lightTextMuted,
+              DropdownMenuItem(
+                value: 3.0,
+                child: Text('3.0x', style: TextStyle(fontSize: 12)),
               ),
-            ),
-          ),
-          ListTile(
-            leading: const Icon(
-              Ionicons.stopwatchOutline,
-              color: AppColors.primary,
-              size: 20,
-            ),
-            title: const Text(
-              '沙箱请求超时时限',
-              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-            ),
-            subtitle: Text(
-              '针对复杂网络源弹性宽容 (${settings.requestTimeoutSeconds}秒)',
-              style: const TextStyle(fontSize: 11),
-            ),
-            trailing: DropdownButton<int>(
-              value: settings.requestTimeoutSeconds,
-              underline: const SizedBox.shrink(),
-              items: const [
-                DropdownMenuItem(
-                  value: 15,
-                  child: Text('15 秒', style: TextStyle(fontSize: 12)),
-                ),
-                DropdownMenuItem(
-                  value: 30,
-                  child: Text('30 秒 (推荐)', style: TextStyle(fontSize: 12)),
-                ),
-                DropdownMenuItem(
-                  value: 60,
-                  child: Text('60 秒 (宽容)', style: TextStyle(fontSize: 12)),
-                ),
-              ],
-              onChanged: (val) {
-                if (val != null) {
-                  appService.updateSettings(
-                    settings.copyWith(requestTimeoutSeconds: val),
-                  );
-                }
-              },
-            ),
-          ),
-          Divider(
-            height: 1,
-            indent: 56,
-            color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
-          ),
-          ListTile(
-            leading: const Icon(
-              Ionicons.shieldCheckmarkOutline,
-              color: Colors.green,
-              size: 20,
-            ),
-            title: const Text(
-              '内置网页广告拦截',
-              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-            ),
-            subtitle: const Text(
-              '智能阻断小说/影视网页弹窗、牛皮癣横幅与恶意外链',
-              style: TextStyle(fontSize: 11),
-            ),
-            trailing: Switch(
-              value: settings.enableAdBlock,
-              activeTrackColor: AppColors.primary,
-              onChanged: (val) {
+              DropdownMenuItem(
+                value: 5.0,
+                child: Text('5.0x', style: TextStyle(fontSize: 12)),
+              ),
+            ],
+            onChanged: (val) {
+              if (val != null) {
                 appService.updateSettings(
-                  settings.copyWith(enableAdBlock: val),
+                  settings.copyWith(longPressSpeed: val),
                 );
-              },
-            ),
+              }
+            },
           ),
-          if (settings.enableAdBlock) ...[
-            Padding(
-              padding: const EdgeInsets.fromLTRB(56, 0, 16, 12),
-              child: Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: isDark ? AppColors.darkCard : AppColors.lightCard,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: isDark
-                        ? AppColors.darkBorder
-                        : AppColors.lightBorder,
-                  ),
-                ),
-                child: Column(
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: ValueListenableBuilder<int>(
-                            valueListenable:
-                                AdBlockEngine.instance.totalRulesNotifier,
-                            builder: (context, totalRules, _) {
-                              return ValueListenableBuilder<DateTime?>(
-                                valueListenable:
-                                    AdBlockEngine.instance.lastUpdatedNotifier,
-                                builder: (context, lastSync, _) {
-                                  final syncText = lastSync != null
-                                      ? '${lastSync.month}-${lastSync.day} ${lastSync.hour.toString().padLeft(2, "0")}:${lastSync.minute.toString().padLeft(2, "0")}'
-                                      : '内置种子名单';
-                                  return Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        '当前生效规则: $totalRules 条',
-                                        style: const TextStyle(
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 2),
-                                      Text(
-                                        '上次更新: $syncText',
-                                        style: TextStyle(
-                                          fontSize: 10,
-                                          color: isDark
-                                              ? AppColors.darkTextMuted
-                                              : AppColors.lightTextMuted,
-                                        ),
-                                      ),
-                                    ],
-                                  );
-                                },
-                              );
-                            },
-                          ),
-                        ),
-                        ValueListenableBuilder<bool>(
-                          valueListenable:
-                              AdBlockEngine.instance.isUpdatingNotifier,
-                          builder: (context, isUpdating, _) {
-                            return FilledButton.tonal(
-                              style: FilledButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                  vertical: 6,
-                                ),
-                                minimumSize: Size.zero,
-                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                              ),
-                              onPressed: isUpdating
-                                  ? null
-                                  : () => _triggerAdBlockUpdate(context),
-                              child: isUpdating
-                                  ? const SizedBox(
-                                      width: 12,
-                                      height: 12,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                      ),
-                                    )
-                                  : const Text(
-                                      '立即同步',
-                                      style: TextStyle(fontSize: 11),
-                                    ),
-                            );
-                          },
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    InkWell(
-                      borderRadius: BorderRadius.circular(8),
-                      onTap: () => context.pushAdblock(),
-                      child: const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 4),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(
-                              '管理广告过滤规则与订阅源...',
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: AppColors.primary,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                            Icon(
-                              Icons.arrow_forward_ios_rounded,
-                              size: 11,
-                              color: AppColors.primary,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+        ),
+        SettingRow(
+          icon: Ionicons.refreshOutline,
+          color: AppColors.accentTeal,
+          title: '断点续播行为',
+          // 当前值已由尾部下拉表达，说明改为写「这行是干什么的」
+          subtitle: '再次打开时从哪里开始播放',
+          trailing: DropdownButton<ResumeBehavior>(
+            value: settings.resumeBehavior,
+            underline: const SizedBox.shrink(),
+            items: ResumeBehavior.values.map((r) {
+              return DropdownMenuItem(
+                value: r,
+                child: Text(r.label, style: const TextStyle(fontSize: 12)),
+              );
+            }).toList(),
+            onChanged: (val) {
+              if (val != null) {
+                appService.updateSettings(
+                  settings.copyWith(resumeBehavior: val),
+                );
+              }
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// 2. 浏览与阅读偏好（FluxReader & Gallery）
+  Widget _buildReaderPrefSection(bool isDark, AppSettings settings) {
+    return SettingSection(
+      children: [
+        SettingRow(
+          icon: Ionicons.bookOutline,
+          color: AppColors.accentAmber,
+          title: '小说默认翻页模式',
+          subtitle: '小说阅读器默认使用的翻页方式',
+          trailing: DropdownButton<String>(
+            value: settings.novelPageMode,
+            underline: const SizedBox.shrink(),
+            items: const [
+              DropdownMenuItem(
+                value: 'horizontal',
+                child: Text('平滑横翻', style: TextStyle(fontSize: 12)),
               ),
-            ),
-          ],
-          Divider(
-            height: 1,
-            indent: 56,
-            color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
+              DropdownMenuItem(
+                value: 'vertical',
+                child: Text('上下滚动', style: TextStyle(fontSize: 12)),
+              ),
+            ],
+            onChanged: (val) {
+              if (val != null) {
+                appService.updateSettings(
+                  settings.copyWith(novelPageMode: val),
+                );
+              }
+            },
           ),
-          ListTile(
-            leading: const Icon(
-              Ionicons.globeOutline,
-              color: Colors.blueAccent,
-              size: 20,
-            ),
-            title: const Text(
-              '自定义 User-Agent',
-              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-            ),
-            subtitle: Text(
-              settings.customUserAgent.isNotEmpty
-                  ? settings.customUserAgent
-                  : '使用内置移动端伪装标头',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 11),
-            ),
-            trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 14),
-            onTap: () => _showUASheet(context),
+        ),
+        SettingRow(
+          icon: Ionicons.imageOutline,
+          color: AppColors.accentPurple,
+          title: '图集与画廊默认视图',
+          subtitle: '图集默认使用的浏览布局',
+          trailing: DropdownButton<String>(
+            value: settings.galleryLayout,
+            underline: const SizedBox.shrink(),
+            items: const [
+              DropdownMenuItem(
+                value: 'grid',
+                child: Text('展厅网格', style: TextStyle(fontSize: 12)),
+              ),
+              DropdownMenuItem(
+                value: 'comicStrip',
+                child: Text('垂直条漫', style: TextStyle(fontSize: 12)),
+              ),
+            ],
+            onChanged: (val) {
+              if (val != null) {
+                appService.updateSettings(
+                  settings.copyWith(galleryLayout: val),
+                );
+              }
+            },
           ),
-          Divider(
-            height: 1,
-            indent: 56,
-            color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
+        ),
+      ],
+    );
+  }
+
+  /// 3. 规则沙箱与网络解析
+  Widget _buildSandboxNetworkSection(bool isDark, AppSettings settings) {
+    return SettingSection(
+      children: [
+        SettingRow(
+          icon: Ionicons.stopwatchOutline,
+          color: AppColors.primary,
+          title: '沙箱请求超时时限',
+          subtitle: '复杂网络源的等待上限，超时即中断本次解析',
+          // 当前值由尾部下拉表达，故说明不必再写一遍「(30秒)」
+          trailing: DropdownButton<int>(
+            value: settings.requestTimeoutSeconds,
+            underline: const SizedBox.shrink(),
+            items: const [
+              DropdownMenuItem(
+                value: 15,
+                child: Text('15 秒', style: TextStyle(fontSize: 12)),
+              ),
+              DropdownMenuItem(
+                value: 30,
+                child: Text('30 秒 (推荐)', style: TextStyle(fontSize: 12)),
+              ),
+              DropdownMenuItem(
+                value: 60,
+                child: Text('60 秒 (宽容)', style: TextStyle(fontSize: 12)),
+              ),
+            ],
+            onChanged: (val) {
+              if (val != null) {
+                appService.updateSettings(
+                  settings.copyWith(requestTimeoutSeconds: val),
+                );
+              }
+            },
           ),
-          SwitchListTile(
-            secondary: const Icon(
-              Ionicons.refreshOutline,
-              color: AppColors.accentTeal,
-              size: 20,
+        ),
+        SettingRow(
+          icon: Ionicons.shieldCheckmarkOutline,
+          color: AppColors.success,
+          title: '内置网页广告拦截',
+          subtitle: '智能阻断小说/影视网页弹窗、牛皮癣横幅与恶意外链',
+          onTap: () => appService.updateSettings(
+            settings.copyWith(enableAdBlock: !settings.enableAdBlock),
+          ),
+          trailing: Switch(
+            value: settings.enableAdBlock,
+            activeTrackColor: AppColors.primary,
+            onChanged: (val) {
+              appService.updateSettings(
+                settings.copyWith(enableAdBlock: val),
+              );
+            },
+          ),
+        ),
+        if (settings.enableAdBlock) _buildAdBlockStatusPanel(isDark),
+        SettingRow(
+          icon: Ionicons.globeOutline,
+          color: AppColors.accentBlue,
+          title: '自定义 User-Agent',
+          subtitle: settings.customUserAgent.isNotEmpty
+              ? settings.customUserAgent
+              : '使用内置移动端伪装标头',
+          onTap: () => _showUASheet(context),
+        ),
+        SettingRow(
+          icon: Ionicons.refreshOutline,
+          color: AppColors.accentTeal,
+          title: '启动时自动同步规则',
+          subtitle: '从规则市场同步已订阅源的最新解析补丁',
+          onTap: () => appService.updateSettings(
+            settings.copyWith(
+              autoCheckRuleUpdates: !settings.autoCheckRuleUpdates,
             ),
-            title: const Text(
-              '启动时自动同步规则',
-              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-            ),
-            subtitle: const Text(
-              '从规则市场同步已订阅源的最新解析补丁',
-              style: TextStyle(fontSize: 11),
-            ),
+          ),
+          trailing: Switch(
             value: settings.autoCheckRuleUpdates,
             activeTrackColor: AppColors.primary,
             onChanged: (val) {
@@ -936,173 +621,212 @@ class _SettingsPageState extends State<SettingsPage> {
               );
             },
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
-  /// 4. 外观与主题系统卡片
-  Widget _buildThemeCard(bool isDark, AppSettings settings) {
-    return AppCard(
-      padding: EdgeInsets.zero,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-            child: Text(
-              '外观与主题系统',
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.bold,
-                color: isDark
-                    ? AppColors.darkTextMuted
-                    : AppColors.lightTextMuted,
-              ),
-            ),
-          ),
-          ListTile(
-            leading: const Icon(
-              Ionicons.colorPaletteOutline,
-              color: AppColors.primary,
-              size: 20,
-            ),
-            title: const Text(
-              '界面风格主题',
-              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-            ),
-            subtitle: Text(
-              _getThemeModeLabel(settings.themeMode, isDark),
-              style: const TextStyle(fontSize: 11),
-            ),
-            trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 14),
-            onTap: () => _showThemeDialog(context, isDark),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// 5. 数据备份、系统诊断与关于卡片
-  Widget _buildAboutDiagnosisCard(bool isDark) {
-    return AppCard(
-      padding: EdgeInsets.zero,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-            child: Text(
-              '数据备份、诊断与关于',
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.bold,
-                color: isDark
-                    ? AppColors.darkTextMuted
-                    : AppColors.lightTextMuted,
-              ),
-            ),
-          ),
-          // 数据备份与还原（自「我的」页迁移，数据类操作统一收敛至设置页）
-          ListTile(
-            leading: const Icon(
-              Ionicons.hardwareChipOutline,
-              color: AppColors.accentPurple,
-              size: 20,
-            ),
-            title: const Text(
-              '数据备份与还原',
-              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-            ),
-            subtitle: const Text(
-              '规则库、收藏、搜索历史与观看进度单文件 JSON 导出/导入',
-              style: TextStyle(fontSize: 11),
-            ),
-            trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 14),
-            onTap: () => showBackupSheet(context),
-          ),
-          Divider(
-            height: 1,
-            indent: 56,
-            color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
-          ),
-          ValueListenableBuilder<List<LogEntry>>(
-            valueListenable: AppLogger.logsNotifier,
-            builder: (context, logs, _) {
-              final errorCount = logs.where((l) => l.level == 'ERROR').length;
-              final subtitleText = logs.isEmpty
-                  ? '查看 QuickJS 规则解析、console.log 与网络报错'
-                  : '已记录 ${logs.length} 条日志${errorCount > 0 ? " (含 $errorCount 项异常)" : ""}';
-
-              return ListTile(
-                leading: const Icon(
-                  Ionicons.documentOutline,
-                  color: Colors.blueAccent,
-                  size: 20,
+  /// 广告拦截开启后的状态块（随「内置网页广告拦截」开关展开）
+  ///
+  /// 底色取「比卡片深 / 亮一档」的内嵌块色而非卡片同色：同一层色块叠在卡片上
+  /// 等于没有边界，而加边框又会与分组的容器边框重复 —— 用底色分档最干净。
+  Widget _buildAdBlockStatusPanel(bool isDark) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: isDark ? AppColors.darkSurface : AppColors.lightSurfaceVariant,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: ValueListenableBuilder<int>(
+                    valueListenable: AdBlockEngine.instance.totalRulesNotifier,
+                    builder: (context, totalRules, _) {
+                      return ValueListenableBuilder<DateTime?>(
+                        valueListenable:
+                            AdBlockEngine.instance.lastUpdatedNotifier,
+                        builder: (context, lastSync, _) {
+                          final syncText = lastSync != null
+                              ? '${lastSync.month}-${lastSync.day} ${lastSync.hour.toString().padLeft(2, "0")}:${lastSync.minute.toString().padLeft(2, "0")}'
+                              : '内置种子名单';
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                '当前生效规则: $totalRules 条',
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                '上次更新: $syncText',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: isDark
+                                      ? AppColors.darkTextMuted
+                                      : AppColors.lightTextMuted,
+                                ),
+                              ),
+                            ],
+                          );
+                        },
+                      );
+                    },
+                  ),
                 ),
-                title: const Text(
-                  '沙箱与系统日志中心',
-                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-                ),
-                subtitle: Text(
-                  subtitleText,
-                  style: const TextStyle(fontSize: 11),
-                ),
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (errorCount > 0)
-                      Container(
-                        margin: const EdgeInsets.only(right: 6),
+                ValueListenableBuilder<bool>(
+                  valueListenable: AdBlockEngine.instance.isUpdatingNotifier,
+                  builder: (context, isUpdating, _) {
+                    return FilledButton.tonal(
+                      style: FilledButton.styleFrom(
                         padding: const EdgeInsets.symmetric(
-                          horizontal: 6,
-                          vertical: 2,
+                          horizontal: 12,
+                          vertical: 6,
                         ),
-                        decoration: BoxDecoration(
-                          color: Colors.redAccent.withValues(alpha: 0.15),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Text(
-                          '$errorCount ERROR',
-                          style: const TextStyle(
-                            color: Colors.redAccent,
-                            fontSize: 9,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       ),
-                    const Icon(Icons.arrow_forward_ios_rounded, size: 14),
+                      onPressed: isUpdating
+                          ? null
+                          : () => _triggerAdBlockUpdate(context),
+                      child: isUpdating
+                          ? const SizedBox(
+                              width: 12,
+                              height: 12,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                              ),
+                            )
+                          : const Text(
+                              '立即同步',
+                              style: TextStyle(fontSize: 11),
+                            ),
+                    );
+                  },
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            InkWell(
+              borderRadius: BorderRadius.circular(8),
+              onTap: () => context.pushAdblock(),
+              child: const Padding(
+                padding: EdgeInsets.symmetric(vertical: 4),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      '管理广告过滤规则与订阅源...',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: AppColors.primary,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    Icon(
+                      Icons.arrow_forward_ios_rounded,
+                      size: 11,
+                      color: AppColors.primary,
+                    ),
                   ],
                 ),
-                onTap: () => context.pushLogs(),
-              );
-            },
-          ),
-          Divider(
-            height: 1,
-            indent: 56,
-            color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
-          ),
-          // 关于信息面板（自「我的」页迁移）
-          ListTile(
-            leading: const Icon(
-              Ionicons.informationCircleOutline,
-              color: AppColors.accentAmber,
-              size: 20,
+              ),
             ),
-            title: const Text(
-              '关于 FluxForge',
-              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-            ),
-            subtitle: const Text(
-              '版本信息、运行底座与本地资产概览',
-              style: TextStyle(fontSize: 11),
-            ),
-            trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 14),
-            onTap: _showAboutSheet,
-          ),
-        ],
+          ],
+        ),
       ),
+    );
+  }
+
+  /// 4. 外观与主题系统
+  Widget _buildThemeSection(bool isDark, AppSettings settings) {
+    return SettingSection(
+      children: [
+        SettingRow(
+          icon: Ionicons.colorPaletteOutline,
+          color: AppColors.primary,
+          title: '界面风格主题',
+          // 尾部只有箭头（无文字），故当前值仍需留在说明里
+          subtitle: _getThemeModeLabel(settings.themeMode, isDark),
+          onTap: () => _showThemeDialog(context, isDark),
+        ),
+      ],
+    );
+  }
+
+  /// 5. 数据备份、系统诊断与关于
+  Widget _buildAboutDiagnosisSection(bool isDark) {
+    return SettingSection(
+      children: [
+        // 数据备份与还原（自「我的」页迁移，数据类操作统一收敛至设置页）
+        SettingRow(
+          icon: Ionicons.hardwareChipOutline,
+          color: AppColors.accentPurple,
+          title: '数据备份与还原',
+          subtitle: '规则库、收藏、搜索历史与观看进度单文件 JSON 导出/导入',
+          onTap: () => showBackupSheet(context),
+        ),
+        ValueListenableBuilder<List<LogEntry>>(
+          valueListenable: AppLogger.logsNotifier,
+          builder: (context, logs, _) {
+            final errorCount = logs.where((l) => l.level == 'ERROR').length;
+            final subtitleText = logs.isEmpty
+                ? '查看 QuickJS 规则解析、console.log 与网络报错'
+                : '已记录 ${logs.length} 条日志${errorCount > 0 ? " (含 $errorCount 项异常)" : ""}';
+
+            return SettingRow(
+              icon: Ionicons.documentOutline,
+              color: AppColors.info,
+              title: '沙箱与系统日志中心',
+              subtitle: subtitleText,
+              onTap: () => context.pushLogs(),
+              // 异常徽标是自绘尾部，箭头要显式补上（复用同源组件，避免尺寸分叉）
+              trailing: errorCount > 0
+                  ? Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          margin: const EdgeInsets.only(right: 6),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: AppColors.danger.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            '$errorCount ERROR',
+                            style: const TextStyle(
+                              color: AppColors.danger,
+                              fontSize: 9,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                        const SettingRowChevron(),
+                      ],
+                    )
+                  : null,
+            );
+          },
+        ),
+        // 关于信息面板（自「我的」页迁移）
+        SettingRow(
+          icon: Ionicons.informationCircleOutline,
+          color: AppColors.accentAmber,
+          title: '关于 FluxForge',
+          subtitle: '版本信息、运行底座与本地资产概览',
+          onTap: _showAboutSheet,
+        ),
+      ],
     );
   }
 }
