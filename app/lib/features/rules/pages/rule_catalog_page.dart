@@ -75,6 +75,15 @@ class _RuleCatalogPageState extends State<RuleCatalogPage> {
   final ScrollController _scrollController = ScrollController();
   final ScrollController _tabsScrollController = ScrollController();
 
+  /// 横向分类条里各 chip 的稳定 key（按「标题|地址」记忆）
+  ///
+  /// 用于把选中的分类滚进视口 —— 必须按**真实布局**定位：chip 宽度随标题长度变化，
+  /// 任何「下标 × 固定宽度」的估算都会滚偏，详见 [_scrollToSelectedTab]。
+  final Map<String, GlobalKey> _tabKeys = <String, GlobalKey>{};
+
+  GlobalKey _tabKeyOf(_DiscoveryTab tab) =>
+      _tabKeys.putIfAbsent('${tab.title}|${tab.url}', GlobalKey.new);
+
   // 状态机
   List<_MediaItem> _items = [];
   List<_DiscoveryTab> _tabs = [];
@@ -241,21 +250,30 @@ class _RuleCatalogPageState extends State<RuleCatalogPage> {
       _selectedTab = tab;
       _items = [];
     });
+    // 内容列表回到顶部：换分类等于换了一批内容，停在上一批的滚动位置没有意义
+    // （清空列表后 offset 是否归零取决于中间态的高度，故显式归零）
+    if (_scrollController.hasClients) _scrollController.jumpTo(0);
     _scrollToSelectedTab(tab);
     _loadDiscovery(page: 1);
   }
 
-  /// 将选中的 Tab 智能平滑居中至横向视口
+  /// 把选中的分类平滑滚到横向视口**居中**
+  ///
+  /// 用 `ensureVisible` 按真实布局定位，而不是「下标 × 估算宽度」：chip 宽度随标题
+  /// 长度变化（「玄幻」与「最近更新」差着一倍），估算值一旦偏大就会**滚过头** ——
+  /// 表现正是「点靠后的分类，分类条往前窜一截、选中的那个还跑到视口外」。
+  /// `ensureVisible` 自带边界处理，也不必再手动 clamp。
   void _scrollToSelectedTab(_DiscoveryTab tab) {
-    final index = _tabs.indexOf(tab);
-    if (index >= 0 && _tabsScrollController.hasClients) {
-      final targetOffset = (index * 72.0) - 80.0;
-      _tabsScrollController.animateTo(
-        targetOffset.clamp(0.0, _tabsScrollController.position.maxScrollExtent),
-        duration: const Duration(milliseconds: 250),
-        curve: Curves.easeOut,
-      );
-    }
+    final chipContext = _tabKeyOf(tab).currentContext;
+    // context 为空 = 该 chip 不在横向条已构建的范围内（例如从展开面板里点选的），
+    // 此时横向条本来也没显示它，无需滚动
+    if (chipContext == null) return;
+    Scrollable.ensureVisible(
+      chipContext,
+      alignment: 0.5,
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.easeOut,
+    );
   }
 
 
@@ -384,6 +402,7 @@ class _RuleCatalogPageState extends State<RuleCatalogPage> {
                 final isSelected = _selectedTab?.url == tab.url && _selectedTab?.title == tab.title;
 
                 return ChoiceChip(
+                  key: _tabKeyOf(tab),
                   label: Text(tab.title),
                   selected: isSelected,
                   selectedColor: AppColors.primary.withValues(alpha: 0.16),
