@@ -6,6 +6,7 @@ import 'package:ionicons/ionicons.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fluxforge/app/theme/app_colors.dart';
+import 'package:fluxforge/core/utils/media_utils.dart';
 
 /// 统一的网络图片组件 —— 全仓图片加载的**唯一出口**
 ///
@@ -130,22 +131,30 @@ class AppImage extends StatelessWidget {
           loadStateChanged: loadStateChanged,
         );
       }
+      final effectiveHeaders = ensureRefererHeader(trimmedUrl, headers);
       return ExtendedImage.network(
         trimmedUrl,
         cache: cache,
-        headers: headers,
+        headers: effectiveHeaders,
         fit: fit,
         cacheWidth: cacheWidth,
         cacheHeight: cacheHeight,
         mode: readerMode!,
         initGestureConfigHandler: gestureConfig,
-        loadStateChanged: loadStateChanged,
+        // 仅追加失败日志：占位与重试仍完全由调用方的 loadStateChanged 决定
+        loadStateChanged: (state) {
+          if (state.extendedImageLoadState == LoadState.failed) {
+            _logImageFailure(trimmedUrl, effectiveHeaders);
+          }
+          return loadStateChanged?.call(state);
+        },
       );
     }
 
     // 防御性校验：空串或非 http(s) 协议 → 优雅回退内置占位图，杜绝底层抛错
     if (trimmedUrl.isEmpty ||
-        (!trimmedUrl.startsWith('http://') && !trimmedUrl.startsWith('https://'))) {
+        (!trimmedUrl.startsWith('http://') &&
+            !trimmedUrl.startsWith('https://'))) {
       return errorWidget ??
           ImagePlaceholder(
             borderRadius: borderRadius ?? BorderRadius.zero,
@@ -153,10 +162,11 @@ class AppImage extends StatelessWidget {
           );
     }
 
+    final effectiveHeaders = ensureRefererHeader(trimmedUrl, headers);
     final image = ExtendedImage.network(
       trimmedUrl,
       cache: cache,
-      headers: headers,
+      headers: effectiveHeaders,
       fit: fit,
       shape: shape,
       borderRadius: borderRadius,
@@ -169,6 +179,7 @@ class AppImage extends StatelessWidget {
           case LoadState.loading:
             return placeholder;
           case LoadState.failed:
+            _logImageFailure(trimmedUrl, effectiveHeaders);
             return errorWidget ?? const _ImageLoadFallback();
           default:
             return null;
@@ -185,6 +196,22 @@ class AppImage extends StatelessWidget {
   }
 }
 
+/// 图片加载失败时打一条**可诊断**的日志
+///
+/// 只打请求头的**名字**不打值（可能含 Cookie）：
+/// - 日志里**有** `Referer` → 说明请求带了它，问题在值不对，或图片本身已失效/被删；
+/// - 日志里**没有** → 说明这条链路漏了头（[ensureRefererHeader] 已兜底图片自身站点根，
+///   若仍为空说明地址不是绝对 URL）。
+///
+/// 另外 `Failed to load <url>` 这句会把底层 HTTP 失败（403 / 404 / 超时）包成同一句话，
+/// 所以排查时更该看这行日志与请求头，而不是那句话本身。
+void _logImageFailure(String url, Map<String, String>? headers) {
+  final names = (headers == null || headers.isEmpty)
+      ? '（无）'
+      : headers.keys.join(', ');
+  debugPrint('[AppImage] 图片加载失败: $url | 请求头: $names');
+}
+
 /// 加载失败的默认占位
 ///
 /// 原先是一张 `assets/icon/fail.png` 位图；现统一为矢量图标，
@@ -199,7 +226,9 @@ class _ImageLoadFallback extends StatelessWidget {
       child: Icon(
         Ionicons.imageOutline,
         size: 24,
-        color: isDark ? AppColors.darkTextTertiary : AppColors.lightTextTertiary,
+        color: isDark
+            ? AppColors.darkTextTertiary
+            : AppColors.lightTextTertiary,
       ),
     );
   }
@@ -233,7 +262,7 @@ class ImagePlaceholder extends StatelessWidget {
     this.iconSizeRatio = 0.6,
     this.borderRadius = BorderRadius.zero,
     this.child,
-  })  : shape = BoxShape.circle;
+  }) : shape = BoxShape.circle;
 
   const ImagePlaceholder.rounded({
     super.key,
@@ -243,12 +272,12 @@ class ImagePlaceholder extends StatelessWidget {
     this.iconSizeRatio = 0.6,
     this.child,
     required this.borderRadius,
-  })  : shape = BoxShape.rectangle;
+  }) : shape = BoxShape.rectangle;
 
   @override
   Widget build(BuildContext context) {
     final iconSize = size * iconSizeRatio;
-    
+
     return Container(
       width: size,
       height: size,
@@ -257,13 +286,15 @@ class ImagePlaceholder extends StatelessWidget {
         shape: shape,
         borderRadius: shape == BoxShape.rectangle ? borderRadius : null,
       ),
-      child: child ?? CustomPaint(
-        size: Size(size, size),
-        painter: _ImagePlaceholderPainter(
-          iconColor: iconColor,
-          iconSize: iconSize,
-        ),
-      ),
+      child:
+          child ??
+          CustomPaint(
+            size: Size(size, size),
+            painter: _ImagePlaceholderPainter(
+              iconColor: iconColor,
+              iconSize: iconSize,
+            ),
+          ),
     );
   }
 }
@@ -272,10 +303,7 @@ class _ImagePlaceholderPainter extends CustomPainter {
   final Color iconColor;
   final double iconSize;
 
-  _ImagePlaceholderPainter({
-    required this.iconColor,
-    required this.iconSize,
-  });
+  _ImagePlaceholderPainter({required this.iconColor, required this.iconSize});
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -292,7 +320,7 @@ class _ImagePlaceholderPainter extends CustomPainter {
       width: iconSize * 0.7,
       height: iconSize * 0.7,
     );
-    
+
     canvas.drawRect(outerRect, iconPaint);
 
     // 绘制山脉轮廓（抽象的山形）
@@ -304,7 +332,10 @@ class _ImagePlaceholderPainter extends CustomPainter {
     canvas.drawPath(mountainPath, iconPaint);
 
     // 绘制太阳/圆形元素
-    final sunOffset = Offset(center.dx - iconSize * 0.15, center.dy - iconSize * 0.1);
+    final sunOffset = Offset(
+      center.dx - iconSize * 0.15,
+      center.dy - iconSize * 0.1,
+    );
     canvas.drawCircle(sunOffset, iconSize * 0.05, iconPaint);
 
     // 绘制装饰线条（波浪线代表风景）
@@ -347,7 +378,14 @@ class _ImagePlaceholderPainter extends CustomPainter {
     // 绘制右侧虚线
     _drawDashedLine(canvas, topRight, bottomRight, dashWidth, dashSpace, paint);
     // 绘制底部虚线
-    _drawDashedLine(canvas, bottomRight, bottomLeft, dashWidth, dashSpace, paint);
+    _drawDashedLine(
+      canvas,
+      bottomRight,
+      bottomLeft,
+      dashWidth,
+      dashSpace,
+      paint,
+    );
     // 绘制左侧虚线
     _drawDashedLine(canvas, bottomLeft, topLeft, dashWidth, dashSpace, paint);
   }
@@ -362,19 +400,19 @@ class _ImagePlaceholderPainter extends CustomPainter {
   ) {
     final distance = (end - start).distance;
     final direction = (end - start) / distance;
-    
+
     var currentDistance = 0.0;
     var draw = true;
-    
+
     while (currentDistance < distance) {
       final currentPoint = start + direction * currentDistance;
       final nextDistance = currentDistance + (draw ? dashWidth : dashSpace);
       final nextPoint = start + direction * min(nextDistance, distance);
-      
+
       if (draw) {
         canvas.drawLine(currentPoint, nextPoint, paint);
       }
-      
+
       draw = !draw;
       currentDistance = nextDistance;
     }
