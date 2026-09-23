@@ -57,6 +57,25 @@ void main() {
     await pumpEventQueue();
   });
 
+  testWidgets('卡片带类型标签，筛选胶囊带各类型数量', (WidgetTester tester) async {
+    await favoriteService.addFavorite(
+      _item(id: 'https://x/1', title: '某漫画', mediaType: 'comic'),
+    );
+    await favoriteService.addFavorite(
+      _item(id: 'https://x/2', title: '某小说', mediaType: 'novel'),
+    );
+
+    await _pumpPage(tester);
+
+    // 卡片左下角的类型标签用「漫画」——与筛选胶囊的「漫画/图集」不同名，故可唯一断言
+    expect(find.text('漫画'), findsOneWidget);
+    expect(find.text('小说'), findsNWidgets(2), reason: '卡片类型标签 + 筛选胶囊各一处');
+
+    // 数量：全部 2、影视 0、小说 1、漫画/图集 1
+    expect(find.text('0'), findsOneWidget, reason: '空类型也要显示 0，不必点进去才发现');
+    expect(find.text('1'), findsNWidgets(2));
+  });
+
   testWidgets('展示条目与 NEW 角标，「上次看到」取真实消费进度', (WidgetTester tester) async {
     await favoriteService.addFavorite(
       _item(

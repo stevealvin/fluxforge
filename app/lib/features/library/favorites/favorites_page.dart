@@ -130,7 +130,7 @@ class _FavoritesPageState extends State<FavoritesPage> {
 
     return Column(
       children: [
-        _buildFilterBar(isDark),
+        _buildFilterBar(favorites, isDark),
         Expanded(
           child: filtered.isEmpty
               ? AppEmptyState(
@@ -160,7 +160,7 @@ class _FavoritesPageState extends State<FavoritesPage> {
     );
   }
 
-  Widget _buildFilterBar(bool isDark) {
+  Widget _buildFilterBar(List<FavoriteItem> favorites, bool isDark) {
     const filters = [
       {'key': 'all', 'label': '全部'},
       {'key': 'video', 'label': '影视'},
@@ -168,13 +168,23 @@ class _FavoritesPageState extends State<FavoritesPage> {
       {'key': 'comic', 'label': '漫画/图集'},
     ];
 
+    // 每个类型带数量：否则用户只能一个个点进去、撞上空态才知道那一类没有内容
+    int countOf(String key) => key == 'all'
+        ? favorites.length
+        : favorites.where((f) => f.mediaType == key).length;
+
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Row(
         children: [
           for (final f in filters) ...[
-            _buildFilterChip(f['key']!, f['label']!, isDark),
+            _buildFilterChip(
+              f['key']!,
+              f['label']!,
+              countOf(f['key']!),
+              isDark,
+            ),
             const SizedBox(width: 6),
           ],
         ],
@@ -183,8 +193,11 @@ class _FavoritesPageState extends State<FavoritesPage> {
   }
 
   /// 过滤胶囊：与「日志页 / 设置页」同一套自绘样式（Material ChoiceChip 在此前是孤例）
-  Widget _buildFilterChip(String key, String label, bool isDark) {
+  ///
+  /// 末尾带该类型的数量：数量为 0 的胶囊自动降淡，用户不必点进去才发现是空的。
+  Widget _buildFilterChip(String key, String label, int count, bool isDark) {
     final isSelected = _selectedFilter == key;
+    final isEmpty = count == 0;
 
     return InkWell(
       borderRadius: BorderRadius.circular(8),
@@ -193,7 +206,7 @@ class _FavoritesPageState extends State<FavoritesPage> {
         setState(() => _selectedFilter = key);
       },
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
         decoration: BoxDecoration(
           color: isSelected
               ? AppColors.primary.withValues(alpha: 0.2)
@@ -206,15 +219,33 @@ class _FavoritesPageState extends State<FavoritesPage> {
             width: 1,
           ),
         ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 11,
-            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-            color: isSelected
-                ? AppColors.primary
-                : (isDark ? Colors.grey : Colors.black87),
-          ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                color: isSelected
+                    ? AppColors.primary
+                    : (isDark ? Colors.grey : Colors.black87),
+              ),
+            ),
+            const SizedBox(width: 4),
+            Text(
+              '$count',
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w600,
+                color: isSelected
+                    ? AppColors.primary
+                    : (isDark ? Colors.grey : Colors.black87).withValues(
+                        alpha: isEmpty ? 0.4 : 0.75,
+                      ),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -253,21 +284,62 @@ class _FavoritesPageState extends State<FavoritesPage> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // 封面海报（走统一图片组件：自带占位、失败兜底与缓存）
+          //
+          // 叠两样东西：左下角**类型标签**（此前类型只能靠封面猜，而上面筛选栏
+          // 正是按类型分的，自相矛盾）、左侧**主色竖条**（有更新时列表里一眼可辨，
+          // 不必逐个读胶囊）。两者都在封面内，不影响右侧文字排版。
           ClipRRect(
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(12),
             child: SizedBox(
-              width: 64,
-              height: 84,
-              child: item.cover.isNotEmpty
-                  ? AppImage(imageUrl: item.cover, fit: BoxFit.cover)
-                  : Container(
-                      color: isDark ? Colors.white10 : Colors.black12,
-                      child: Icon(
-                        MediaDisplay.typeIcon(item.mediaType),
-                        color: Colors.grey,
-                        size: 24,
+              width: 66,
+              height: 88,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  item.cover.isNotEmpty
+                      ? AppImage(imageUrl: item.cover, fit: BoxFit.cover)
+                      : Container(
+                          color: isDark ? Colors.white10 : Colors.black12,
+                          child: Icon(
+                            MediaDisplay.typeIcon(item.mediaType),
+                            color: Colors.grey,
+                            size: 24,
+                          ),
+                        ),
+                  if (item.hasUpdate)
+                    const Positioned(
+                      left: 0,
+                      top: 0,
+                      bottom: 0,
+                      child: SizedBox(
+                        width: 3,
+                        child: ColoredBox(color: AppColors.primary),
                       ),
                     ),
+                  Positioned(
+                    left: 4,
+                    bottom: 4,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 5,
+                        vertical: 1.5,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.62),
+                        borderRadius: BorderRadius.circular(5),
+                      ),
+                      child: Text(
+                        MediaDisplay.typeLabel(item.mediaType),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
           const SizedBox(width: 12),
@@ -335,13 +407,15 @@ class _FavoritesPageState extends State<FavoritesPage> {
                   ],
                 ),
                 const SizedBox(height: 6),
+                // 两行对照：看过的进度是「我的位置」，字重更重；源站最新是参考信息，次要
                 Text(
                   '上次看到：${_progressLabel(item)}',
                   style: TextStyle(
-                    fontSize: 12,
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
                     color: isDark
-                        ? AppColors.darkTextSecondary
-                        : AppColors.lightTextSecondary,
+                        ? AppColors.darkTextPrimary
+                        : AppColors.lightTextPrimary,
                   ),
                 ),
                 const SizedBox(height: 4),
@@ -349,9 +423,11 @@ class _FavoritesPageState extends State<FavoritesPage> {
                   '最新更新：${item.latestEpisode.isNotEmpty ? item.latestEpisode : "与源站保持同步"}',
                   style: TextStyle(
                     fontSize: 11,
-                    color: isDark
-                        ? AppColors.darkTextMuted
-                        : AppColors.lightTextMuted,
+                    color: item.hasUpdate
+                        ? AppColors.primary
+                        : (isDark
+                              ? AppColors.darkTextMuted
+                              : AppColors.lightTextMuted),
                   ),
                 ),
               ],
