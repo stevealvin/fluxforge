@@ -17,10 +17,13 @@ import 'package:fluxforge/features/profile/widgets/profile_hero.dart';
 /// 经过重新设计，从「功能入口集合」升级为「个人资产仪表盘」，按四大语义区组织：
 /// ① 身份 Hero（昵称 / 沙箱状态 / 主题三态 / 设置唯一入口）
 /// ② 继续观看（跨媒体消费记录横滑流，一键续播）
-/// ③ 我的资产（2×2 资产卡网格：收藏 / 历史 / 规则 / 下载）
+/// ③ 我的资产（历史 / 下载 两张 + 规则整宽一张）
 /// ④ 数据与同步（规则市场 / 缓存治理）
 ///
 /// 入口去重约定：
+/// - **收藏入口在首页顶栏**（发现页 AppBar），本页不再设收藏卡 ——
+///   首页是「逛」的主场，收藏就近可达；「有新更新」的信号也随入口迁走，
+///   同一份数据不设两个入口；
 /// - 数据备份还原、沙箱日志与「关于」信息统一收敛至「设置」页，
 ///   设置入口由顶部 Hero 卡右上角齿轮提供；
 /// - **搜索足迹不再单独设卡** —— 它已完整收纳在历史中心页内，重复设卡只会让同一份
@@ -134,37 +137,24 @@ class _ProfilePageState extends State<ProfilePage> {
               const SettingSectionTitle(title: '数据与同步'),
               SettingSection(
                 children: [
-                  SettingTile(
+                  _ProfileActionRow(
                     icon: Ionicons.storefrontOutline,
-                    iconColor: AppColors.accentTeal,
+                    color: AppColors.accentTeal,
                     title: '规则订阅市场',
                     subtitle: '探索并一键订阅最新聚合跨媒体解析源',
-                    showArrow: true,
                     onTap: () => context.pushMarket(),
                   ),
-                  SettingTile(
+                  _ProfileActionRow(
                     icon: Ionicons.cloudOutline,
-                    iconColor: AppColors.accentBlue,
+                    color: AppColors.accentBlue,
                     title: '临时与网络缓存',
-                    subtitle: _cacheSizeMB == null
-                        ? '正在统计占用空间...'
-                        : '当前占用 ${_cacheSizeMB!.toStringAsFixed(1)} MB',
-                    trailing: _isCleaning
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : TextButton(
-                            onPressed: _cleanCacheOnly,
-                            child: const Text(
-                              '清理',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: AppColors.primary,
-                              ),
-                            ),
-                          ),
+                    subtitle: '清理网络图片与临时文件，不影响收藏与历史',
+                    // 占用体积从副标题提升为右侧数值：一眼能扫到，不必读句子
+                    value: _cacheSizeMB == null
+                        ? '统计中'
+                        : '${_cacheSizeMB!.toStringAsFixed(1)} MB',
+                    busy: _isCleaning,
+                    onTap: _isCleaning ? null : _cleanCacheOnly,
                   ),
                 ],
               ),
@@ -184,6 +174,112 @@ class _ProfilePageState extends State<ProfilePage> {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 「我的」页底部操作行（页面私有）
+///
+/// 取代原 `SettingTile`，三处刻意的差别：
+/// - **占用体积右置为数值**：可扫读，不必从副标题的句子里找数字；
+/// - **整行可点**：移动端热区更大，不必精准点中尾部的小按钮；
+/// - **副标题只描述「点下去会发生什么」**：说明文案与动作语义对齐。
+///
+/// 只有本页使用，因此留成私有组件 —— 原 `SettingTile` 挂在 `shared/` 里，
+/// 实际调用点也只有这里两处。
+class _ProfileActionRow extends StatelessWidget {
+  const _ProfileActionRow({
+    required this.icon,
+    required this.color,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+    this.value,
+    this.busy = false,
+  });
+
+  final IconData icon;
+  final Color color;
+  final String title;
+  final String subtitle;
+  final VoidCallback? onTap;
+
+  /// 右侧数值（如缓存占用）；为空则只显示箭头
+  final String? value;
+
+  /// 进行中：右侧显示进度环
+  final bool busy;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final textPrimary = isDark
+        ? AppColors.darkTextPrimary
+        : AppColors.lightTextPrimary;
+    final muted = isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted;
+
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        child: Row(
+          children: [
+            Container(
+              width: 38,
+              height: 38,
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.14),
+                borderRadius: BorderRadius.circular(11),
+              ),
+              child: Icon(icon, size: 19, color: color),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    subtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 11.5, color: muted),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 10),
+            if (busy)
+              const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            else ...[
+              if (value != null && value!.isNotEmpty)
+                Text(
+                  value!,
+                  style: const TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.primary,
+                  ),
+                ),
+              const SizedBox(width: 4),
+              Icon(Icons.arrow_forward_ios_rounded, size: 13, color: muted),
+            ],
+          ],
         ),
       ),
     );

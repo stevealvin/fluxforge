@@ -2,88 +2,13 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:fluxforge/app/theme/app_colors.dart';
 
-/// 统一设置/菜单行组件 (SettingTile)
+/// 设置分组的「标题 + 卡片容器」两件套
 ///
-/// 抽取自「我的」页与系统设置页中长期重复手写的高度相似 ListTile 样板：
-/// 统一「圆角图标徽章 + 标题 + 副标题 + 尾部操作区」的现代卡片行样式，
-/// 支持箭头、徽标、开关、下拉等任意尾部插槽。
-class SettingTile extends StatelessWidget {
-  const SettingTile({
-    super.key,
-    required this.icon,
-    required this.title,
-    this.subtitle,
-    this.onTap,
-    this.trailing,
-    this.showArrow = false,
-    this.iconColor,
-    this.iconBackgroundColor,
-    this.padding,
-  });
-
-  /// 左侧图标（Ionicons / Material 图标均可）
-  final IconData icon;
-
-  /// 主标题
-  final String title;
-
-  /// 副标题说明
-  final String? subtitle;
-
-  /// 点击回调（为空则不可点击）
-  final VoidCallback? onTap;
-
-  /// 尾部插槽（开关、下拉、徽标等），优先于 [showArrow] 展示
-  final Widget? trailing;
-
-  /// 是否在尾部展示右向箭头
-  final bool showArrow;
-
-  /// 图标主色（缺省使用品牌极光幽绿）
-  final Color? iconColor;
-
-  /// 图标徽章底色（缺省使用品牌色 12% 透明底）
-  final Color? iconBackgroundColor;
-
-  /// 内边距自定义
-  final EdgeInsetsGeometry? padding;
-
-  @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final effectiveIconColor = iconColor ?? AppColors.primary;
-
-    return ListTile(
-      contentPadding: padding,
-      leading: Container(
-        padding: const EdgeInsets.all(8),
-        decoration: BoxDecoration(
-          color: iconBackgroundColor ?? effectiveIconColor.withValues(alpha: 0.12),
-          borderRadius: BorderRadius.circular(10),
-        ),
-        child: Icon(icon, color: effectiveIconColor, size: 18),
-      ),
-      title: Text(
-        title,
-        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-      ),
-      subtitle: subtitle == null
-          ? null
-          : Text(
-              subtitle!,
-              style: TextStyle(
-                fontSize: 11,
-                color: isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted,
-              ),
-            ),
-      trailing: trailing ??
-          (showArrow
-              ? const Icon(Icons.arrow_forward_ios_rounded, size: 14, color: Colors.grey)
-              : null),
-      onTap: onTap,
-    );
-  }
-}
+/// 原 `SettingTile`（图标徽章 + 标题 + 副标题 + 尾部插槽）已删除：全仓只有
+/// 「我的」页两处调用，行样式改由该页私有的 `_ProfileActionRow` 承担
+/// （占用体积改为右侧数值、整行可点）。只有一处使用的东西不该挂在 `shared/` 里。
+///
+/// 这两个分组件保留：它们与具体行样式解耦，任何页面都能往里塞自己的行。
 
 /// 统一设置分组标题 (SettingSectionTitle)
 class SettingSectionTitle extends StatelessWidget {
@@ -113,11 +38,7 @@ class SettingSectionTitle extends StatelessWidget {
 ///
 /// 内部自动为相邻子项插入 56px 缩进的分隔线，避免各页面重复手写 Divider。
 class SettingSection extends StatelessWidget {
-  const SettingSection({
-    super.key,
-    required this.children,
-    this.margin,
-  });
+  const SettingSection({super.key, required this.children, this.margin});
 
   final List<Widget> children;
   final EdgeInsetsGeometry? margin;
@@ -141,7 +62,9 @@ class SettingSection extends StatelessWidget {
         color: isDark ? AppColors.darkCard : AppColors.lightCard,
         borderRadius: BorderRadius.circular(18),
         border: Border.all(
-          color: isDark ? Colors.white.withValues(alpha: 0.04) : AppColors.lightBorder,
+          color: isDark
+              ? Colors.white.withValues(alpha: 0.04)
+              : AppColors.lightBorder,
           width: 0.8,
         ),
         boxShadow: [
