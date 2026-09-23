@@ -153,6 +153,18 @@ class _ComicDetailViewState extends State<ComicDetailView> {
   Future<List<String>> _resolveOfflineImages(List<String> urls) =>
       resolveComicOfflineImages(urls, bookId: _mediaId);
 
+  /// 图集网格容器的高度：约两行（含行间距），按屏宽换算
+  ///
+  /// 网格是 3 列、单格 4:3（`childAspectRatio: 0.75`），行高由**列宽**决定 ——
+  /// 写死高度会在窄屏多露一行、宽屏少露一行，故按可用宽度反算。
+  double _imageGridHeight(BuildContext context) {
+    const horizontalPadding = 32.0; // 区块左右各 16
+    const spacing = 8.0;
+    final cellWidth =
+        (MediaQuery.sizeOf(context).width - horizontalPadding - spacing * 2) / 3;
+    return cellWidth / 0.75 * 2 + spacing;
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -407,48 +419,56 @@ class _ComicDetailViewState extends State<ComicDetailView> {
 
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16.0),
-            child: GridView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              padding: EdgeInsets.zero,
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 3,
-                crossAxisSpacing: 8,
-                mainAxisSpacing: 8,
-                childAspectRatio: 0.75,
-              ),
-              itemCount: widget.data.imageList.length.clamp(0, 9),
-              itemBuilder: (context, index) {
-                final imgUrl = widget.data.imageList[index];
-                return GestureDetector(
-                  onTap: () => _openReader(initialIndex: index),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: Container(
-                      // 图集每格只用底色与圆角区分，不再描边（去掉整片网格的细线噪点）
-                      decoration: BoxDecoration(
-                        color: isDark
-                            ? AppColors.darkCard
-                            : AppColors.lightSurface,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: AppImage(
-                        imageUrl: imgUrl,
-                        headers: widget.data.customHeaders,
-                        // 3 列网格：单格约 120dp → 3x 屏取 360，避免按原图解码
-                        cacheWidth: 360,
-                        errorWidget: Icon(
-                          Ionicons.imageOutline,
-                          size: 20,
+            child: SizedBox(
+              // 固定高度 + 独立滚动：图集动辄几十张，全量铺开会把详情页撑到极长；
+              // 给约两行的窗口让它自己滑 —— 既能看到全部，又不破坏页面节奏。
+              // （窗口更高时手指在内层滑到底不会带动外层，这是嵌套同向滚动的固有
+              // 取舍；此处图集本身是"看小图挑一张"，局部滚动更顺手。）
+              height: _imageGridHeight(context),
+              child: GridView.builder(
+                // 有确定高度后 shrinkWrap 只会让布局多算一遍
+                physics: const ClampingScrollPhysics(),
+                padding: EdgeInsets.zero,
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 3,
+                  crossAxisSpacing: 8,
+                  mainAxisSpacing: 8,
+                  childAspectRatio: 0.75,
+                ),
+                // 不再截断到 9 张：标题写着「共 N 张」，却只画 9 个是自相矛盾
+                itemCount: widget.data.imageList.length,
+                itemBuilder: (context, index) {
+                  final imgUrl = widget.data.imageList[index];
+                  return GestureDetector(
+                    onTap: () => _openReader(initialIndex: index),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: Container(
+                        // 图集每格只用底色与圆角区分，不再描边（去掉整片网格的细线噪点）
+                        decoration: BoxDecoration(
                           color: isDark
-                              ? AppColors.darkTextTertiary
-                              : AppColors.lightTextTertiary,
+                              ? AppColors.darkCard
+                              : AppColors.lightSurface,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: AppImage(
+                          imageUrl: imgUrl,
+                          headers: widget.data.customHeaders,
+                          // 3 列网格：单格约 120dp → 3x 屏取 360，避免按原图解码
+                          cacheWidth: 360,
+                          errorWidget: Icon(
+                            Ionicons.imageOutline,
+                            size: 20,
+                            color: isDark
+                                ? AppColors.darkTextTertiary
+                                : AppColors.lightTextTertiary,
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                );
-              },
+                  );
+                },
+              ),
             ),
           ),
           const SizedBox(height: 12),
