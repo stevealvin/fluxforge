@@ -7,15 +7,18 @@ import 'package:fluxforge/core/utils/app_utils.dart';
 import 'package:fluxforge/domain/rule/rule.dart';
 import 'package:fluxforge/app/di/di.dart';
 import 'package:fluxforge/data/download/download_service.dart';
-import 'package:fluxforge/data/library/favorite_service.dart';
 import 'package:fluxforge/data/library/play_history_service.dart';
 import 'package:fluxforge/shared/widgets/app_card.dart';
 
 /// 「我的」页个人资产卡片网格 (ProfileAssetGrid)
 ///
-/// 以 2×2 立式资产卡替代旧版「横排四个纯数字」的指标条：
 /// 每张卡同时承载图标语义、主数值、标签与动态副信息（如「3 部有新更新」），
 /// 各自独立监听对应服务，避免深层嵌套 ValueListenableBuilder。
+///
+/// **收藏卡已移除**：收藏入口迁到首页顶栏（发现页 AppBar），
+/// 「有新更新」的信号也随之带到那个入口上 —— 同一份数据不设两个入口。
+/// 卡片由 2×2 变三张后，让「我的规则」独占一行：与其凑一个空位，
+/// 不如把规则状态（启用数 / 失效数）说清楚。
 class ProfileAssetGrid extends StatelessWidget {
   const ProfileAssetGrid({super.key, this.onSwitchToRulesTab});
 
@@ -29,50 +32,19 @@ class ProfileAssetGrid extends StatelessWidget {
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Expanded(child: _FavoriteAssetCard()),
-            const SizedBox(width: 10),
             const Expanded(child: _PlayHistoryAssetCard()),
-          ],
-        ),
-        const SizedBox(height: 10),
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(child: _RuleAssetCard(onTap: onSwitchToRulesTab)),
             const SizedBox(width: 10),
             const Expanded(child: _DownloadAssetCard()),
           ],
         ),
+        const SizedBox(height: 10),
+        _RuleAssetCard(onTap: onSwitchToRulesTab),
       ],
     );
   }
 }
 
-/// 1. 追更收藏资产卡
-class _FavoriteAssetCard extends StatelessWidget {
-  const _FavoriteAssetCard();
-
-  @override
-  Widget build(BuildContext context) {
-    return ValueListenableBuilder<List<FavoriteItem>>(
-      valueListenable: favoriteService.favoritesNotifier,
-      builder: (context, favorites, _) {
-        final updateCount = favorites.where((f) => f.hasUpdate).length;
-        return _AssetTile(
-          icon: Ionicons.bookmarkOutline,
-          iconColor: AppColors.primary,
-          value: '${favorites.length} 部',
-          label: '追更收藏',
-          subtitle: updateCount > 0 ? '$updateCount 部有新更新' : '暂无新更新',
-          showBadge: updateCount > 0,
-          onTap: () => context.pushFavorites(),
-        );
-      },
-    );
-  }
-}
-
-/// 2. 观看/阅读历史资产卡
+/// 观看/阅读历史资产卡
 class _PlayHistoryAssetCard extends StatelessWidget {
   const _PlayHistoryAssetCard();
 
@@ -97,7 +69,7 @@ class _PlayHistoryAssetCard extends StatelessWidget {
   }
 }
 
-/// 3. 我的规则资产卡（点击直达规则 Tab）
+/// 我的规则资产卡（点击直达规则 Tab）
 class _RuleAssetCard extends StatelessWidget {
   const _RuleAssetCard({this.onTap});
 
@@ -112,8 +84,9 @@ class _RuleAssetCard extends StatelessWidget {
           valueListenable: ruleService.latenciesNotifier,
           builder: (context, latencies, _) {
             final enabledCount = rules.where((r) => r.enabled).length;
-            final failedCount =
-                latencies.values.where((ms) => ms < 0 || ms > 2500).length;
+            final failedCount = latencies.values
+                .where((ms) => ms < 0 || ms > 2500)
+                .length;
 
             final String subtitle;
             if (latencies.isEmpty) {
@@ -140,7 +113,7 @@ class _RuleAssetCard extends StatelessWidget {
   }
 }
 
-//// 4. 离线下载管理资产卡
+/// 离线下载管理资产卡
 ///
 /// 取代原先的「搜索足迹」卡：搜索足迹已完整收纳在历史中心页内，
 /// 在此重复出现只会造成同一份数据两个入口；而离线下载是「我的」页缺失的资产维度，
@@ -154,9 +127,11 @@ class _DownloadAssetCard extends StatelessWidget {
       valueListenable: downloadService.tasksNotifier,
       builder: (context, tasks, _) {
         final runningCount = tasks
-            .where((t) =>
-                t.status == DownloadStatus.running ||
-                t.status == DownloadStatus.pending)
+            .where(
+              (t) =>
+                  t.status == DownloadStatus.running ||
+                  t.status == DownloadStatus.pending,
+            )
             .length;
         final failedCount = tasks
             .where((t) => t.status == DownloadStatus.failed)
@@ -243,7 +218,9 @@ class _AssetTile extends StatelessWidget {
                         style: TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.bold,
-                          color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
+                          color: isDark
+                              ? AppColors.darkTextPrimary
+                              : AppColors.lightTextPrimary,
                         ),
                       ),
                     ),
@@ -267,7 +244,9 @@ class _AssetTile extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     fontSize: 11,
-                    color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
+                    color: isDark
+                        ? AppColors.darkTextSecondary
+                        : AppColors.lightTextSecondary,
                   ),
                 ),
                 const SizedBox(height: 2),
@@ -277,7 +256,9 @@ class _AssetTile extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     fontSize: 10,
-                    color: isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted,
+                    color: isDark
+                        ? AppColors.darkTextMuted
+                        : AppColors.lightTextMuted,
                   ),
                 ),
               ],

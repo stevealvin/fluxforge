@@ -3,7 +3,10 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fluxforge/app/router/app_navigator.dart';
 import 'package:ionicons/ionicons.dart';
 
+import 'package:flutter/services.dart';
+
 import 'package:fluxforge/app/theme/app_colors.dart';
+import 'package:fluxforge/features/media/shared/media_favorite_actions.dart';
 import 'package:fluxforge/domain/rule/rule.dart';
 import 'package:fluxforge/app/di/di.dart';
 import 'package:fluxforge/core/sandbox/rule_engine.dart';
@@ -18,7 +21,8 @@ class DiscoverPage extends StatefulWidget {
   State<DiscoverPage> createState() => _DiscoverPageState();
 }
 
-class _DiscoverPageState extends State<DiscoverPage> with AutomaticKeepAliveClientMixin {
+class _DiscoverPageState extends State<DiscoverPage>
+    with AutomaticKeepAliveClientMixin {
   Rule? _selectedRule;
   List<dynamic> _discoveryData = [];
   bool _loading = false;
@@ -70,7 +74,9 @@ class _DiscoverPageState extends State<DiscoverPage> with AutomaticKeepAliveClie
       final result = await RuleEngine.discovery(rule);
       final List parsed = result is List
           ? result
-          : (result is Map && result['items'] is List ? result['items'] as List : const []);
+          : (result is Map && result['items'] is List
+                ? result['items'] as List
+                : const []);
 
       // 写入内存缓存
       _discoveryCache[cacheKey] = parsed;
@@ -121,17 +127,23 @@ class _DiscoverPageState extends State<DiscoverPage> with AutomaticKeepAliveClie
             labelStyle: TextStyle(
               color: isSelected
                   ? AppColors.primary
-                  : (isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary),
+                  : (isDark
+                        ? AppColors.darkTextSecondary
+                        : AppColors.lightTextSecondary),
               fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
               fontSize: 13,
             ),
             side: BorderSide(
               color: isSelected
                   ? AppColors.primary
-                  : (isDark ? AppColors.darkCardBorder.withValues(alpha: 0.5) : AppColors.lightCardBorder),
+                  : (isDark
+                        ? AppColors.darkCardBorder.withValues(alpha: 0.5)
+                        : AppColors.lightCardBorder),
               width: isSelected ? 1.0 : 0.8,
             ),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
             onSelected: (selected) {
               if (selected && _selectedRule?.id != rule.id) {
                 setState(() {
@@ -161,7 +173,11 @@ class _DiscoverPageState extends State<DiscoverPage> with AutomaticKeepAliveClie
                 color: AppColors.primary.withValues(alpha: 0.12),
                 shape: BoxShape.circle,
               ),
-              child: const Icon(Ionicons.compassOutline, size: 36, color: AppColors.primary),
+              child: const Icon(
+                Ionicons.compassOutline,
+                size: 36,
+                color: AppColors.primary,
+              ),
             ),
             const SizedBox(height: 16),
             const Text(
@@ -179,8 +195,13 @@ class _DiscoverPageState extends State<DiscoverPage> with AutomaticKeepAliveClie
               style: FilledButton.styleFrom(
                 backgroundColor: AppColors.primary,
                 foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 12,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
               ),
               onPressed: () => context.pushMarket(),
               icon: const Icon(Ionicons.storefrontOutline, size: 16),
@@ -192,9 +213,69 @@ class _DiscoverPageState extends State<DiscoverPage> with AutomaticKeepAliveClie
     );
   }
 
+  /// 首页条目长按：直接收藏 / 取消收藏（不必先解析详情）
+  ///
+  /// 键与类型都走 [MediaFavoriteActions] 里与详情页共用的口径，
+  /// 因此「详情页收藏了、首页也显示已收藏」，不会出现两套状态。
+  Future<void> _toggleFavorite(
+    BuildContext context,
+    Map item,
+    Rule rule,
+  ) async {
+    HapticFeedback.mediumImpact();
+    final message = await MediaFavoriteActions.toggleFromFeed(
+      title: item['title']?.toString() ?? '',
+      url: item['url']?.toString() ?? '',
+      cover: item['cover']?.toString() ?? '',
+      rule: rule,
+    );
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        duration: const Duration(milliseconds: 1600),
+      ),
+    );
+  }
+
+  /// 已收藏角标（左上角）；未收藏时占位为空盒，不参与命中测试
+  Widget _favoriteBadge({
+    required String title,
+    required String url,
+    required Rule rule,
+  }) {
+    return ValueListenableBuilder(
+      valueListenable: favoriteService.favoritesNotifier,
+      builder: (context, _, _) =>
+          MediaFavoriteActions.isFeedFavorited(
+            title: title,
+            url: url,
+            rule: rule,
+          )
+          ? Container(
+              padding: const EdgeInsets.all(4),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.55),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(
+                Ionicons.heart,
+                size: 13,
+                color: AppColors.primaryLight,
+              ),
+            )
+          : const SizedBox.shrink(),
+    );
+  }
+
   bool _isVideoRule(Rule rule) {
     final t = rule.type.toLowerCase().trim();
-    return t == 'video' || t == 'tv' || t == 'movie' || t == 'anime' || t == 'short' || t.isEmpty;
+    return t == 'video' ||
+        t == 'tv' ||
+        t == 'movie' ||
+        t == 'anime' ||
+        t == 'short' ||
+        t.isEmpty;
   }
 
   /// 构建单个媒体海报卡片
@@ -210,13 +291,17 @@ class _DiscoverPageState extends State<DiscoverPage> with AutomaticKeepAliveClie
       padding: EdgeInsets.zero,
       borderRadius: 12,
       onTap: () {
-        context.pushRuleDetail(RuleDetailArgs(
-          url: url,
-          title: title,
-          cover: cover,
-          rule: currentRule,
-        ));
+        context.pushRuleDetail(
+          RuleDetailArgs(
+            url: url,
+            title: title,
+            cover: cover,
+            rule: currentRule,
+          ),
+        );
       },
+      // 长按直接收藏：首页是「逛」的场景，看中即可收下，不必先进详情页
+      onLongPress: () => _toggleFavorite(context, item, currentRule),
       child: isVideo
           ? Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -225,7 +310,9 @@ class _DiscoverPageState extends State<DiscoverPage> with AutomaticKeepAliveClie
                 AspectRatio(
                   aspectRatio: 16 / 9,
                   child: ClipRRect(
-                    borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+                    borderRadius: const BorderRadius.vertical(
+                      top: Radius.circular(12),
+                    ),
                     child: Stack(
                       fit: StackFit.expand,
                       children: [
@@ -234,8 +321,7 @@ class _DiscoverPageState extends State<DiscoverPage> with AutomaticKeepAliveClie
                           // 与详情页同口径：Referer 取规则 baseUrl；发现页另带固定 UA
                           headers: {
                             'referer': currentRule.baseUrl,
-                            'user-agent':
-                                'Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1',
+                            'user-agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1',
                           },
                         ),
                         Positioned(
@@ -261,7 +347,10 @@ class _DiscoverPageState extends State<DiscoverPage> with AutomaticKeepAliveClie
                             right: 6,
                             bottom: 5,
                             child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 5,
+                                vertical: 1.5,
+                              ),
                               decoration: BoxDecoration(
                                 color: Colors.black.withValues(alpha: 0.75),
                                 borderRadius: BorderRadius.circular(4),
@@ -276,6 +365,16 @@ class _DiscoverPageState extends State<DiscoverPage> with AutomaticKeepAliveClie
                               ),
                             ),
                           ),
+                        // 已收藏角标放左上角，与右下角的集数徽标互不遮挡
+                        Positioned(
+                          left: 6,
+                          top: 6,
+                          child: _favoriteBadge(
+                            title: title,
+                            url: url,
+                            rule: currentRule,
+                          ),
+                        ),
                       ],
                     ),
                   ),
@@ -326,8 +425,7 @@ class _DiscoverPageState extends State<DiscoverPage> with AutomaticKeepAliveClie
                     // 与详情页同口径：Referer 取规则 baseUrl；发现页另带固定 UA
                     headers: {
                       'referer': currentRule.baseUrl,
-                      'user-agent':
-                          'Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1',
+                      'user-agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1',
                     },
                   ),
                 ),
@@ -352,7 +450,10 @@ class _DiscoverPageState extends State<DiscoverPage> with AutomaticKeepAliveClie
                     top: 8,
                     right: 8,
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
                       decoration: BoxDecoration(
                         color: AppColors.primary.withValues(alpha: 0.9),
                         borderRadius: BorderRadius.circular(4),
@@ -367,6 +468,16 @@ class _DiscoverPageState extends State<DiscoverPage> with AutomaticKeepAliveClie
                       ),
                     ),
                   ),
+                // 已收藏角标放左上角，与右上角徽标互不遮挡
+                Positioned(
+                  left: 8,
+                  top: 8,
+                  child: _favoriteBadge(
+                    title: title,
+                    url: url,
+                    rule: currentRule,
+                  ),
+                ),
                 Positioned(
                   left: 8,
                   right: 8,
@@ -411,7 +522,8 @@ class _DiscoverPageState extends State<DiscoverPage> with AutomaticKeepAliveClie
 
   /// 构建 Sliver 内容区域 (自适应分组与扁平列表)
   List<Widget> _buildSliverContent(List<dynamic> data, Rule currentRule) {
-    final isGrouped = data.isNotEmpty &&
+    final isGrouped =
+        data.isNotEmpty &&
         data.first is Map &&
         data.first.containsKey('items') &&
         data.first['items'] is List;
@@ -420,47 +532,49 @@ class _DiscoverPageState extends State<DiscoverPage> with AutomaticKeepAliveClie
     if (isGrouped) {
       return [
         SliverList(
-          delegate: SliverChildBuilderDelegate(
-            (context, index) {
-              final section = data[index];
-              if (section is Map && section.containsKey('items') && section['items'] is List) {
-                final title = section['title']?.toString() ?? '推荐专区';
-                final items = section['items'] as List;
+          delegate: SliverChildBuilderDelegate((context, index) {
+            final section = data[index];
+            if (section is Map &&
+                section.containsKey('items') &&
+                section['items'] is List) {
+              final title = section['title']?.toString() ?? '推荐专区';
+              final items = section['items'] as List;
 
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-                        child: Row(
-                          children: [
-                            Container(
-                              width: 4,
-                              height: 16,
-                              decoration: BoxDecoration(
-                                color: AppColors.primary,
-                                borderRadius: BorderRadius.circular(2),
-                              ),
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 4,
+                            height: 16,
+                            decoration: BoxDecoration(
+                              color: AppColors.primary,
+                              borderRadius: BorderRadius.circular(2),
                             ),
-                            const SizedBox(width: 8),
-                            Text(
-                              title,
-                              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            title,
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
                             ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
-                      _buildCategoryGrid(items, currentRule),
-                    ],
-                  ),
-                );
-              }
-              return const SizedBox.shrink();
-            },
-            childCount: data.length,
-          ),
+                    ),
+                    _buildCategoryGrid(items, currentRule),
+                  ],
+                ),
+              );
+            }
+            return const SizedBox.shrink();
+          }, childCount: data.length),
         ),
       ];
     } else {
@@ -474,14 +588,11 @@ class _DiscoverPageState extends State<DiscoverPage> with AutomaticKeepAliveClie
               crossAxisSpacing: 12,
               mainAxisSpacing: 12,
             ),
-            delegate: SliverChildBuilderDelegate(
-              (context, index) {
-                final item = data[index];
-                if (item is! Map) return const SizedBox.shrink();
-                return _buildMediaCard(item, currentRule);
-              },
-              childCount: data.length,
-            ),
+            delegate: SliverChildBuilderDelegate((context, index) {
+              final item = data[index];
+              if (item is! Map) return const SizedBox.shrink();
+              return _buildMediaCard(item, currentRule);
+            }, childCount: data.length),
           ),
         ),
       ];
@@ -503,7 +614,8 @@ class _DiscoverPageState extends State<DiscoverPage> with AutomaticKeepAliveClie
                 'assets/icon/icon.png',
                 width: 32,
                 height: 32,
-                errorBuilder: (_, _, _) => const Icon(Ionicons.flashOutline, color: AppColors.primary),
+                errorBuilder: (_, _, _) =>
+                    const Icon(Ionicons.flashOutline, color: AppColors.primary),
               ),
             ),
             const SizedBox(width: 8),
@@ -514,6 +626,37 @@ class _DiscoverPageState extends State<DiscoverPage> with AutomaticKeepAliveClie
           ],
         ),
         actions: [
+          // 收藏入口（原「我的」页资产卡迁移至此）：首页是「逛」的主场，收藏就近可达。
+          // 顺带把原卡上的「有新更新」信号带过来 —— 信息跟着入口走，而不是消失。
+          ValueListenableBuilder(
+            valueListenable: favoriteService.favoritesNotifier,
+            builder: (context, favorites, _) {
+              final updates = favorites.where((f) => f.hasUpdate).length;
+              return IconButton(
+                tooltip: '收藏',
+                onPressed: () => context.pushFavorites(),
+                icon: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    const Icon(Ionicons.bookmarkOutline),
+                    if (updates > 0)
+                      Positioned(
+                        right: -1,
+                        top: -1,
+                        child: Container(
+                          width: 8,
+                          height: 8,
+                          decoration: const BoxDecoration(
+                            color: AppColors.primary,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              );
+            },
+          ),
           IconButton(
             tooltip: '搜索',
             icon: const Icon(Ionicons.searchOutline),
@@ -535,7 +678,8 @@ class _DiscoverPageState extends State<DiscoverPage> with AutomaticKeepAliveClie
             return _buildEmptyRuleState(context, isDark);
           }
 
-          if (_selectedRule == null || !enabledRules.any((r) => r.id == _selectedRule!.id)) {
+          if (_selectedRule == null ||
+              !enabledRules.any((r) => r.id == _selectedRule!.id)) {
             _selectedRule = enabledRules.first;
             _loadDiscovery(_selectedRule!);
           }
@@ -571,12 +715,21 @@ class _DiscoverPageState extends State<DiscoverPage> with AutomaticKeepAliveClie
                               child: Column(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  const Icon(Icons.error_outline_rounded, size: 40, color: Colors.orange),
+                                  const Icon(
+                                    Icons.error_outline_rounded,
+                                    size: 40,
+                                    color: Colors.orange,
+                                  ),
                                   const SizedBox(height: 12),
-                                  Text(_error!, textAlign: TextAlign.center, style: const TextStyle(color: Colors.grey)),
+                                  Text(
+                                    _error!,
+                                    textAlign: TextAlign.center,
+                                    style: const TextStyle(color: Colors.grey),
+                                  ),
                                   const SizedBox(height: 16),
                                   FilledButton.tonal(
-                                    onPressed: () => _loadDiscovery(_selectedRule!),
+                                    onPressed: () =>
+                                        _loadDiscovery(_selectedRule!),
                                     child: const Text('重试'),
                                   ),
                                 ],
@@ -587,16 +740,17 @@ class _DiscoverPageState extends State<DiscoverPage> with AutomaticKeepAliveClie
                       else if (_discoveryData.isEmpty)
                         const SliverFillRemaining(
                           child: Center(
-                            child: Text('当前规则暂无推荐内容', style: TextStyle(color: Colors.grey)),
+                            child: Text(
+                              '当前规则暂无推荐内容',
+                              style: TextStyle(color: Colors.grey),
+                            ),
                           ),
                         )
                       else
                         ..._buildSliverContent(_discoveryData, _selectedRule!),
 
                       // 底部避让毛玻璃导航栏
-                      const SliverToBoxAdapter(
-                        child: SizedBox(height: 96),
-                      ),
+                      const SliverToBoxAdapter(child: SizedBox(height: 96)),
                     ],
                   ),
                 ),
