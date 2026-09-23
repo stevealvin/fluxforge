@@ -30,10 +30,12 @@ import 'package:fluxforge/features/profile/widgets/profile_hero.dart';
 ///   数据出现两个入口；该卡位改由「下载管理」承载（含任务数与进行中 / 失败状态）；
 /// - 因此设置列表中原有的「离线下载」项同步移除，避免与资产卡再次重复。
 class ProfilePage extends StatefulWidget {
-  const ProfilePage({super.key, this.onSwitchTab});
+  const ProfilePage({super.key, this.onSwitchToRules});
 
-  /// 切换底部导航 Tab 的回调（供「我的规则」资产卡直达规则页）
-  final void Function(int index)? onSwitchTab;
+  /// 跳到规则 Tab 的回调（供「我的规则」资产卡直达规则页）
+  ///
+  /// 语义化而非传下标：底部栏一旦插入 / 重排 Tab，传数字的写法会静默跳错页。
+  final VoidCallback? onSwitchToRules;
 
   @override
   State<ProfilePage> createState() => _ProfilePageState();
@@ -128,23 +130,21 @@ class _ProfilePageState extends State<ProfilePage> {
               const SizedBox(height: 18),
 
               // ③ 我的资产（2×2 资产卡网格）
-              ProfileAssetGrid(
-                onSwitchToRulesTab: () => widget.onSwitchTab?.call(1),
-              ),
+              ProfileAssetGrid(onSwitchToRulesTab: widget.onSwitchToRules),
               const SizedBox(height: 22),
 
               // ④ 数据与同步
               const SettingSectionTitle(title: '数据与同步'),
               SettingSection(
                 children: [
-                  _ProfileActionRow(
+                  SettingRow(
                     icon: Ionicons.storefrontOutline,
                     color: AppColors.accentTeal,
                     title: '规则订阅市场',
                     subtitle: '探索并一键订阅最新聚合跨媒体解析源',
                     onTap: () => context.pushMarket(),
                   ),
-                  _ProfileActionRow(
+                  SettingRow(
                     icon: Ionicons.cloudOutline,
                     color: AppColors.accentBlue,
                     title: '临时与网络缓存',
@@ -180,108 +180,4 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 }
 
-/// 「我的」页底部操作行（页面私有）
-///
-/// 取代原 `SettingTile`，三处刻意的差别：
-/// - **占用体积右置为数值**：可扫读，不必从副标题的句子里找数字；
-/// - **整行可点**：移动端热区更大，不必精准点中尾部的小按钮；
-/// - **副标题只描述「点下去会发生什么」**：说明文案与动作语义对齐。
-///
-/// 只有本页使用，因此留成私有组件 —— 原 `SettingTile` 挂在 `shared/` 里，
-/// 实际调用点也只有这里两处。
-class _ProfileActionRow extends StatelessWidget {
-  const _ProfileActionRow({
-    required this.icon,
-    required this.color,
-    required this.title,
-    required this.subtitle,
-    required this.onTap,
-    this.value,
-    this.busy = false,
-  });
 
-  final IconData icon;
-  final Color color;
-  final String title;
-  final String subtitle;
-  final VoidCallback? onTap;
-
-  /// 右侧数值（如缓存占用）；为空则只显示箭头
-  final String? value;
-
-  /// 进行中：右侧显示进度环
-  final bool busy;
-
-  @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final textPrimary = isDark
-        ? AppColors.darkTextPrimary
-        : AppColors.lightTextPrimary;
-    final muted = isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted;
-
-    return InkWell(
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        child: Row(
-          children: [
-            Container(
-              width: 38,
-              height: 38,
-              decoration: BoxDecoration(
-                color: color.withValues(alpha: 0.14),
-                borderRadius: BorderRadius.circular(11),
-              ),
-              child: Icon(icon, size: 19, color: color),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    title,
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: textPrimary,
-                    ),
-                  ),
-                  const SizedBox(height: 3),
-                  Text(
-                    subtitle,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 11.5, color: muted),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 10),
-            if (busy)
-              const SizedBox(
-                width: 16,
-                height: 16,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
-            else ...[
-              if (value != null && value!.isNotEmpty)
-                Text(
-                  value!,
-                  style: const TextStyle(
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.primary,
-                  ),
-                ),
-              const SizedBox(width: 4),
-              Icon(Icons.arrow_forward_ios_rounded, size: 13, color: muted),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-}

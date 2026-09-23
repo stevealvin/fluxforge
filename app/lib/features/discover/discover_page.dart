@@ -626,37 +626,8 @@ class _DiscoverPageState extends State<DiscoverPage>
           ],
         ),
         actions: [
-          // 收藏入口（原「我的」页资产卡迁移至此）：首页是「逛」的主场，收藏就近可达。
-          // 顺带把原卡上的「有新更新」信号带过来 —— 信息跟着入口走，而不是消失。
-          ValueListenableBuilder(
-            valueListenable: favoriteService.favoritesNotifier,
-            builder: (context, favorites, _) {
-              final updates = favorites.where((f) => f.hasUpdate).length;
-              return IconButton(
-                tooltip: '收藏',
-                onPressed: () => context.pushFavorites(),
-                icon: Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    const Icon(Ionicons.bookmarkOutline),
-                    if (updates > 0)
-                      Positioned(
-                        right: -1,
-                        top: -1,
-                        child: Container(
-                          width: 8,
-                          height: 8,
-                          decoration: const BoxDecoration(
-                            color: AppColors.primary,
-                            shape: BoxShape.circle,
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-              );
-            },
-          ),
+          // 收藏入口已移至底部导航栏的「收藏」Tab：同一份数据不设两个入口，
+          // 「有新更新」的红点也随入口一起迁到那个 Tab 上。
           IconButton(
             tooltip: '搜索',
             icon: const Icon(Ionicons.searchOutline),

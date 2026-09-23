@@ -4,10 +4,30 @@ import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:ionicons/ionicons.dart';
 
 import 'package:fluxforge/app/theme/app_colors.dart';
+import 'package:fluxforge/app/di/di.dart';
+import 'package:fluxforge/data/library/favorite_service.dart';
 import 'package:fluxforge/features/discover/discover_page.dart';
+import 'package:fluxforge/features/library/favorites/favorites_page.dart';
 import 'package:fluxforge/features/profile/profile_page.dart';
 import 'package:fluxforge/features/rules/pages/rules_page.dart';
 import 'package:fluxforge/features/sites/sites_page.dart';
+
+/// 底部导航各 Tab 的下标
+///
+/// 抽成常量是因为该下标会被跨组件引用（「我的」页资产卡的「我的规则」要跳到规则 Tab），
+/// 而写死数字时**在中间插入一个 Tab 就会静默跳错页** —— 本次正是在「发现」之后插入
+/// 「收藏」，规则从 1 变成 2，编译器对此不会有任何提示。
+class _ShellTab {
+  const _ShellTab._();
+
+  /// 顺序即 [PageView] 与 `NavigationBar.destinations` 的下标顺序：
+  /// 发现 0 / 收藏 1 / 规则 2 / 站点 3 / 我的 4
+  ///
+  /// 只把**被跨组件引用**的两个留成常量：其余下标没有外部引用方，摆在列表顺序里
+  /// 即可 —— 多写只会得到无人使用的死常量。
+  static const int discover = 0;
+  static const int rules = 2;
+}
 
 /// FluxForge 应用顶层外壳宿主 (ShellPage)
 /// 承载全局沉浸式微光氛围底色、三维页面切换以及 Apple 级毛玻璃底部导航栏
@@ -17,8 +37,13 @@ class ShellPage extends HookWidget {
   @override
   Widget build(BuildContext context) {
     final pageController = usePageController();
-    final selectedIndex = useState(0);
+    final selectedIndex = useState(_ShellTab.discover);
     final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    void goTo(int index) {
+      selectedIndex.value = index;
+      pageController.jumpToPage(index);
+    }
 
     return PopScope(
       canPop: true,
@@ -48,7 +73,7 @@ class ShellPage extends HookWidget {
                 ),
               ),
             ),
-            // 主标签页面视图 (精简收敛为三大核心场景: 发现 / 规则 / 我的)
+            // 主标签页面视图 (发现 / 收藏 / 规则 / 站点 / 我的)
             PageView(
               physics: const NeverScrollableScrollPhysics(),
               controller: pageController,
@@ -57,15 +82,11 @@ class ShellPage extends HookWidget {
               },
               children: [
                 const DiscoverPage(),
+                const FavoritesPage(),
                 const RulesPage(),
                 const SitesPage(),
                 // 「我的」页需注入切页回调，以支持资产卡「我的规则」直达规则 Tab
-                ProfilePage(
-                  onSwitchTab: (index) {
-                    selectedIndex.value = index;
-                    pageController.jumpToPage(index);
-                  },
-                ),
+                ProfilePage(onSwitchToRules: () => goTo(_ShellTab.rules)),
               ],
             ),
           ],
@@ -86,28 +107,30 @@ class ShellPage extends HookWidget {
                 surfaceTintColor: Colors.transparent,
                 elevation: 0,
                 selectedIndex: selectedIndex.value,
-                onDestinationSelected: (value) {
-                  selectedIndex.value = value;
-                  pageController.jumpToPage(value);
-                },
+                onDestinationSelected: goTo,
                 animationDuration: const Duration(milliseconds: 300),
-                destinations: const [
-                  NavigationDestination(
+                destinations: [
+                  const NavigationDestination(
                     icon: Icon(Ionicons.compassOutline, size: 22),
                     selectedIcon: Icon(Ionicons.compassOutline, size: 24, color: AppColors.primary),
                     label: '发现',
                   ),
                   NavigationDestination(
+                    icon: _favoriteTabIcon(size: 22),
+                    selectedIcon: _favoriteTabIcon(size: 24),
+                    label: '收藏',
+                  ),
+                  const NavigationDestination(
                     icon: Icon(Ionicons.codeSlashOutline, size: 22),
                     selectedIcon: Icon(Ionicons.codeSlashOutline, size: 24, color: AppColors.primary),
                     label: '规则',
                   ),
-                  NavigationDestination(
+                  const NavigationDestination(
                     icon: Icon(Ionicons.globeOutline, size: 22),
                     selectedIcon: Icon(Ionicons.globeOutline, size: 24, color: AppColors.primary),
                     label: '站点',
                   ),
-                  NavigationDestination(
+                  const NavigationDestination(
                     icon: Icon(Ionicons.personOutline, size: 22),
                     selectedIcon: Icon(Ionicons.personOutline, size: 24, color: AppColors.primary),
                     label: '我的',
@@ -117,8 +140,26 @@ class ShellPage extends HookWidget {
             ),
           ),
         ),
+        ),
       ),
-    ),
-  );
-}
+    );
+  }
+
+  /// 收藏 Tab 图标：有作品更新未读时右上角挂红点
+  ///
+  /// 信号原挂在首页顶栏的收藏入口上 —— 入口迁到底部栏后一并带过来（红点跟着入口走），
+  /// 否则「有更新」这个唯一提示会在迁移途中丢掉。
+  Widget _favoriteTabIcon({required double size}) {
+    return ValueListenableBuilder<List<FavoriteItem>>(
+      valueListenable: favoriteService.favoritesNotifier,
+      builder: (context, favorites, _) {
+        final hasUpdate = favorites.any((f) => f.hasUpdate);
+        return Badge(
+          isLabelVisible: hasUpdate,
+          backgroundColor: AppColors.danger,
+          child: Icon(Ionicons.bookmarkOutline, size: size),
+        );
+      },
+    );
+  }
 }
