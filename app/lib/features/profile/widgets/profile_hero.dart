@@ -62,7 +62,11 @@ class ProfileHero extends StatelessWidget {
                       ],
                     ),
                     child: const Center(
-                      child: Icon(Ionicons.compassOutline, color: Colors.white, size: 28),
+                      child: Icon(
+                        Ionicons.compassOutline,
+                        color: Colors.white,
+                        size: 28,
+                      ),
                     ),
                   ),
                   const SizedBox(width: 14),
@@ -80,7 +84,9 @@ class ProfileHero extends StatelessWidget {
                           style: TextStyle(
                             fontSize: 17,
                             fontWeight: FontWeight.bold,
-                            color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
+                            color: isDark
+                                ? AppColors.darkTextPrimary
+                                : AppColors.lightTextPrimary,
                           ),
                         ),
                         const SizedBox(height: 5),
@@ -102,7 +108,9 @@ class ProfileHero extends StatelessWidget {
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
                                   fontSize: 11,
-                                  color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
+                                  color: isDark
+                                      ? AppColors.darkTextSecondary
+                                      : AppColors.lightTextSecondary,
                                 ),
                               ),
                             ),
@@ -118,7 +126,9 @@ class ProfileHero extends StatelessWidget {
                     icon: Icon(
                       Ionicons.settingsOutline,
                       size: 20,
-                      color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
+                      color: isDark
+                          ? AppColors.darkTextPrimary
+                          : AppColors.lightTextPrimary,
                     ),
                     onPressed: () => context.pushSettings(),
                   ),
@@ -158,21 +168,29 @@ class ProfileHero extends StatelessWidget {
                         padding: const WidgetStatePropertyAll(
                           EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                         ),
-                        backgroundColor: WidgetStateProperty.resolveWith((states) {
+                        backgroundColor: WidgetStateProperty.resolveWith((
+                          states,
+                        ) {
                           if (states.contains(WidgetState.selected)) {
                             return AppColors.primary.withValues(alpha: 0.16);
                           }
                           return Colors.transparent;
                         }),
-                        foregroundColor: WidgetStateProperty.resolveWith((states) {
+                        foregroundColor: WidgetStateProperty.resolveWith((
+                          states,
+                        ) {
                           if (states.contains(WidgetState.selected)) {
                             return AppColors.primary;
                           }
-                          return isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary;
+                          return isDark
+                              ? AppColors.darkTextSecondary
+                              : AppColors.lightTextSecondary;
                         }),
                         side: WidgetStatePropertyAll(
                           BorderSide(
-                            color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
+                            color: isDark
+                                ? AppColors.darkBorder
+                                : AppColors.lightBorder,
                             width: 0.8,
                           ),
                         ),
