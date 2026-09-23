@@ -1,7 +1,6 @@
 // ignore_for_file: depend_on_referenced_packages
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:ionicons/ionicons.dart';
 import 'package:shared_preferences_platform_interface/in_memory_shared_preferences_async.dart';
 import 'package:shared_preferences_platform_interface/shared_preferences_async_platform_interface.dart';
 
@@ -100,9 +99,10 @@ void main() {
     await _pumpPage(tester);
 
     expect(find.text('流光纪元'), findsOneWidget);
-    expect(find.textContaining('NEW · 第 9 章'), findsOneWidget);
+    // 角标只写 NEW：集数交给下方那一行，避免同一信息在封面与文字里各说一遍
+    expect(find.text('NEW'), findsOneWidget);
     expect(find.text('上次看到：第 7 章'), findsOneWidget);
-    expect(find.text('最新更新：第 9 章'), findsOneWidget);
+    expect(find.text('更新至：第 9 章'), findsOneWidget);
   });
 
   testWidgets('移除收藏给出可撤销提示，撤销后条目恢复', (WidgetTester tester) async {
@@ -110,7 +110,8 @@ void main() {
 
     await _pumpPage(tester);
 
-    await tester.tap(find.byIcon(Ionicons.trashOutline));
+    // 书架网格里放不下垃圾桶按钮：移除改成长按卡片
+    await tester.longPress(find.text('流光纪元'));
     await tester.pumpAndSettle();
 
     expect(favoriteService.favorites, isEmpty);
@@ -161,9 +162,15 @@ void main() {
 
     await _pumpPage(tester);
 
-    final updatedY = tester.getTopLeft(find.text('有更新条目')).dy;
-    final normalY = tester.getTopLeft(find.text('普通条目')).dy;
-    expect(updatedY, lessThan(normalY));
+    // 网格里「置顶」= 排在更前的单元格：先比行（dy），同一行再比列（dx）——
+    // 只有两个条目时它们必然并排，dy 相同，只比 dy 会恒假
+    final updated = tester.getTopLeft(find.text('有更新条目'));
+    final normal = tester.getTopLeft(find.text('普通条目'));
+    expect(
+      updated.dy < normal.dy ||
+          (updated.dy == normal.dy && updated.dx < normal.dx),
+      isTrue,
+    );
   });
 
   testWidgets('完全无收藏时展示通用空态', (WidgetTester tester) async {

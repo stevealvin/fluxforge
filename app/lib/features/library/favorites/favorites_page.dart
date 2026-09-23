@@ -7,7 +7,6 @@ import 'package:fluxforge/core/utils/media_utils.dart';
 import 'package:fluxforge/app/di/di.dart';
 import 'package:fluxforge/data/library/favorite_service.dart';
 import 'package:fluxforge/data/library/play_history_service.dart';
-import 'package:fluxforge/shared/widgets/app_card.dart';
 import 'package:fluxforge/shared/widgets/app_empty_state.dart';
 import 'package:fluxforge/shared/widgets/app_delete_snack_bar.dart';
 import 'package:fluxforge/shared/widgets/app_image.dart';
@@ -143,11 +142,27 @@ class _FavoritesPageState extends State<FavoritesPage> {
               : RefreshIndicator(
                   onRefresh: _checkUpdates,
                   color: AppColors.primary,
-                  child: ListView.builder(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 8,
+                  child: GridView.builder(
+                    // 显式 padding 会**覆盖**滚动组件的自动 padding：本页是底部导航
+                    // 的一个 Tab，必须自己留出底部栏高度，否则最后一行会被毛玻璃压住。
+                    // （extendBody 时 Scaffold 已把底部栏高度注入 MediaQuery.padding）
+                    padding: EdgeInsets.fromLTRB(
+                      16,
+                      8,
+                      16,
+                      8 + MediaQuery.paddingOf(context).bottom,
                     ),
+                    // 每行 4 个：单元格变窄后封面比例仍锁定 2:3（宽高同比缩小），
+                    // 故高宽比要跟着放大到约 1/0.42
+                    gridDelegate:
+                        const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 4,
+                          crossAxisSpacing: 10,
+                          mainAxisSpacing: 14,
+                          // 封面(2:3) + 两行标题 + 进度行（可选更新行）的高度比；
+                          // 封面用 Expanded 吃掉文字之外的余量，文字行数变化不会溢出
+                          childAspectRatio: 0.42,
+                        ),
                     itemCount: filtered.length,
                     itemBuilder: (context, index) {
                       final item = filtered[index];
@@ -251,15 +266,24 @@ class _FavoritesPageState extends State<FavoritesPage> {
     );
   }
 
+  /// 单个收藏卡（书架式：封面为主角，下方标题 / 进度 / 更新）
+  ///
+  /// 封面占满卡宽、2:3 海报比例 —— 收藏是「我的书架」，封面才是识别物的主体。
+  ///
+  /// 「有更新」的信号收敛为**两处、分工不同**：封面左上角小角标（扫列表时第一眼
+  /// 可见）+ 下方「更新至」行（读得出具体集数）。此前是封面左竖条 + NEW 胶囊 +
+  /// 主色文字，三处说同一件事，等于噪声。
   Widget _buildFavoriteCard(
     BuildContext context,
     FavoriteItem item,
     bool isDark,
   ) {
-    return AppCard(
-      margin: const EdgeInsets.symmetric(vertical: 6),
-      padding: const EdgeInsets.all(12),
-      borderRadius: 16,
+    final textPrimary = isDark
+        ? AppColors.darkTextPrimary
+        : AppColors.lightTextPrimary;
+    final hasUpdate = item.hasUpdate;
+
+    return GestureDetector(
       onTap: () {
         HapticFeedback.selectionClick();
         // 打开详情即视为「已知晓更新」，只清红点，不伪造观看进度
@@ -280,19 +304,16 @@ class _FavoritesPageState extends State<FavoritesPage> {
           ),
         );
       },
-      child: Row(
+      // 网格里放不下垃圾桶按钮，且左上 / 左下角已被角标占用 —— 移除改长按。
+      // 仍是低风险操作，故照旧走「可撤销」而不是二次确认。
+      onLongPress: () => _removeWithUndo(context, item),
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 封面海报（走统一图片组件：自带占位、失败兜底与缓存）
-          //
-          // 叠两样东西：左下角**类型标签**（此前类型只能靠封面猜，而上面筛选栏
-          // 正是按类型分的，自相矛盾）、左侧**主色竖条**（有更新时列表里一眼可辨，
-          // 不必逐个读胶囊）。两者都在封面内，不影响右侧文字排版。
-          ClipRRect(
-            borderRadius: BorderRadius.circular(12),
-            child: SizedBox(
-              width: 66,
-              height: 88,
+          // 封面（主角）：吃掉网格单元里除文字外的全部高度
+          Expanded(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(14),
               child: Stack(
                 fit: StackFit.expand,
                 children: [
@@ -303,22 +324,41 @@ class _FavoritesPageState extends State<FavoritesPage> {
                           child: Icon(
                             MediaDisplay.typeIcon(item.mediaType),
                             color: Colors.grey,
-                            size: 24,
+                            size: 26,
                           ),
                         ),
-                  if (item.hasUpdate)
-                    const Positioned(
+                  // 左上角：有更新（扫描信号，与封面左上圆弧呼应，故不做完整圆角）
+                  if (hasUpdate)
+                    Positioned(
                       left: 0,
                       top: 0,
-                      bottom: 0,
-                      child: SizedBox(
-                        width: 3,
-                        child: ColoredBox(color: AppColors.primary),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2.5,
+                        ),
+                        decoration: const BoxDecoration(
+                          color: AppColors.primary,
+                          borderRadius: BorderRadius.only(
+                            topLeft: Radius.circular(14),
+                            bottomRight: Radius.circular(8),
+                          ),
+                        ),
+                        child: const Text(
+                          'NEW',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 9,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 0.4,
+                          ),
+                        ),
                       ),
                     ),
+                  // 左下角：类型标签（筛选栏按类型分，卡片必须能对上，否则自相矛盾）
                   Positioned(
-                    left: 4,
-                    bottom: 4,
+                    left: 6,
+                    bottom: 6,
                     child: Container(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 5,
@@ -342,108 +382,40 @@ class _FavoritesPageState extends State<FavoritesPage> {
               ),
             ),
           ),
-          const SizedBox(width: 12),
-
-          // 核心详情
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: Text(
-                        item.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.bold,
-                          color: isDark
-                              ? AppColors.darkTextPrimary
-                              : AppColors.lightTextPrimary,
-                        ),
-                      ),
-                    ),
-                    // 追更微胶囊角标
-                    if (item.hasUpdate)
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 6,
-                          vertical: 2,
-                        ),
-                        decoration: BoxDecoration(
-                          color: AppColors.primary,
-                          borderRadius: BorderRadius.circular(6),
-                          boxShadow: [
-                            BoxShadow(
-                              color: AppColors.primary.withValues(alpha: 0.4),
-                              blurRadius: 6,
-                              offset: const Offset(0, 2),
-                            ),
-                          ],
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(
-                              Ionicons.sparklesOutline,
-                              color: Colors.white,
-                              size: 10,
-                            ),
-                            const SizedBox(width: 3),
-                            Text(
-                              'NEW · ${item.latestEpisode.isNotEmpty ? item.latestEpisode : "有更新"}',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 9,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 6),
-                // 两行对照：看过的进度是「我的位置」，字重更重；源站最新是参考信息，次要
-                Text(
-                  '上次看到：${_progressLabel(item)}',
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w600,
-                    color: isDark
-                        ? AppColors.darkTextPrimary
-                        : AppColors.lightTextPrimary,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  '最新更新：${item.latestEpisode.isNotEmpty ? item.latestEpisode : "与源站保持同步"}',
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: item.hasUpdate
-                        ? AppColors.primary
-                        : (isDark
-                              ? AppColors.darkTextMuted
-                              : AppColors.lightTextMuted),
-                  ),
-                ),
-              ],
+          const SizedBox(height: 8),
+          Text(
+            item.title,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              height: 1.25,
+              color: textPrimary,
             ),
           ),
-
-          // 移除收藏：低风险操作，用「可撤销」代替二次确认
-          IconButton(
-            tooltip: '移除收藏',
-            icon: const Icon(
-              Ionicons.trashOutline,
-              size: 16,
-              color: Colors.grey,
-            ),
-            onPressed: () => _removeWithUndo(context, item),
+          const SizedBox(height: 3),
+          // 进度是「我的位置」，也是这一页真正要回答的问题，故用主文本色
+          Text(
+            '上次看到：${_progressLabel(item)}',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(fontSize: 11.5, color: textPrimary),
           ),
+          // 无更新时不占这一行：源站最新集在没有新内容时没有信息量
+          if (hasUpdate) ...[
+            const SizedBox(height: 2),
+            Text(
+              '更新至：${item.latestEpisode.isNotEmpty ? item.latestEpisode : "有更新"}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: AppColors.primary,
+              ),
+            ),
+          ],
         ],
       ),
     );
