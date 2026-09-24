@@ -1,7 +1,6 @@
 import 'package:flutter/foundation.dart';
 
 import 'package:fluxforge/app/di/di.dart';
-import 'package:fluxforge/core/utils/media_utils.dart';
 import 'package:fluxforge/core/sandbox/rule_engine.dart';
 import 'package:fluxforge/data/library/favorite_service.dart';
 import 'package:fluxforge/domain/media/media.dart';
@@ -93,82 +92,6 @@ class MediaFavoriteActions {
         ruleId: rule?.id?.toString() ?? '',
         lastEpisode: playHistoryService.getById(id)?.episodeName ?? '',
         latestEpisode: latestEpisodeOf(data),
-        updatedAt: DateTime.now(),
-      ),
-    );
-    return '已加入收藏，追更已开启';
-  }
-
-  /// 规则类型 → 媒体类型（首页 / 搜索结果只有规则，没有解析后的详情）
-  ///
-  /// 口径与收藏页的筛选 Tag 一致：认不出来的一律按视频处理（与详情页分流同理）。
-  static MediaType mediaTypeOf(Rule rule) {
-    final t = rule.type.toLowerCase().trim();
-    if (t == 'novel' || t == 'book' || t == 'text' || t == 'story') {
-      return MediaType.novel;
-    }
-    if (t == 'comic' ||
-        t == 'manga' ||
-        t == 'image' ||
-        t == 'picture' ||
-        t == 'photo' ||
-        t == 'gallery') {
-      return MediaType.comic;
-    }
-    return MediaType.video;
-  }
-
-  /// 首页 / 搜索结果的收藏键：与详情页**同源**（相对地址按规则 baseUrl 归一）
-  static String feedKey({
-    required String title,
-    required String url,
-    Rule? rule,
-  }) {
-    final raw = url.trim();
-    if (raw.isNotEmpty) {
-      return resolveMediaUrl(raw, baseUrl: rule?.baseUrl ?? '');
-    }
-    return title.trim();
-  }
-
-  /// 首页 / 搜索结果里的条目是否已收藏
-  static bool isFeedFavorited({
-    required String title,
-    required String url,
-    Rule? rule,
-  }) => favoriteService.isFavorite(feedKey(title: title, url: url, rule: rule));
-
-  /// 从首页 / 搜索结果直接收藏（不必先解析详情）
-  ///
-  /// 键与类型都走上面那套与详情页共用的口径 —— 否则会出现
-  /// 「详情页里收藏了、首页却显示未收藏」这种自相矛盾的状态。
-  static Future<String> toggleFromFeed({
-    required String title,
-    required String url,
-    required String cover,
-    Rule? rule,
-  }) async {
-    final id = feedKey(title: title, url: url, rule: rule);
-    if (id.isEmpty) return '无法识别该媒体，收藏失败';
-
-    if (favoriteService.isFavorite(id)) {
-      await favoriteService.removeFavorite(id);
-      return '已取消收藏';
-    }
-
-    await favoriteService.addFavorite(
-      FavoriteItem(
-        id: id,
-        url: url.trim(),
-        title: title.trim().isEmpty ? '未命名' : title.trim(),
-        cover: cover.trim(),
-        mediaType: rule == null
-            ? MediaType.video.value
-            : mediaTypeOf(rule).value,
-        ruleId: rule?.id?.toString() ?? '',
-        lastEpisode: playHistoryService.getById(id)?.episodeName ?? '',
-        // 首页只有条目元信息，还没有「最新集」；首次追更检查会自己去源站探到
-        latestEpisode: '',
         updatedAt: DateTime.now(),
       ),
     );

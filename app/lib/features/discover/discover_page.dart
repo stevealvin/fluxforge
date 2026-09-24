@@ -3,10 +3,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fluxforge/app/router/app_navigator.dart';
 import 'package:ionicons/ionicons.dart';
 
-import 'package:flutter/services.dart';
-
 import 'package:fluxforge/app/theme/app_colors.dart';
-import 'package:fluxforge/features/media/shared/media_favorite_actions.dart';
 import 'package:fluxforge/domain/rule/rule.dart';
 import 'package:fluxforge/app/di/di.dart';
 import 'package:fluxforge/core/sandbox/rule_engine.dart';
@@ -213,61 +210,6 @@ class _DiscoverPageState extends State<DiscoverPage>
     );
   }
 
-  /// 首页条目长按：直接收藏 / 取消收藏（不必先解析详情）
-  ///
-  /// 键与类型都走 [MediaFavoriteActions] 里与详情页共用的口径，
-  /// 因此「详情页收藏了、首页也显示已收藏」，不会出现两套状态。
-  Future<void> _toggleFavorite(
-    BuildContext context,
-    Map item,
-    Rule rule,
-  ) async {
-    HapticFeedback.mediumImpact();
-    final message = await MediaFavoriteActions.toggleFromFeed(
-      title: item['title']?.toString() ?? '',
-      url: item['url']?.toString() ?? '',
-      cover: item['cover']?.toString() ?? '',
-      rule: rule,
-    );
-    if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        duration: const Duration(milliseconds: 1600),
-      ),
-    );
-  }
-
-  /// 已收藏角标（左上角）；未收藏时占位为空盒，不参与命中测试
-  Widget _favoriteBadge({
-    required String title,
-    required String url,
-    required Rule rule,
-  }) {
-    return ValueListenableBuilder(
-      valueListenable: favoriteService.favoritesNotifier,
-      builder: (context, _, _) =>
-          MediaFavoriteActions.isFeedFavorited(
-            title: title,
-            url: url,
-            rule: rule,
-          )
-          ? Container(
-              padding: const EdgeInsets.all(4),
-              decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.55),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: const Icon(
-                Ionicons.heart,
-                size: 13,
-                color: AppColors.primaryLight,
-              ),
-            )
-          : const SizedBox.shrink(),
-    );
-  }
-
   bool _isVideoRule(Rule rule) {
     final t = rule.type.toLowerCase().trim();
     return t == 'video' ||
@@ -300,8 +242,8 @@ class _DiscoverPageState extends State<DiscoverPage>
           ),
         );
       },
-      // 长按直接收藏：首页是「逛」的场景，看中即可收下，不必先进详情页
-      onLongPress: () => _toggleFavorite(context, item, currentRule),
+      // 首页卡片只承担「进入详情」一件事：收藏走详情页与底部 Tab 收藏入口
+      // （此前试过卡片长按收藏，按反馈撤掉了 —— 长按留给后续的多选 / 菜单规划）
       child: isVideo
           ? Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -365,16 +307,6 @@ class _DiscoverPageState extends State<DiscoverPage>
                               ),
                             ),
                           ),
-                        // 已收藏角标放左上角，与右下角的集数徽标互不遮挡
-                        Positioned(
-                          left: 6,
-                          top: 6,
-                          child: _favoriteBadge(
-                            title: title,
-                            url: url,
-                            rule: currentRule,
-                          ),
-                        ),
                       ],
                     ),
                   ),
@@ -468,16 +400,7 @@ class _DiscoverPageState extends State<DiscoverPage>
                       ),
                     ),
                   ),
-                // 已收藏角标放左上角，与右上角徽标互不遮挡
-                Positioned(
-                  left: 8,
-                  top: 8,
-                  child: _favoriteBadge(
-                    title: title,
-                    url: url,
-                    rule: currentRule,
-                  ),
-                ),
+
                 Positioned(
                   left: 8,
                   right: 8,
