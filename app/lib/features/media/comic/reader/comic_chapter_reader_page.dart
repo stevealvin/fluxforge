@@ -31,6 +31,7 @@ class ComicChapterReaderPage extends StatefulWidget {
     this.rule,
     this.headers,
     this.initialChapterIndex = 0,
+    this.initialPage,
     this.initialContinuousMode,
     this.pipeline,
   });
@@ -49,6 +50,14 @@ class ComicChapterReaderPage extends StatefulWidget {
   final Rule? rule;
   final Map<String, String>? headers;
   final int initialChapterIndex;
+
+  /// 打开时要定位到的页（**调用方指定**）
+  ///
+  /// 图集形态下就是"详情页点的是第几张" —— 不传时会退回消费记录里的续读页，
+  /// 于是点第 40 张却开在第 1 张（或上次读到的页），与实际点击无关。
+  /// 章节形态下不传：换章后从该章第 0 页起（续读页由消费记录决定）。
+  final int? initialPage;
+
   final bool? initialContinuousMode;
 
   /// 可注入的解析管线（测试用；缺省自建）
@@ -84,12 +93,17 @@ class _ComicChapterReaderPageState extends State<ComicChapterReaderPage> {
       widget.chapters.isEmpty ? 0 : widget.chapters.length - 1,
     );
 
-    // 续读位置：记录里的页码只对「同一章 / 同一本图集」才有意义
+    // 打开位置优先级：**调用方指定的页** > 消费记录里的续读页
+    //
+    // 续读页只在「同一章 / 同一本图集」时才有意义；而调用方指的页是用户的
+    // 明确动作（在详情页点了第 40 张），必须压过续读页。
     final record = playHistoryService.getById(widget.mediaId);
-    if (record != null &&
-        (!_isChapterShape || record.episodeIndex == _chapterIndex)) {
-      _initialPage = record.pageIndex;
-    }
+    final resumePage =
+        record != null &&
+            (!_isChapterShape || record.episodeIndex == _chapterIndex)
+        ? record.pageIndex
+        : 0;
+    _initialPage = widget.initialPage ?? resumePage;
 
     if (_isChapterShape) {
       _loadChapter(_chapterIndex, initial: true);

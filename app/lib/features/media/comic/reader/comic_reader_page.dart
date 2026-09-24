@@ -1,13 +1,12 @@
+import 'dart:async';
+
 import 'package:extended_image/extended_image.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:ionicons/ionicons.dart';
 
-import 'package:fluxforge/core/storage/app_storage.dart';
 import 'package:fluxforge/app/theme/app_colors.dart';
+import 'package:fluxforge/features/media/comic/reader/controllers/comic_reader_preferences.dart';
 import 'package:fluxforge/shared/widgets/app_image.dart';
-
-/// 漫画沉浸阅读模式持久化偏好键
-const String _kComicReaderModeKey = 'comic_reader_continuous_mode';
 
 /// 图片「加载中 / 加载失败」占位页的高度
 ///
@@ -84,20 +83,20 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
           _isContinuousMode = widget.initialContinuousMode!;
         });
         if (_isContinuousMode) {
-          _scrollToCurrentIndexAfterBuild();
+          unawaited(_jumpToIndex(_currentIndex));
         }
       }
       return;
     }
 
     try {
-      final saved = await AppStorage.getBool(_kComicReaderModeKey);
+      final saved = await ComicReaderPreferences.loadContinuousMode();
       if (saved != null && mounted) {
         setState(() {
           _isContinuousMode = saved;
         });
         if (_isContinuousMode) {
-          _scrollToCurrentIndexAfterBuild();
+          unawaited(_jumpToIndex(_currentIndex));
         }
       }
     } catch (_) {}
@@ -117,42 +116,127 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
       _isContinuousMode = continuous;
     });
 
-    try {
-      await AppStorage.setBool(_kComicReaderModeKey, continuous);
-    } catch (_) {}
+    await ComicReaderPreferences.saveContinuousMode(continuous);
 
-    if (continuous) {
-      _scrollToCurrentIndexAfterBuild();
-    } else {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && _pageController.hasClients) {
-          _pageController.jumpToPage(_currentIndex);
-        }
-      });
+    // 两种模式都用同一条定位路径（内部按模式分派）：
+    // 切模式时"停在第一张"就是因为这里原来直接 ensureVisible，
+    // 而刚重建的列表里目标项还没被构建。
+    if (mounted) unawaited(_jumpToIndex(_currentIndex));
+  }
+
+  /// 各张图的**实测**高度（只量渲染出来的项，量到就缓存）
+  ///
+  /// 长图模式下每张的高度由图片自身比例决定，构建前无从得知；
+  /// 而跳页要算滚动偏移，所以必须"已测的用实测、未测的用均值"。
+  final Map<int, double> _measuredHeight = {};
+
+  /// 未实测项的兜底高度：已测项的均值（一张都没测过时用占位高度）
+  double get _fallbackItemHeight {
+    if (_measuredHeight.isEmpty) return kComicPagePlaceholderHeight;
+    var sum = 0.0;
+    for (final height in _measuredHeight.values) {
+      sum += height;
+    }
+    return sum / _measuredHeight.length;
+  }
+
+  /// 第 [index] 张的**估算**滚动偏移
+  double _estimatedOffsetFor(int index) {
+    final fallback = _fallbackItemHeight;
+    var offset = 0.0;
+    for (int i = 0; i < index; i++) {
+      offset += _measuredHeight[i] ?? fallback;
+    }
+    return offset;
+  }
+
+  /// 量一遍已构建的项，充实高度缓存（滚动与跳页各调一次，开销为一次 O(n) 读尺寸）
+  void _measureBuiltItems() {
+    for (int i = 0; i < _itemKeys.length; i++) {
+      final box = _itemKeys[i].currentContext?.findRenderObject() as RenderBox?;
+      if (box != null && box.hasSize && box.size.height > 0) {
+        _measuredHeight[i] = box.size.height;
+      }
     }
   }
 
-  /// 滚到当前页
+  /// 定位到第 [index] 张（**两种阅读模式共用的一条路**）
   ///
-  /// [animated] 为 false 时瞬时定位：滑块松手后的定位必须瞬时，
-  /// 否则动画期间会持续触发滚动回写，页码来回跳。
-  void _scrollToCurrentIndexAfterBuild({bool animated = true}) {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || !_scrollController.hasClients) return;
-      if (_currentIndex >= 0 && _currentIndex < _itemKeys.length) {
-        final keyContext = _itemKeys[_currentIndex].currentContext;
-        if (keyContext != null) {
-          Scrollable.ensureVisible(
-            keyContext,
-            alignment: 0.0,
-            duration: animated
-                ? const Duration(milliseconds: 200)
-                : Duration.zero,
-            curve: Curves.easeOut,
-          );
-        }
+  /// 长图模式此前直接用 `Scrollable.ensureVisible`，有两个硬伤：
+  /// 1. 目标项**没被构建**时 `currentContext` 为空 —— 调用静默失败。
+  ///    长图集里点第 40 张、把进度条拖到后半段"没反应"，根因就在这里；
+  /// 2. 每项高度随图片加载而变，一次性定位本来就容易落空。
+  ///
+  /// 所以改成「按估算偏移先跳过去 → 等一帧 → 目标已构建就精修」，最多试几轮：
+  /// 每轮都会量到新的真实高度，估算随之收敛（首轮 280 的占位高度偏差，
+  /// 第二轮就能按实测均值纠正），几轮内必然命中。
+  Future<void> _jumpToIndex(int index) async {
+    final total = widget.imageList.length;
+    if (total == 0) return;
+    final target = index.clamp(0, total - 1);
+
+    if (!_isContinuousMode) {
+      await _jumpToPageWhenReady(target);
+      return;
+    }
+
+    for (var attempt = 0; attempt < 6; attempt++) {
+      if (!mounted) return;
+      if (!_scrollController.hasClients) {
+        // 列表还没挂上（首帧 / 刚从翻页切过来）：等一帧再试。
+        // 这里若直接 return，定位就彻底落空了 —— 正是"切到长图回到第一张"的成因。
+        await WidgetsBinding.instance.endOfFrame;
+        continue;
       }
-    });
+
+      final keyContext = _itemKeys[target].currentContext;
+      // 循环里可能已经等过帧：目标项随时可能被回收，用之前再确认一次它还挂着
+      if (keyContext != null && keyContext.mounted) {
+        await Scrollable.ensureVisible(
+          keyContext,
+          alignment: 0.0,
+          duration: Duration.zero,
+        );
+        _measureBuiltItems();
+        return;
+      }
+
+      _scrollController.jumpTo(
+        _estimatedOffsetFor(target)
+            .clamp(0.0, _scrollController.position.maxScrollExtent),
+      );
+      // 等这一帧走完：列表会把目标附近构建出来，并给出该处的真实高度
+      await WidgetsBinding.instance.endOfFrame;
+      _measureBuiltItems();
+    }
+  }
+
+  /// 翻页模式定位
+  ///
+  /// 两处静默失败都在这里兜住：
+  /// 1. PageView 刚重建的当帧控制器还没挂上 —— 单帧 `jumpToPage` 等于没调；
+  /// 2. 新挂载的 PageView 会先报一次第 0 页，把刚跳好的页码又拽回去 ——
+  ///    所以跳完要等一帧回读真实页码，没停住就再跳一次。
+  Future<void> _jumpToPageWhenReady(int index) async {
+    for (var attempt = 0; attempt < 3; attempt++) {
+      if (!mounted) return;
+      if (!_pageController.hasClients) {
+        await WidgetsBinding.instance.endOfFrame;
+        continue;
+      }
+
+      _pageController.jumpToPage(index);
+      await WidgetsBinding.instance.endOfFrame;
+      if (!mounted || !_pageController.hasClients) return;
+
+      if ((_pageController.page ?? index.toDouble()).round() != index) {
+        continue;
+      }
+      if (_currentIndex != index) {
+        setState(() => _currentIndex = index);
+      }
+      return;
+    }
   }
 
   void _updateIndexOnScroll() {
@@ -343,6 +427,8 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
     return NotificationListener<ScrollNotification>(
       onNotification: (notification) {
         if (notification is ScrollUpdateNotification) {
+          // 顺手把渲染出来的项量一遍：跳页要靠这些实测高度算偏移
+          _measureBuiltItems();
           _updateIndexOnScroll();
         }
         return false;
@@ -587,18 +673,12 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
     if (total == 0) return;
     final index = target.clamp(0, total - 1);
 
-    if (_isContinuousMode) {
-      if (index != _currentIndex) {
-        setState(() => _currentIndex = index);
-        widget.onPageChanged?.call(index, total);
-      }
-      // 长漫用瞬时定位：动画期间会持续触发滚动回写，页码反而来回跳
-      _scrollToCurrentIndexAfterBuild(animated: false);
-      return;
+    if (index != _currentIndex) {
+      setState(() => _currentIndex = index);
+      if (_isContinuousMode) widget.onPageChanged?.call(index, total);
     }
 
-    if (index != _currentIndex) setState(() => _currentIndex = index);
-    _pageController.jumpToPage(index);
+    unawaited(_jumpToIndex(index));
   }
 
   /// 上一页 / 下一页

@@ -114,6 +114,43 @@ void main() {
     expect(calls, 0, reason: '图集形态图片已给全，不应该再走解析');
   });
 
+  testWidgets('图集形态：initialPage 覆盖续读页 —— 点第 N 张就开在第 N 张', (tester) async {
+    final pipeline = ComicChapterImagePipeline(parser: (r, url) async => null);
+    final images = List.generate(10, (i) => 'https://cdn.a/${i + 1}.jpg');
+
+    // 先写一条「上次读到第 2 张」的续读记录，制造与点击目标的冲突
+    await playHistoryService.upsert(
+      PlayRecord(
+        id: 'https://example.com/detail/3',
+        title: '测试图集',
+        mediaType: 'comic',
+        pageIndex: 1,
+        updatedAt: DateTime(2026, 9, 24),
+      ),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.darkTheme,
+        home: ComicChapterReaderPage(
+          title: '测试图集',
+          mediaId: 'https://example.com/detail/3',
+          imageList: images,
+          rule: rule,
+          pipeline: pipeline,
+          initialPage: 6,
+          initialContinuousMode: false,
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    final reader = tester.widget<ComicReaderPage>(find.byType(ComicReaderPage));
+    expect(reader.initialIndex, 6, reason: '调用方指定的是用户的明确动作（点了第 7 张），必须压过续读页');
+    expect(find.text('7 / 10'), findsOneWidget);
+  });
+
   testWidgets('目录入口：可跳到任意一章', (tester) async {
     final pipeline = ComicChapterImagePipeline(
       parser: (r, url) async => {

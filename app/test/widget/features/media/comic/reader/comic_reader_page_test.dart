@@ -38,6 +38,20 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
   }
 
+  /// 多推几帧：长图定位是「估算跳 → 等一帧 → 精修」的收敛循环，需要逐帧推进
+  Future<void> settleFrames(WidgetTester tester, [int frames = 8]) async {
+    for (var i = 0; i < frames; i++) {
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+  }
+
+  /// 长图集：60 张，用于验证"目标项还没被构建"时的定位
+  List<String> longGallery() =>
+      List.generate(60, (i) => 'https://example.com/p${i + 1}.jpg');
+
+  double listOffset(WidgetTester tester) =>
+      tester.widget<ListView>(find.byType(ListView)).controller!.offset;
+
   testWidgets('阅读方式入口在底部栏，弹出面板里切换长漫画与左右翻页', (tester) async {
     await pumpReader(tester);
 
@@ -147,6 +161,116 @@ void main() {
     expect(pageChanges.length, 1, reason: '一次甩动仍只定位一次');
   });
 
+  testWidgets('长图模式：按 initialIndex 打开时定位到该张（不回到第一张）', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ComicReaderPage(
+          imageList: longGallery(),
+          initialIndex: 40,
+          initialContinuousMode: true,
+        ),
+      ),
+    );
+    await settleFrames(tester);
+
+    // 页码由"屏幕中心落在哪张"推导，短占位图下会偏一两张；这里断言滚动位置更准
+    final controller = tester
+        .widget<ListView>(find.byType(ListView))
+        .controller!;
+    expect(find.textContaining(' / 60'), findsOneWidget);
+    expect(
+      controller.offset / controller.position.maxScrollExtent,
+      greaterThan(0.5),
+      reason: '必须真的滚到第 41 张附近：此前目标项还没被构建，ensureVisible 静默失败',
+    );
+  });
+
+  testWidgets('长图模式：进度条拖到后半段能定位（远处目标也能到）', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ComicReaderPage(
+          imageList: longGallery(),
+          initialIndex: 0,
+          initialContinuousMode: true,
+        ),
+      ),
+    );
+    await settleFrames(tester);
+    expect(listOffset(tester), 0);
+
+    final gesture = await tester.startGesture(
+      tester.getCenter(find.byType(Slider)),
+    );
+    await gesture.moveBy(const Offset(150, 0));
+    await tester.pump(const Duration(milliseconds: 16));
+    await gesture.up();
+    await settleFrames(tester);
+
+    expect(
+      listOffset(tester),
+      greaterThan(0),
+      reason: '滑块松手后必须真的滚过去，"没反应"是目标项未构建导致的',
+    );
+  });
+
+  testWidgets('左右翻页 → 长漫画：保持当前张，不跳回第一张', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ComicReaderPage(
+          imageList: longGallery(),
+          initialIndex: 30,
+          initialContinuousMode: false,
+        ),
+      ),
+    );
+    await settle(tester);
+    expect(find.text('31 / 60'), findsOneWidget);
+
+    await tester.tap(find.text('左右翻页'));
+    await settle(tester);
+    await tester.tap(find.byKey(const ValueKey('reading_mode_true')));
+    await settleFrames(tester);
+    // 长图模式下页码按屏幕中心推导，短占位图下会偏几张 —— 用位置比例判断更可靠
+
+    expect(find.byType(ListView), findsOneWidget);
+    final controller = tester
+        .widget<ListView>(find.byType(ListView))
+        .controller!;
+    expect(
+      controller.offset / controller.position.maxScrollExtent,
+      greaterThan(0.4),
+      reason: '切到长图后应停在第 31 张附近；此前会回到顶部第一张',
+    );
+  });
+
+  testWidgets('长漫画 → 左右翻页：同样保持当前页', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ComicReaderPage(
+          imageList: longGallery(),
+          initialIndex: 30,
+          initialContinuousMode: true,
+        ),
+      ),
+    );
+    await settleFrames(tester);
+
+    // 记下切换前的页码：长图模式下它可能已按屏幕中心更新过，切换后必须保持一致
+    final labelBefore = tester.widget<Text>(find.textContaining(' / 60')).data!;
+
+    await tester.tap(find.text('长漫画'));
+    await settle(tester);
+    await tester.tap(find.byKey(const ValueKey('reading_mode_false')));
+    await settleFrames(tester);
+
+    expect(find.byType(ListView), findsNothing);
+    expect(
+      find.text(labelBefore),
+      findsOneWidget,
+      reason: 'PageView 重建当帧控制器还没挂上，单帧 jumpToPage 会静默失败（掉回第 1 页）',
+    );
+  });
+
   testWidgets('连续模式下图片占位页高度唯一：加载中与失败不得两种高度', (tester) async {
     await pumpReader(tester, continuous: true);
     await settle(tester);
@@ -162,10 +286,8 @@ void main() {
         .where((height) => height.isFinite && height > 200)
         .toSet();
 
-    expect(
-      placeholderHeights,
-      {kComicPagePlaceholderHeight},
-      reason: '加载中与失败的占位高度必须一致',
-    );
+    expect(placeholderHeights, {
+      kComicPagePlaceholderHeight,
+    }, reason: '加载中与失败的占位高度必须一致');
   });
 }
