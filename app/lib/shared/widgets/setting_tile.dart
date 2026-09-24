@@ -12,24 +12,52 @@ import 'package:fluxforge/app/theme/app_colors.dart';
 /// 容器只管边框与分隔线（[SettingSection]），行自带样式（[SettingRow]）。
 
 /// 统一设置分组标题 (SettingSectionTitle)
+///
+/// [subtitle] 用来一句话交代「这组管什么」—— 分组名本身只能给标签，给不出范围，
+/// 例如「网络与规则」到底影响哪些行为（沙箱请求？浏览器广告？）看名字是猜的。
 class SettingSectionTitle extends StatelessWidget {
-  const SettingSectionTitle({super.key, required this.title});
+  const SettingSectionTitle({super.key, required this.title, this.subtitle});
 
   final String title;
+
+  /// 分组说明；为空则不占位
+  final String? subtitle;
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final hasSubtitle = subtitle != null && subtitle!.trim().isNotEmpty;
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
-      child: Text(
-        title,
-        style: TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.bold,
-          letterSpacing: 0.4,
-          color: isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted,
-        ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 0.4,
+              color: isDark
+                  ? AppColors.darkTextMuted
+                  : AppColors.lightTextMuted,
+            ),
+          ),
+          if (hasSubtitle) ...[
+            const SizedBox(height: 3),
+            Text(
+              subtitle!,
+              style: TextStyle(
+                fontSize: 11,
+                height: 1.3,
+                color: isDark
+                    ? AppColors.darkTextMuted.withValues(alpha: 0.75)
+                    : AppColors.lightTextMuted.withValues(alpha: 0.85),
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }

@@ -1,4 +1,5 @@
 import 'dart:io';
+
 import 'package:material_ui/material_ui.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
@@ -87,7 +88,8 @@ class AppSettings {
       novelFontSize: novelFontSize ?? this.novelFontSize,
       novelLineHeight: novelLineHeight ?? this.novelLineHeight,
       galleryLayout: galleryLayout ?? this.galleryLayout,
-      requestTimeoutSeconds: requestTimeoutSeconds ?? this.requestTimeoutSeconds,
+      requestTimeoutSeconds:
+          requestTimeoutSeconds ?? this.requestTimeoutSeconds,
       customUserAgent: customUserAgent ?? this.customUserAgent,
       enableAdBlock: enableAdBlock ?? this.enableAdBlock,
       autoCheckRuleUpdates: autoCheckRuleUpdates ?? this.autoCheckRuleUpdates,
@@ -110,8 +112,9 @@ class AppService {
   /// 主题模式快捷访问
   ThemeMode get themeMode => settings.themeMode;
   ValueNotifier<ThemeMode> get themeModeNotifier => _themeModeNotifier;
-  final ValueNotifier<ThemeMode> _themeModeNotifier =
-      ValueNotifier<ThemeMode>(ThemeMode.system);
+  final ValueNotifier<ThemeMode> _themeModeNotifier = ValueNotifier<ThemeMode>(
+    ThemeMode.system,
+  );
 
   /// 规则自动更新开关快捷访问
   bool get autoUpdateScript => settings.autoCheckRuleUpdates;
@@ -131,24 +134,32 @@ class AppService {
   /// 从本地持久化存储加载所有偏好配置
   Future<void> _loadSettings() async {
     try {
-      final longPress2x = await AppStorage.getBool('pref_long_press_2x') ?? true;
-      final longPressSpeed = await AppStorage.getDouble('pref_long_press_speed') ?? 3.0;
+      final longPress2x =
+          await AppStorage.getBool('pref_long_press_2x') ?? true;
+      final longPressSpeed =
+          await AppStorage.getDouble('pref_long_press_speed') ?? 3.0;
       final speed = await AppStorage.getDouble('pref_default_speed') ?? 1.0;
-      final resumeStr = await AppStorage.getString('pref_resume_behavior') ?? 'prompt';
-      final cellular = await AppStorage.getBool('pref_cellular_warning') ?? false;
+      final resumeStr =
+          await AppStorage.getString('pref_resume_behavior') ?? 'prompt';
+      final cellular =
+          await AppStorage.getBool('pref_cellular_warning') ?? false;
 
-      final novelMode = await AppStorage.getString('novel_page_mode') ?? 'horizontal';
+      final novelMode =
+          await AppStorage.getString('novel_page_mode') ?? 'horizontal';
       final fontSize = await AppStorage.getDouble('novel_font_size') ?? 18.0;
       final lineHeight = await AppStorage.getDouble('novel_line_height') ?? 1.6;
-      final galleryLayout = await AppStorage.getString('pref_gallery_layout') ?? 'grid';
+      final galleryLayout =
+          await AppStorage.getString('pref_gallery_layout') ?? 'grid';
 
       final timeout = await AppStorage.getInt('pref_request_timeout') ?? 30;
       final ua = await AppStorage.getString('pref_custom_ua') ?? '';
       final adBlock = await AppStorage.getBool('pref_enable_adblock') ?? true;
-      final autoUpdate = await AppStorage.getBool('pref_auto_check_rules') ?? true;
+      final autoUpdate =
+          await AppStorage.getBool('pref_auto_check_rules') ?? true;
 
       final themeStr = await AppStorage.getString('app_theme_mode') ?? 'system';
-      final incognito = await AppStorage.getBool('pref_incognito_mode') ?? false;
+      final incognito =
+          await AppStorage.getBool('pref_incognito_mode') ?? false;
 
       ThemeMode mode = ThemeMode.system;
       if (themeStr == 'light') mode = ThemeMode.light;
@@ -186,21 +197,48 @@ class AppService {
     settingsNotifier.value = newSettings;
     _themeModeNotifier.value = newSettings.themeMode;
 
-    await AppStorage.setBool('pref_long_press_2x', newSettings.enableLongPress2x);
-    await AppStorage.setDouble('pref_long_press_speed', newSettings.longPressSpeed);
-    await AppStorage.setDouble('pref_default_speed', newSettings.defaultPlaybackSpeed);
-    await AppStorage.setString('pref_resume_behavior', newSettings.resumeBehavior.name);
-    await AppStorage.setBool('pref_cellular_warning', newSettings.cellularDataWarning);
+    await AppStorage.setBool(
+      'pref_long_press_2x',
+      newSettings.enableLongPress2x,
+    );
+    await AppStorage.setDouble(
+      'pref_long_press_speed',
+      newSettings.longPressSpeed,
+    );
+    await AppStorage.setDouble(
+      'pref_default_speed',
+      newSettings.defaultPlaybackSpeed,
+    );
+    await AppStorage.setString(
+      'pref_resume_behavior',
+      newSettings.resumeBehavior.name,
+    );
+    await AppStorage.setBool(
+      'pref_cellular_warning',
+      newSettings.cellularDataWarning,
+    );
 
     await AppStorage.setString('novel_page_mode', newSettings.novelPageMode);
     await AppStorage.setDouble('novel_font_size', newSettings.novelFontSize);
-    await AppStorage.setDouble('novel_line_height', newSettings.novelLineHeight);
-    await AppStorage.setString('pref_gallery_layout', newSettings.galleryLayout);
+    await AppStorage.setDouble(
+      'novel_line_height',
+      newSettings.novelLineHeight,
+    );
+    await AppStorage.setString(
+      'pref_gallery_layout',
+      newSettings.galleryLayout,
+    );
 
-    await AppStorage.setInt('pref_request_timeout', newSettings.requestTimeoutSeconds);
+    await AppStorage.setInt(
+      'pref_request_timeout',
+      newSettings.requestTimeoutSeconds,
+    );
     await AppStorage.setString('pref_custom_ua', newSettings.customUserAgent);
     await AppStorage.setBool('pref_enable_adblock', newSettings.enableAdBlock);
-    await AppStorage.setBool('pref_auto_check_rules', newSettings.autoCheckRuleUpdates);
+    await AppStorage.setBool(
+      'pref_auto_check_rules',
+      newSettings.autoCheckRuleUpdates,
+    );
 
     String modeString = 'system';
     if (newSettings.themeMode == ThemeMode.light) modeString = 'light';
@@ -209,6 +247,12 @@ class AppService {
 
     await AppStorage.setBool('pref_incognito_mode', newSettings.incognitoMode);
   }
+
+  /// 恢复全部偏好为出厂默认值
+  ///
+  /// 只覆盖**偏好**（主题 / 播放 / 网络相关开关），收藏、历史记录、离线下载、
+  /// 规则库等数据一律不动 —— 这是设置页那个「恢复默认偏好」按钮的语义边界。
+  Future<void> resetToDefaults() => updateSettings(const AppSettings());
 
   /// 更新主题模式
   Future<void> updateThemeMode(ThemeMode mode) async {
@@ -231,7 +275,10 @@ class AppService {
       final tempDir = await getTemporaryDirectory();
       int totalBytes = 0;
       if (tempDir.existsSync()) {
-        await for (final file in tempDir.list(recursive: true, followLinks: false)) {
+        await for (final file in tempDir.list(
+          recursive: true,
+          followLinks: false,
+        )) {
           if (file is File) {
             totalBytes += await file.length();
           }
@@ -249,7 +296,10 @@ class AppService {
     try {
       final tempDir = await getTemporaryDirectory();
       if (tempDir.existsSync()) {
-        await for (final file in tempDir.list(recursive: false, followLinks: false)) {
+        await for (final file in tempDir.list(
+          recursive: false,
+          followLinks: false,
+        )) {
           try {
             await file.delete(recursive: true);
           } catch (_) {}
