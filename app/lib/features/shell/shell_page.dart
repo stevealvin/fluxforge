@@ -1,11 +1,10 @@
 import 'dart:ui' as ui;
+
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:ionicons/ionicons.dart';
 
 import 'package:fluxforge/app/theme/app_colors.dart';
-import 'package:fluxforge/app/di/di.dart';
-import 'package:fluxforge/data/library/favorite_service.dart';
 import 'package:fluxforge/features/discover/discover_page.dart';
 import 'package:fluxforge/features/library/favorites/favorites_page.dart';
 import 'package:fluxforge/features/profile/profile_page.dart';
@@ -63,8 +62,10 @@ class ShellPage extends HookWidget {
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
                       colors: [
-                        Theme.of(context).colorScheme.primary.withValues(alpha: 0.5),
-                        Theme.of(context).colorScheme.surface.withValues(alpha: 0.0),
+                        Theme.of(context).colorScheme.primary
+                            .withValues(alpha: 0.5),
+                        Theme.of(context).colorScheme.surface
+                            .withValues(alpha: 0.0),
                       ],
                       begin: Alignment.topCenter,
                       end: Alignment.bottomCenter,
@@ -97,69 +98,71 @@ class ShellPage extends HookWidget {
             child: BackdropFilter(
               filter: ui.ImageFilter.blur(sigmaX: 20, sigmaY: 20),
               child: Container(
-              decoration: BoxDecoration(
-                color: isDark
-                    ? AppColors.darkBg.withValues(alpha: 0.72)
-                    : Colors.white.withValues(alpha: 0.72),
-              ),
-              child: NavigationBar(
-                backgroundColor: Colors.transparent,
-                surfaceTintColor: Colors.transparent,
-                elevation: 0,
-                selectedIndex: selectedIndex.value,
-                onDestinationSelected: goTo,
-                animationDuration: const Duration(milliseconds: 300),
-                destinations: [
-                  const NavigationDestination(
-                    icon: Icon(Ionicons.compassOutline, size: 22),
-                    selectedIcon: Icon(Ionicons.compassOutline, size: 24, color: AppColors.primary),
-                    label: '发现',
-                  ),
-                  NavigationDestination(
-                    icon: _favoriteTabIcon(size: 22),
-                    selectedIcon: _favoriteTabIcon(size: 24),
-                    label: '收藏',
-                  ),
-                  const NavigationDestination(
-                    icon: Icon(Ionicons.codeSlashOutline, size: 22),
-                    selectedIcon: Icon(Ionicons.codeSlashOutline, size: 24, color: AppColors.primary),
-                    label: '规则',
-                  ),
-                  const NavigationDestination(
-                    icon: Icon(Ionicons.globeOutline, size: 22),
-                    selectedIcon: Icon(Ionicons.globeOutline, size: 24, color: AppColors.primary),
-                    label: '站点',
-                  ),
-                  const NavigationDestination(
-                    icon: Icon(Ionicons.personOutline, size: 22),
-                    selectedIcon: Icon(Ionicons.personOutline, size: 24, color: AppColors.primary),
-                    label: '我的',
-                  ),
-                ],
+                decoration: BoxDecoration(
+                  color: isDark
+                      ? AppColors.darkBg.withValues(alpha: 0.72)
+                      : Colors.white.withValues(alpha: 0.72),
+                ),
+                child: NavigationBar(
+                  backgroundColor: Colors.transparent,
+                  surfaceTintColor: Colors.transparent,
+                  elevation: 0,
+                  selectedIndex: selectedIndex.value,
+                  onDestinationSelected: goTo,
+                  animationDuration: const Duration(milliseconds: 300),
+                  destinations: [
+                    const NavigationDestination(
+                      icon: Icon(Ionicons.compassOutline, size: 22),
+                      selectedIcon: Icon(
+                        Ionicons.compassOutline,
+                        size: 24,
+                        color: AppColors.primary,
+                      ),
+                      label: '发现',
+                    ),
+                    const NavigationDestination(
+                      icon: Icon(Ionicons.bookmarkOutline, size: 22),
+                      selectedIcon: Icon(
+                        Ionicons.bookmarkOutline,
+                        size: 24,
+                        color: AppColors.primary,
+                      ),
+                      label: '收藏',
+                    ),
+                    const NavigationDestination(
+                      icon: Icon(Ionicons.codeSlashOutline, size: 22),
+                      selectedIcon: Icon(
+                        Ionicons.codeSlashOutline,
+                        size: 24,
+                        color: AppColors.primary,
+                      ),
+                      label: '规则',
+                    ),
+                    const NavigationDestination(
+                      icon: Icon(Ionicons.globeOutline, size: 22),
+                      selectedIcon: Icon(
+                        Ionicons.globeOutline,
+                        size: 24,
+                        color: AppColors.primary,
+                      ),
+                      label: '站点',
+                    ),
+                    const NavigationDestination(
+                      icon: Icon(Ionicons.personOutline, size: 22),
+                      selectedIcon: Icon(
+                        Ionicons.personOutline,
+                        size: 24,
+                        color: AppColors.primary,
+                      ),
+                      label: '我的',
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
         ),
-        ),
       ),
-    );
-  }
-
-  /// 收藏 Tab 图标：有作品更新未读时右上角挂红点
-  ///
-  /// 信号原挂在首页顶栏的收藏入口上 —— 入口迁到底部栏后一并带过来（红点跟着入口走），
-  /// 否则「有更新」这个唯一提示会在迁移途中丢掉。
-  Widget _favoriteTabIcon({required double size}) {
-    return ValueListenableBuilder<List<FavoriteItem>>(
-      valueListenable: favoriteService.favoritesNotifier,
-      builder: (context, favorites, _) {
-        final hasUpdate = favorites.any((f) => f.hasUpdate);
-        return Badge(
-          isLabelVisible: hasUpdate,
-          backgroundColor: AppColors.danger,
-          child: Icon(Ionicons.bookmarkOutline, size: size),
-        );
-      },
     );
   }
 }

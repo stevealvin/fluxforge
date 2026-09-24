@@ -7,6 +7,7 @@ import 'package:shared_preferences_platform_interface/shared_preferences_async_p
 
 import 'package:fluxforge/app/di/di.dart';
 import 'package:fluxforge/app/theme/app_theme.dart';
+import 'package:fluxforge/data/library/favorite_service.dart';
 import 'package:fluxforge/features/library/favorites/favorites_page.dart';
 import 'package:fluxforge/features/shell/shell_page.dart';
 
@@ -59,9 +60,27 @@ void main() {
     expect(find.byType(FavoritesPage), findsOneWidget);
   });
 
-  testWidgets('首页顶栏不再有收藏入口（同一份数据不设两个入口）', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('收藏 Tab 图标不再挂红点（即使有未读更新）', (WidgetTester tester) async {
+    await favoriteService.addFavorite(
+      FavoriteItem(
+        id: 'https://x/1',
+        title: '流光纪元',
+        mediaType: 'novel',
+        hasUpdate: true,
+        updatedAt: DateTime(2026, 9, 21),
+      ),
+    );
+
+    await pumpShell(tester);
+
+    expect(
+      find.byType(Badge),
+      findsNothing,
+      reason: '「有更新」由收藏页内的 NEW 角标表达，底部栏不再重复提示',
+    );
+  });
+
+  testWidgets('首页顶栏不再有收藏入口（同一份数据不设两个入口）', (WidgetTester tester) async {
     await pumpShell(tester);
 
     // 底部栏的「收藏」Tab 也用 bookmarkOutline，故必须限定在 AppBar 内查找，

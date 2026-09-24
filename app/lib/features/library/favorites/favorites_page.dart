@@ -64,10 +64,7 @@ class _FavoritesPageState extends State<FavoritesPage> {
     return Scaffold(
       backgroundColor: isDark ? AppColors.darkBg : AppColors.lightBg,
       appBar: AppBar(
-        title: const Text(
-          '我的收藏与追更',
-          style: TextStyle(fontWeight: FontWeight.bold),
-        ),
+        title: const Text('收藏', style: TextStyle(fontWeight: FontWeight.bold)),
         backgroundColor: isDark ? AppColors.darkBg : AppColors.lightBg,
         elevation: 0,
         actions: [
@@ -152,16 +149,17 @@ class _FavoritesPageState extends State<FavoritesPage> {
                       16,
                       8 + MediaQuery.paddingOf(context).bottom,
                     ),
-                    // 每行 4 个：单元格变窄后封面比例仍锁定 2:3（宽高同比缩小），
-                    // 故高宽比要跟着放大到约 1/0.42
+                    // 每行 3 个：单元格变宽后封面比例仍锁定 2:3（宽高同比放大），
+                    // 故高宽比要跟着缩小到约 1/0.47
                     gridDelegate:
                         const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 4,
+                          crossAxisCount: 3,
                           crossAxisSpacing: 10,
                           mainAxisSpacing: 14,
                           // 封面(2:3) + 两行标题 + 进度行（可选更新行）的高度比；
-                          // 封面用 Expanded 吃掉文字之外的余量，文字行数变化不会溢出
-                          childAspectRatio: 0.42,
+                          // 封面用 Expanded 吃掉文字之外的余量，文字行数变化不会溢出。
+                          // 按 393dp 宽推算：格宽 ≈113.7 → 卡高 ≈242 → 封面 ≈169 ≈ 2:3
+                          childAspectRatio: 0.47,
                         ),
                     itemCount: filtered.length,
                     itemBuilder: (context, index) {
@@ -284,29 +282,10 @@ class _FavoritesPageState extends State<FavoritesPage> {
     final hasUpdate = item.hasUpdate;
 
     return GestureDetector(
-      onTap: () {
-        HapticFeedback.selectionClick();
-        // 打开详情即视为「已知晓更新」，只清红点，不伪造观看进度
-        favoriteService.markAsRead(item.id);
-        Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => MediaDetailPage(
-              type: item.mediaType,
-              title: item.title,
-              cover: item.cover,
-              // 原样传入原文地址：拼接 baseUrl 是规则代码自己的职责，
-              // App 侧不要替它补全，否则规则会再拼一次，变成两份 baseUrl。
-              url: item.url,
-              // 绑定收藏时记录的规则：否则详情页只能靠 baseUrl host 反查，
-              // 命中不了就会报「未指定对应解析规则」
-              rule: MediaFavoriteActions.ruleOf(item),
-            ),
-          ),
-        );
-      },
-      // 网格里放不下垃圾桶按钮，且左上 / 左下角已被角标占用 —— 移除改长按。
-      // 仍是低风险操作，故照旧走「可撤销」而不是二次确认。
-      onLongPress: () => _removeWithUndo(context, item),
+      onTap: () => _openDetail(context, item),
+      // 网格里放不下垃圾桶按钮，且左上 / 左下角已被角标占用 —— 移除入口收进长按面板。
+      // 面板里「移除收藏」仍是低风险操作，故照旧走「可撤销」而不是二次确认。
+      onLongPress: () => _showFavoriteActionsSheet(context, item),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -418,6 +397,104 @@ class _FavoritesPageState extends State<FavoritesPage> {
           ],
         ],
       ),
+    );
+  }
+
+  /// 打开详情（唯一的入口是**点击卡片**）
+  ///
+  /// 清红点、不改写进度；原文地址与绑定规则都原样传下去。
+  void _openDetail(BuildContext context, FavoriteItem item) {
+    HapticFeedback.selectionClick();
+    // 打开详情即视为「已知晓更新」，只清红点，不伪造观看进度
+    favoriteService.markAsRead(item.id);
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => MediaDetailPage(
+          type: item.mediaType,
+          title: item.title,
+          cover: item.cover,
+          // 原样传入原文地址：拼接 baseUrl 是规则代码自己的职责，
+          // App 侧不要替它补全，否则规则会再拼一次，变成两份 baseUrl。
+          url: item.url,
+          // 绑定收藏时记录的规则：否则详情页只能靠 baseUrl host 反查，
+          // 命中不了就会报「未指定对应解析规则」
+          rule: MediaFavoriteActions.ruleOf(item),
+        ),
+      ),
+    );
+  }
+
+  /// 长按卡片弹出的面板（移除收藏）
+  ///
+  /// 此前是「长按即移除」：那个手势**没有任何可见入口** —— 想移除时找不到，
+  /// 不想移除时又容易误触，所以保留一层「先弹面板把动作摆出来」。
+  /// 面板里**不再放「查看详情」**：那和点击卡片完全同一条路径（同一个
+  /// [_openDetail]），摆在这里只是把同一件事说两遍。
+  /// 移除不做二次确认，后悔的代价交给移除后的 5 秒撤销提示（见 [_removeWithUndo]）。
+  void _showFavoriteActionsSheet(BuildContext context, FavoriteItem item) {
+    HapticFeedback.selectionClick();
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: isDark ? AppColors.darkCard : AppColors.lightSurface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetCtx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // 顶部小横条
+                Container(
+                  width: 36,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 12),
+                  decoration: BoxDecoration(
+                    color: isDark ? Colors.white24 : Colors.black12,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                // 面板标题：条目名（写不下就省略，不换行撑高面板）
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: Text(
+                      item.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+                ListTile(
+                  leading: const Icon(
+                    Ionicons.trashOutline,
+                    size: 20,
+                    color: AppColors.danger,
+                  ),
+                  title: const Text(
+                    '移除收藏',
+                    style: TextStyle(fontSize: 14, color: AppColors.danger),
+                  ),
+                  onTap: () {
+                    Navigator.pop(sheetCtx);
+                    _removeWithUndo(context, item);
+                  },
+                ),
+                const SizedBox(height: 8),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 

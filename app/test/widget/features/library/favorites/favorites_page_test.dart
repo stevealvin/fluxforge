@@ -9,7 +9,9 @@ import 'package:fluxforge/app/theme/app_theme.dart';
 import 'package:fluxforge/core/storage/app_storage.dart';
 import 'package:fluxforge/data/library/favorite_service.dart';
 import 'package:fluxforge/data/library/play_history_service.dart';
+import 'package:fluxforge/data/rule/rule_service.dart';
 import 'package:fluxforge/features/library/favorites/favorites_page.dart';
+import 'package:fluxforge/features/media/shared/media_detail_page.dart';
 
 FavoriteItem _item({
   required String id,
@@ -32,6 +34,12 @@ FavoriteItem _item({
 }
 
 Future<void> _pumpPage(WidgetTester tester) async {
+  // 用手机尺寸：800×600 的默认测试画布又宽又矮，3 列栅格下卡片高度（≈530）
+  // 会高过视口，落在卡片底部的标题就点不到了 —— 长按点不到，面板自然不弹。
+  tester.view.physicalSize = const Size(1170, 2532); // 390 × 844 @3x
+  tester.view.devicePixelRatio = 3.0;
+  addTearDown(tester.view.reset);
+
   await tester.pumpWidget(
     MaterialApp(theme: AppTheme.lightTheme, home: const FavoritesPage()),
   );
@@ -49,6 +57,10 @@ void main() {
     }
     if (!getIt.isRegistered<PlayHistoryService>()) {
       getIt.registerSingleton<PlayHistoryService>(PlayHistoryService());
+    }
+    // 打开详情会经 MediaFavoriteActions.ruleOf → ruleService 反查绑定规则
+    if (!getIt.isRegistered<RuleService>()) {
+      getIt.registerSingleton<RuleService>(RuleService());
     }
     await AppStorage.clear();
     await favoriteService.clearFavorites();
@@ -105,17 +117,29 @@ void main() {
     expect(find.text('更新至：第 9 章'), findsOneWidget);
   });
 
-  testWidgets('移除收藏给出可撤销提示，撤销后条目恢复', (WidgetTester tester) async {
+  testWidgets('长按弹出操作面板，移除后给出可撤销提示，撤销后条目恢复', (WidgetTester tester) async {
     await favoriteService.addFavorite(_item(id: 'https://x/1', title: '流光纪元'));
 
     await _pumpPage(tester);
 
-    // 书架网格里放不下垃圾桶按钮：移除改成长按卡片
+    // 书架网格里放不下垃圾桶按钮：移除入口收进长按面板
     await tester.longPress(find.text('流光纪元'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('移除收藏'), findsOneWidget);
+    expect(find.text('查看详情'), findsNothing, reason: '面板不放「查看详情」：它与点击卡片完全同路');
+    expect(
+      favoriteService.favorites,
+      isNotEmpty,
+      reason: '长按只弹面板，不该直接删除（此前是长按即移除）',
+    );
+
+    await tester.tap(find.text('移除收藏'));
     await tester.pumpAndSettle();
 
     expect(favoriteService.favorites, isEmpty);
     expect(find.text('已移除《流光纪元》'), findsOneWidget);
+    expect(find.text('撤销'), findsOneWidget, reason: '移除必须给后悔的机会');
 
     await tester.tap(find.text('撤销'));
     await tester.pumpAndSettle();
@@ -126,6 +150,49 @@ void main() {
     // 排空 SnackBar 计时，避免测试结束时残留定时器
     await tester.pump(const Duration(seconds: 5));
     await tester.pumpAndSettle();
+  });
+
+  testWidgets('点击卡片进入详情页，并清掉「有更新」红点', (WidgetTester tester) async {
+    await favoriteService.addFavorite(
+      _item(
+        id: 'https://x/1',
+        title: '流光纪元',
+        latestEpisode: '第 9 章',
+        hasUpdate: true,
+      ),
+    );
+
+    await _pumpPage(tester);
+    expect(find.text('NEW'), findsOneWidget);
+
+    await tester.tap(find.text('流光纪元'));
+    // 该条目没有绑定规则，详情页会走「未指定对应解析规则」分支，不涉及网络
+    // 与无限动画，故只推进过渡动画而不 pumpAndSettle
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.byType(MediaDetailPage), findsOneWidget);
+    expect(favoriteService.favorites, isNotEmpty, reason: '打开详情不是移除');
+    expect(
+      favoriteService.favorites.single.hasUpdate,
+      isFalse,
+      reason: '打开详情即视为已知晓更新，只清红点',
+    );
+  });
+
+  testWidgets('顶部标题为「收藏」，栅格为 3 列', (WidgetTester tester) async {
+    await favoriteService.addFavorite(_item(id: 'https://x/1', title: '流光纪元'));
+
+    await _pumpPage(tester);
+
+    expect(find.text('收藏'), findsOneWidget);
+
+    final grid = tester.widget<GridView>(find.byType(GridView));
+    final delegate =
+        grid.gridDelegate as SliverGridDelegateWithFixedCrossAxisCount;
+    expect(delegate.crossAxisCount, 3);
+    // 3 列下格宽 ≈113.7：封面要保住 2:3，比例必须跟着重算而不是沿用 4 列的 0.42
+    expect(delegate.childAspectRatio, closeTo(0.47, 0.001));
   });
 
   testWidgets('筛选到无条目的类型时给出区分文案', (WidgetTester tester) async {
