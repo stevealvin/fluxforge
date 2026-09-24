@@ -102,6 +102,42 @@ class _NovelDetailViewState extends State<NovelDetailView> {
     );
   }
 
+  /// 续读主操作（挂在头部右列底部）
+  ///
+  /// 文案按状态分三档：没有章节时是"畅读正文"（详情已带正文），有进度说
+  /// 「继续阅读 第 N 章」，否则是「开始阅读 共 N 章」。
+  Widget _buildResumeButton(List<MediaEpisode> chapters) {
+    final label = chapters.isEmpty
+        ? '立即畅读正文'
+        : (_hasReadingProgress
+              ? '继续阅读 · 第 ${_resumeChapterIndex + 1} 章'
+              : '开始阅读 · 共 ${chapters.length} 章');
+
+    return SizedBox(
+      width: double.infinity,
+      child: FilledButton.icon(
+        onPressed: () => _openReader(initialIndex: _resumeChapterIndex),
+        icon: const Icon(Ionicons.bookOutline, size: 15),
+        label: Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold),
+        ),
+        style: FilledButton.styleFrom(
+          backgroundColor: AppColors.primary,
+          foregroundColor: Colors.white,
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          minimumSize: Size.zero,
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
+        ),
+      ),
+    );
+  }
+
   /// 打开纯净小说阅读引擎
   void _openReader({int initialIndex = 0}) {
     HapticFeedback.lightImpact();
@@ -158,197 +194,162 @@ class _NovelDetailViewState extends State<NovelDetailView> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // 1. 小说头部元信息 (封面默认展示)
+        // 1. 小说头部元信息
+        //
+        // 续读主操作交给头部的右列底部（[MediaMetaHeader.bottomAction]）：
+        // 那一列本来就空着大半个封面高度，主操作落在那儿既不新增行高，
+        // 也比原来"下面单开一整行大按钮"更靠近标题。
         MediaMetaHeader(
           data: widget.data,
           rule: widget.rule,
           fallbackTitle: widget.fallbackTitle,
           fallbackCover: widget.fallbackCover,
           onShareTap: widget.onShareTap,
+          bottomAction: _buildResumeButton(chapters),
         ),
 
-        // 2. 醒目“开始阅读”主操作大卡片
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-          child: AppCard(
-            padding: const EdgeInsets.symmetric(vertical: 12),
-            borderRadius: 12,
-            color: AppColors.primary,
-            onTap: () => _openReader(initialIndex: _resumeChapterIndex),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(Ionicons.bookOutline, color: Colors.white, size: 18),
-                const SizedBox(width: 8),
-                Text(
-                  chapters.isNotEmpty
-                      ? (_hasReadingProgress
-                            ? '继续阅读 (第 ${_resumeChapterIndex + 1} 章 / 共 ${chapters.length} 章)'
-                            : '开始阅读 (共 ${chapters.length} 章)')
-                      : '立即畅读正文',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
+        // 2. 目录选章标题（固定区）
+        if (chapters.isNotEmpty) _buildCatalogHeader(isDark, chapters.length),
+
+        // 3. 目录列表 + 相关推荐：吃满剩余高度并独立滚动
+        //
+        // 此前是「整页长滑 + 只铺前 30 章 + 末尾一个"进阅读器看全部"」：
+        // 章节多的小说想跳到第 200 章，得先进阅读器、再开目录，绕一圈。
+        // 现在目录有自己的滚动区（懒加载 SliverList，几万章也只构建可见行），
+        // 找章就在原地 —— 与漫画详情页的骨架一致。
+        Expanded(
+          child: CustomScrollView(
+            physics: const BouncingScrollPhysics(),
+            slivers: [
+              if (displayChapters.isNotEmpty)
+                SliverPadding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  sliver: SliverList.builder(
+                    itemCount: displayChapters.length,
+                    itemBuilder: (context, index) {
+                      final ch = displayChapters[index];
+                      final realIndex = _isReversed
+                          ? (chapters.length - 1 - index)
+                          : index;
+                      return Padding(
+                        // 末项不留尾距：滚动区底部另有留白
+                        padding: EdgeInsets.only(
+                          bottom: index == displayChapters.length - 1 ? 0 : 6,
+                        ),
+                        child: AppCard(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 11,
+                          ),
+                          borderRadius: 10,
+                          color: isDark
+                              ? AppColors.darkCard
+                              : AppColors.lightSurface,
+                          onTap: () => _openReader(initialIndex: realIndex),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  ch.title,
+                                  style: const TextStyle(fontSize: 13),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              Icon(
+                                Icons.chevron_right_rounded,
+                                size: 18,
+                                color: isDark
+                                    ? AppColors.darkTextTertiary
+                                    : AppColors.lightTextTertiary,
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
                   ),
                 ),
-              ],
-            ),
+
+              // 4. 小说相关推荐 (默认 3 列海报纵向卡片)
+              SliverToBoxAdapter(
+                child: MediaRelatedGrid(
+                  related: widget.data.related,
+                  currentRule: widget.rule,
+                  headers: widget.data.customHeaders,
+                  onItemTap: widget.onRelatedItemTap,
+                ),
+              ),
+              const SliverToBoxAdapter(child: SizedBox(height: 16)),
+            ],
           ),
         ),
+      ],
+    );
+  }
 
-        // 2.5 离线下载入口已上移至顶部栏右上角图标（底部弹出下载面板）
-
-        // 3. 目录选章列表 (修复深色模式底色为 darkCard 实体材质与微光边框)
-        if (chapters.isNotEmpty) ...[
-          Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: 16.0,
-              vertical: 8.0,
+  /// 目录选章标题行（固定区）：主题色竖条 + 名称 + 总章数 + 正序 / 倒序
+  Widget _buildCatalogHeader(bool isDark, int total) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+      child: Row(
+        children: [
+          Container(
+            width: 3.5,
+            height: 14,
+            decoration: BoxDecoration(
+              color: AppColors.primary,
+              borderRadius: BorderRadius.circular(2),
             ),
+          ),
+          const SizedBox(width: 8),
+          const Text(
+            '目录选章',
+            style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(width: 6),
+          Text(
+            '共 $total 章',
+            style: TextStyle(
+              fontSize: 12,
+              color: isDark
+                  ? AppColors.darkTextMuted
+                  : AppColors.lightTextMuted,
+            ),
+          ),
+          const Spacer(),
+
+          GestureDetector(
+            onTap: () {
+              HapticFeedback.selectionClick();
+              setState(() {
+                _isReversed = !_isReversed;
+              });
+            },
             child: Row(
               children: [
-                Container(
-                  width: 3.5,
-                  height: 14,
-                  decoration: BoxDecoration(
-                    color: AppColors.primary,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
+                Icon(
+                  Ionicons.swapVerticalOutline,
+                  size: 13,
+                  color: isDark
+                      ? AppColors.darkTextSecondary
+                      : AppColors.lightTextSecondary,
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 4),
                 Text(
-                  '目录选章',
-                  style: const TextStyle(
-                    fontSize: 14.5,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  '共 ${chapters.length} 章',
+                  _isReversed ? '倒序' : '正序',
                   style: TextStyle(
                     fontSize: 12,
                     color: isDark
-                        ? AppColors.darkTextMuted
-                        : AppColors.lightTextMuted,
-                  ),
-                ),
-                const Spacer(),
-
-                GestureDetector(
-                  onTap: () {
-                    HapticFeedback.selectionClick();
-                    setState(() {
-                      _isReversed = !_isReversed;
-                    });
-                  },
-                  child: Row(
-                    children: [
-                      Icon(
-                        Ionicons.swapVerticalOutline,
-                        size: 13,
-                        color: isDark
-                            ? AppColors.darkTextSecondary
-                            : AppColors.lightTextSecondary,
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        _isReversed ? '倒序' : '正序',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: isDark
-                              ? AppColors.darkTextSecondary
-                              : AppColors.lightTextSecondary,
-                        ),
-                      ),
-                    ],
+                        ? AppColors.darkTextSecondary
+                        : AppColors.lightTextSecondary,
                   ),
                 ),
               ],
             ),
           ),
-
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0),
-            child: ListView.separated(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              padding: EdgeInsets.zero,
-              itemCount: displayChapters.length.clamp(0, 30),
-              separatorBuilder: (context, index) => const SizedBox(height: 6),
-              itemBuilder: (context, index) {
-                final ch = displayChapters[index];
-                final realIndex = _isReversed
-                    ? (chapters.length - 1 - index)
-                    : index;
-                return AppCard(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 11,
-                  ),
-                  borderRadius: 10,
-                  color: isDark ? AppColors.darkCard : AppColors.lightSurface,
-                  onTap: () => _openReader(initialIndex: realIndex),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          ch.title,
-                          style: const TextStyle(fontSize: 13),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      Icon(
-                        Icons.chevron_right_rounded,
-                        size: 18,
-                        color: isDark
-                            ? AppColors.darkTextTertiary
-                            : AppColors.lightTextTertiary,
-                      ),
-                    ],
-                  ),
-                );
-              },
-            ),
-          ),
-
-          if (chapters.length > 30)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-              child: Center(
-                child: TextButton.icon(
-                  onPressed: () =>
-                      _openReader(initialIndex: _resumeChapterIndex),
-                  // 跟随主题解析品牌色，暗色下自动用更亮的 primaryGlow
-                  icon: Icon(
-                    Ionicons.listOutline,
-                    size: 14,
-                    color: Theme.of(context).colorScheme.primary,
-                  ),
-                  label: Text(
-                    '进入阅读器查看全部 ${chapters.length} 章节',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Theme.of(context).colorScheme.primary,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          const SizedBox(height: 12),
         ],
-
-        // 4. 小说相关推荐 (默认 3 列海报纵向卡片)
-        MediaRelatedGrid(
-          related: widget.data.related,
-          currentRule: widget.rule,
-          headers: widget.data.customHeaders,
-          onItemTap: widget.onRelatedItemTap,
-        ),
-      ],
+      ),
     );
   }
 }

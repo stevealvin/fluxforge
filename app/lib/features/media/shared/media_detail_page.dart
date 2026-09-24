@@ -533,35 +533,30 @@ class _MediaDetailPageState extends State<MediaDetailPage> {
       );
     }
 
-    Widget content;
-    switch (_data.mediaType) {
-      case MediaType.comic:
-        content = ComicDetailView(
-          data: _data,
-          rule: _activeRule,
-          fallbackTitle: widget.title,
-          fallbackCover: widget.cover,
-          onRelatedItemTap: _handleRelatedItemTap,
-        );
-        break;
-      case MediaType.novel:
-        content = NovelDetailView(
-          data: _data,
-          rule: _activeRule,
-          fallbackTitle: widget.title,
-          fallbackCover: widget.cover,
-          onRelatedItemTap: _handleRelatedItemTap,
-        );
-        break;
-      default:
-        content = const SizedBox.shrink();
-        break;
+    // 漫画：详情视图自带「固定头部 + 主列表独立滚动」的骨架（画卷列表要吃满剩余
+    // 高度）。外层**不能**再套滚动 —— 那会把高度约束变成无限，里面的 Expanded 直接报错。
+    if (_data.mediaType == MediaType.comic) {
+      return ComicDetailView(
+        data: _data,
+        rule: _activeRule,
+        fallbackTitle: widget.title,
+        fallbackCover: widget.cover,
+        onRelatedItemTap: _handleRelatedItemTap,
+      );
     }
 
-    // 漫画与小说类型：整页自由长滑卷轴
-    return SingleChildScrollView(
-      physics: const BouncingScrollPhysics(),
-      child: content,
-    );
+    // 小说：与漫画同构 —— 详情视图自带「固定头部 + 目录独立滚动」的骨架，
+    // 外层同样不能再套滚动（理由见上面漫画分支）
+    if (_data.mediaType == MediaType.novel) {
+      return NovelDetailView(
+        data: _data,
+        rule: _activeRule,
+        fallbackTitle: widget.title,
+        fallbackCover: widget.cover,
+        onRelatedItemTap: _handleRelatedItemTap,
+      );
+    }
+
+    return const SizedBox.shrink();
   }
 }
