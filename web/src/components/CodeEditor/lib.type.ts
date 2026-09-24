@@ -51,5 +51,50 @@ export const libTypes = {
     
     const axios: AxiosStatic;
     export default axios;
+  }`,
+  cheerio: `declare module 'cheerio' {
+    export interface CheerioSelection {
+      length: number;
+      text(): string;
+      html(): string | null;
+      attr(name: string): string | undefined;
+      attr(name: string, value: string): CheerioSelection;
+      data(name?: string): any;
+      val(): string | string[] | undefined;
+      hasClass(className: string): boolean;
+      find(selector: string): CheerioSelection;
+      children(selector?: string): CheerioSelection;
+      parent(selector?: string): CheerioSelection;
+      parents(selector?: string): CheerioSelection;
+      closest(selector: string): CheerioSelection;
+      next(selector?: string): CheerioSelection;
+      prev(selector?: string): CheerioSelection;
+      siblings(selector?: string): CheerioSelection;
+      first(): CheerioSelection;
+      last(): CheerioSelection;
+      eq(index: number): CheerioSelection;
+      slice(start?: number, end?: number): CheerioSelection;
+      filter(selector: string | ((index: number, element: any) => boolean)): CheerioSelection;
+      not(selector: string): CheerioSelection;
+      has(selector: string): CheerioSelection;
+      each(callback: (index: number, element: any) => any): CheerioSelection;
+      map<T>(callback: (index: number, element: any) => T): { toArray(): T[]; get(): T[] };
+      toArray(): any[];
+      get(index?: number): any;
+      [index: number]: any;
+    }
+    export interface CheerioRoot extends CheerioSelection {
+      (selector: string | any, context?: any): CheerioSelection;
+      html(): string;
+      xml(): string;
+      text(): string;
+    }
+    export interface CheerioAPI {
+      (selector: string | any, context?: any): CheerioSelection;
+      load(html: string | any, options?: any): CheerioRoot;
+      [key: string]: any;
+    }
+    const cheerio: CheerioAPI;
+    export default cheerio;
   }`
 }

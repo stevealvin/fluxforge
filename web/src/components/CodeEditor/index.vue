@@ -78,7 +78,8 @@ const init = async () => {
   setOptions(monaco)
   addCommands(monaco)
 
-  // 添加类型定义
+  // 添加类型定义 (内置全局沙箱类型及第三方库定义)
+  addExtraLibs(monaco)
   addGlobalSandboxTypes(monaco)
   addExtraLibFromFetch(monaco, 'axios')
   addExtraLibFromFetch(monaco, 'cheerio')
@@ -100,7 +101,7 @@ const setOptions = (monaco: typeof import('monaco-editor')) => {
   const compilerOptions = {
     checkJs: true,
     allowJs: true,
-    strict: true,
+    strict: false,
     esModuleInterop: true,
     moduleResolution: monaco.typescript.ModuleResolutionKind.NodeJs,
     module: monaco.typescript.ModuleKind.ESNext,
