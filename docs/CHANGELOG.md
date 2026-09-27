@@ -44,6 +44,90 @@
   - `flutter analyze`：**0 错误、0 警告 (No issues found!)**；
   - `flutter test`：**530 项自动化测试全量通过 (530/530 All tests passed!)**。
 
+## [2026-09-26]
+
+### ⚙️ 设置页分组卡片去掉描边（「我的」页同步生效）
+
+`SettingSection` 的 0.8px 描边移除，卡片改为只靠「底色档差 + 微阴影」从背景浮起。
+那圈描边在浅色下会与内嵌块底色（`lightSurfaceVariant`）打架，看着像「框里还有框」。
+
+**影响面说明**：该组件由设置页与「我的」页的「数据与同步」分组共用，故两页一起生效 ——
+这是刻意的：同一套分组容器不该在两页呈现不同的边框。
+
+`flutter analyze` **0 问题**；`flutter test` **536/536 通过**。
+
+### 🕘 历史中心的类型筛选改为与收藏页同一套胶囊（并抽成共用组件）
+
+**抽共享组件**：筛选条此前在收藏页是一份手写的自绘胶囊、在历史中心是一份 Material
+`ChoiceChip` —— 选中态、底色、有无数量三处都不一样。现抽为
+`shared/widgets/filter_pill_bar.dart`（`FilterPillBar` + `FilterPillItem`），两页共用：
+选中态 = 主色 20% 底 + 主色 1px 描边 + 主色加粗文字；未选中 = 极淡底色 +
+**透明描边占位**（切换时不跳尺寸）；末尾带该类目数量，为 0 时降淡 ——
+用户不必点进去才发现那一类是空的。
+
+**历史中心**：筛选条从列表内移到 `AppBar.bottom`（吸顶）—— 原先它挂在列表里，
+往下翻一屏就看不见，也就无法边看边切类型；同时由 `ChoiceChip`（纯主色实底、未选中态
+与页面背景同色）换成共用胶囊，并补上各类型的记录数。label 保留本页的「漫画」：
+历史记录里图集本就归在漫画类型下，本页没有单独区分的语义。
+
+**顺带**：收藏页胶囊里残留的裸色 `Colors.grey` / `Colors.black87` 在抽组件时一并收敛为
+`AppColors` 的 muted 语义色。
+
+**验收**：新增 `filter_pill_bar_test.dart`（胶囊数量 / 点击回调 / 描边占位且同一时刻
+只有一个主色）与 `history_center_page_test.dart`（筛选挂在 `AppBar` 内 / 点击后只保留该类
+记录）。后者踩到一处歧义：`find.text('影视')` 会同时命中筛选胶囊与记录卡的类型标签，
+`tap` 报 "ambiguously found multiple matching widgets"，需限定在 `FilterPillBar` 内查找。
+`flutter analyze` **0 问题**；`flutter test` **536/536 通过**。
+
+### 📚 收藏页改单列「左封面 + 右信息」；筛选进顶栏、撤掉刷新按钮
+
+**列表形态**：由封面网格改为**单列卡片**（横向）：封面 84×126（2:3）在左，右侧依次是
+标题（2 行，同行右侧带类型小标签）、`上次看到：X`、以及有更新时的 `更新至：X`。
+一条占一整行后，进度与更新不再挤成两行小字，扫读更快。进度 / 更新两行共用
+`_buildInfoLine`（图标 + 文案），保证左边缘与图标尺寸一致 —— 各写一遍必然漂。
+
+**筛选进顶栏**：类型筛选胶囊从「列表上方独立一行」移入 `AppBar.title`。底部导航已经写着
+「收藏」，再放一遍页名是重复，省下的整行留给列表。筛选条横向可滚，窄屏放不下时不会
+撑高标题行（顶栏内不再加纵向内边距）。
+
+**撤掉右上角刷新按钮**：它与下拉刷新（`RefreshIndicator`）本来就是同一条 `_checkUpdates`
+路径，重复；追更检查是低频动作，不值得常驻一个按钮。下拉刷新保留。
+
+**顺带**：类型标签从封面左下角（深色底压在图上）移到标题同行右侧，改为浅色小标签。
+
+**验收**：`favorites_page_test.dart` 中原先锚定「标题为收藏、3 列栅格」的用例，改写为
+「筛选在 AppBar 内 / 刷新按钮已撤 / 单列列表且封面位于信息左侧」。
+`flutter analyze` **0 问题**；`flutter test` **531/531 通过**。
+
+### 🧩 Web 规则编辑器：修复 cheerio 完全没有类型提示（远程类型包覆盖了内置声明）
+
+**现象**：Web 端编辑规则脚本时 `cheerio` 没有任何补全与类型提示，`cheerio.` 之后也不弹东西。
+
+**根因**：类型注入有两条路径，而它们**抢同一个文件路径** ——
+
+| 来源 | 内容 | 注入路径 |
+|---|---|---|
+| 内置 `lib.type.ts` | `declare module 'cheerio' { export interface CheerioAPI … }` | `node_modules/@types/cheerio/index.d.ts` |
+| `addExtraLibFromFetch`（CDN） | 旧式 `declare namespace cheerio`，且带 `/// <reference types="node" />` | **同一个路径** |
+
+Monaco 的 `addExtraLib` 对同路径是**替换**而不是追加，于是 CDN 那份把内置的正确声明覆盖掉了。
+覆盖之后 `import('cheerio')` 解析不到，`addGlobalSandboxTypes` 里那句
+`const cheerio: import('cheerio').CheerioAPI` 随之失败 —— 全局 cheerio 因此**彻底失去类型**。
+
+实测 CDN 内容印证了这一点：`@types/cheerio` 至今是旧式全局命名空间声明；axios 更极端，
+`@types/axios` 停在 **0.9.1（2016 年）**，走同一路径同样覆盖掉了内置的 axios 声明。
+
+**修复**：
+
+- 删除 `addExtraLibFromFetch` 及其两处调用（axios / cheerio），第三方库**只用内置声明** ——
+  需要类型的库就这两个，内置声明足够，顺带去掉联网依赖与不确定性；
+- `lib.type.ts` 里 `require('cheerio')` 的返回类型由 `typeof import('cheerio')` 改为
+  `typeof import('cheerio').default`：模块命名空间上并没有 `load`，取命名空间会让
+  `const cheerio = require('cheerio')` 之后只提示出一个 `default`（axios 那条本来就是对的）。
+
+**验收**：`web` 目录 `vue-tsc -b` 通过（0 错误）。浏览器里的补全效果需真机确认 ——
+本次改的是 Monaco 类型注入的时机与内容，静态类型检查覆盖不到这一层。
+
 ## [2026-09-23]
 
 ### 🖼️ 图集画卷展示全部图片并可独立滑动（原先只画 9 张且不可滑）
