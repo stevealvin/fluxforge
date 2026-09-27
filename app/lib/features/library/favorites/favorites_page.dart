@@ -7,9 +7,11 @@ import 'package:fluxforge/core/utils/media_utils.dart';
 import 'package:fluxforge/app/di/di.dart';
 import 'package:fluxforge/data/library/favorite_service.dart';
 import 'package:fluxforge/data/library/play_history_service.dart';
+import 'package:fluxforge/shared/widgets/app_card.dart';
 import 'package:fluxforge/shared/widgets/app_empty_state.dart';
 import 'package:fluxforge/shared/widgets/app_delete_snack_bar.dart';
 import 'package:fluxforge/shared/widgets/app_image.dart';
+import 'package:fluxforge/shared/widgets/filter_pill_bar.dart';
 import 'package:fluxforge/shared/widgets/app_loading.dart';
 import 'package:fluxforge/features/media/shared/media_detail_page.dart';
 import 'package:fluxforge/features/media/shared/media_favorite_actions.dart';
@@ -64,31 +66,22 @@ class _FavoritesPageState extends State<FavoritesPage> {
     return Scaffold(
       backgroundColor: isDark ? AppColors.darkBg : AppColors.lightBg,
       appBar: AppBar(
-        title: const Text('收藏', style: TextStyle(fontWeight: FontWeight.bold)),
+        // 筛选条直接占顶栏：底部导航已经写着「收藏」，再放一遍页名是重复，
+        // 省下的整行留给列表。
+        //
+        // 刷新入口一并撤掉 —— 它本来就与下拉刷新重复（[RefreshIndicator] 走同一个
+        // [_checkUpdates]），而追更检查是低频动作，不值得常驻一个按钮。
+        titleSpacing: 10,
+        title: ValueListenableBuilder<List<FavoriteItem>>(
+          valueListenable: favoriteService.favoritesNotifier,
+          builder: (context, favorites, _) => FilterPillBar(
+            items: _filterItems(favorites),
+            selectedKey: _selectedFilter,
+            onSelected: (key) => setState(() => _selectedFilter = key),
+          ),
+        ),
         backgroundColor: isDark ? AppColors.darkBg : AppColors.lightBg,
         elevation: 0,
-        actions: [
-          if (_isCheckingUpdates)
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 16),
-              child: Center(
-                child: SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: AppColors.primary,
-                  ),
-                ),
-              ),
-            )
-          else
-            IconButton(
-              tooltip: '检查全量追更',
-              icon: const Icon(Ionicons.refreshOutline),
-              onPressed: _checkUpdates,
-            ),
-        ],
       ),
       // 收藏库与消费记录任一变化都要重绘：「上次看到」来自后者
       body: ValueListenableBuilder<List<FavoriteItem>>(
@@ -124,153 +117,65 @@ class _FavoritesPageState extends State<FavoritesPage> {
             return b.updatedAt.compareTo(a.updatedAt);
           });
 
-    return Column(
-      children: [
-        _buildFilterBar(favorites, isDark),
-        Expanded(
-          child: filtered.isEmpty
-              ? AppEmptyState(
-                  icon: Ionicons.bookmarkOutline,
-                  title: favorites.isEmpty ? '暂无收藏条目' : '该类型下暂无收藏',
-                  description: favorites.isEmpty
-                      ? '在影视、小说或漫画详情页点击右上角收藏，即可开启智能追更提醒'
-                      : '切换到「全部」查看其它收藏，或去详情页收藏更多内容',
-                )
-              : RefreshIndicator(
-                  onRefresh: _checkUpdates,
-                  color: AppColors.primary,
-                  child: GridView.builder(
-                    // 显式 padding 会**覆盖**滚动组件的自动 padding：本页是底部导航
-                    // 的一个 Tab，必须自己留出底部栏高度，否则最后一行会被毛玻璃压住。
-                    // （extendBody 时 Scaffold 已把底部栏高度注入 MediaQuery.padding）
-                    padding: EdgeInsets.fromLTRB(
-                      16,
-                      8,
-                      16,
-                      8 + MediaQuery.paddingOf(context).bottom,
-                    ),
-                    // 每行 3 个：单元格变宽后封面比例仍锁定 2:3（宽高同比放大），
-                    // 故高宽比要跟着缩小到约 1/0.47
-                    gridDelegate:
-                        const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 3,
-                          crossAxisSpacing: 10,
-                          mainAxisSpacing: 14,
-                          // 封面(2:3) + 两行标题 + 进度行（可选更新行）的高度比；
-                          // 封面用 Expanded 吃掉文字之外的余量，文字行数变化不会溢出。
-                          // 按 393dp 宽推算：格宽 ≈113.7 → 卡高 ≈242 → 封面 ≈169 ≈ 2:3
-                          childAspectRatio: 0.47,
-                        ),
-                    itemCount: filtered.length,
-                    itemBuilder: (context, index) {
-                      final item = filtered[index];
-                      return _buildFavoriteCard(context, item, isDark);
-                    },
-                  ),
-                ),
-        ),
-      ],
-    );
+    return filtered.isEmpty
+        ? AppEmptyState(
+            icon: Ionicons.bookmarkOutline,
+            title: favorites.isEmpty ? '暂无收藏条目' : '该类型下暂无收藏',
+            description: favorites.isEmpty
+                ? '在影视、小说或漫画详情页点击右上角收藏，即可开启智能追更提醒'
+                : '切换到「全部」查看其它收藏，或去详情页收藏更多内容',
+          )
+        : RefreshIndicator(
+            onRefresh: _checkUpdates,
+            color: AppColors.primary,
+            child: ListView.builder(
+              // 显式 padding 会**覆盖**滚动组件的自动 padding：本页是底部导航
+              // 的一个 Tab，必须自己留出底部栏高度，否则最后一条会被毛玻璃压住。
+              // （extendBody 时 Scaffold 已把底部栏高度注入 MediaQuery.padding）
+              padding: EdgeInsets.fromLTRB(
+                16,
+                6,
+                16,
+                8 + MediaQuery.paddingOf(context).bottom,
+              ),
+              itemCount: filtered.length,
+              itemBuilder: (context, index) {
+                final item = filtered[index];
+                return _buildFavoriteCard(context, item, isDark);
+              },
+            ),
+          );
   }
 
-  Widget _buildFilterBar(List<FavoriteItem> favorites, bool isDark) {
-    const filters = [
-      {'key': 'all', 'label': '全部'},
-      {'key': 'video', 'label': '影视'},
-      {'key': 'novel', 'label': '小说'},
-      {'key': 'comic', 'label': '漫画/图集'},
+  /// 收藏页的筛选项
+  ///
+  /// 本页「漫画」与「图集」同属一类，故 label 写「漫画/图集」；数量为 0 的类型
+  /// 仍列出来（降淡）—— 用户不必点进去才发现那一类是空的。
+  List<FilterPillItem> _filterItems(List<FavoriteItem> favorites) {
+    const defs = [
+      ('all', '全部'),
+      ('video', '影视'),
+      ('novel', '小说'),
+      ('comic', '漫画/图集'),
     ];
 
-    // 每个类型带数量：否则用户只能一个个点进去、撞上空态才知道那一类没有内容
     int countOf(String key) => key == 'all'
         ? favorites.length
         : favorites.where((f) => f.mediaType == key).length;
 
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Row(
-        children: [
-          for (final f in filters) ...[
-            _buildFilterChip(
-              f['key']!,
-              f['label']!,
-              countOf(f['key']!),
-              isDark,
-            ),
-            const SizedBox(width: 6),
-          ],
-        ],
-      ),
-    );
+    return [
+      for (final (key, label) in defs)
+        FilterPillItem(key: key, label: label, count: countOf(key)),
+    ];
   }
 
-  /// 过滤胶囊：与「日志页 / 设置页」同一套自绘样式（Material ChoiceChip 在此前是孤例）
+  /// 单个收藏卡（横向：左封面 + 右信息）
   ///
-  /// 末尾带该类型的数量：数量为 0 的胶囊自动降淡，用户不必点进去才发现是空的。
-  Widget _buildFilterChip(String key, String label, int count, bool isDark) {
-    final isSelected = _selectedFilter == key;
-    final isEmpty = count == 0;
-
-    return InkWell(
-      borderRadius: BorderRadius.circular(8),
-      onTap: () {
-        HapticFeedback.selectionClick();
-        setState(() => _selectedFilter = key);
-      },
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-        decoration: BoxDecoration(
-          color: isSelected
-              ? AppColors.primary.withValues(alpha: 0.2)
-              : (isDark
-                    ? Colors.white.withValues(alpha: 0.05)
-                    : Colors.black.withValues(alpha: 0.04)),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(
-            color: isSelected ? AppColors.primary : Colors.transparent,
-            width: 1,
-          ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                color: isSelected
-                    ? AppColors.primary
-                    : (isDark ? Colors.grey : Colors.black87),
-              ),
-            ),
-            const SizedBox(width: 4),
-            Text(
-              '$count',
-              style: TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.w600,
-                color: isSelected
-                    ? AppColors.primary
-                    : (isDark ? Colors.grey : Colors.black87).withValues(
-                        alpha: isEmpty ? 0.4 : 0.75,
-                      ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// 单个收藏卡（书架式：封面为主角，下方标题 / 进度 / 更新）
+  /// 封面固定 84×126（2:3）靠左，信息靠右 —— 一条占一整行后，「上次看到 / 更新至」
+  /// 不必再挤成两行小字，扫读更快，标题也放得下两行。
   ///
-  /// 封面占满卡宽、2:3 海报比例 —— 收藏是「我的书架」，封面才是识别物的主体。
-  ///
-  /// 「有更新」的信号收敛为**两处、分工不同**：封面左上角小角标（扫列表时第一眼
-  /// 可见）+ 下方「更新至」行（读得出具体集数）。此前是封面左竖条 + NEW 胶囊 +
-  /// 主色文字，三处说同一件事，等于噪声。
+  /// 「有更新」的信号仍是**两处、分工不同**：封面左上角 NEW 角标（扫列表第一眼可见）
+  /// + 「更新至」行（读得出具体集数）。
   Widget _buildFavoriteCard(
     BuildContext context,
     FavoriteItem item,
@@ -279,124 +184,173 @@ class _FavoritesPageState extends State<FavoritesPage> {
     final textPrimary = isDark
         ? AppColors.darkTextPrimary
         : AppColors.lightTextPrimary;
+    final muted = isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted;
     final hasUpdate = item.hasUpdate;
 
-    return GestureDetector(
-      onTap: () => _openDetail(context, item),
-      // 网格里放不下垃圾桶按钮，且左上 / 左下角已被角标占用 —— 移除入口收进长按面板。
-      // 面板里「移除收藏」仍是低风险操作，故照旧走「可撤销」而不是二次确认。
-      onLongPress: () => _showFavoriteActionsSheet(context, item),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // 封面（主角）：吃掉网格单元里除文字外的全部高度
-          Expanded(
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(14),
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  item.cover.isNotEmpty
-                      ? AppImage(imageUrl: item.cover, fit: BoxFit.cover)
-                      : Container(
-                          color: isDark ? Colors.white10 : Colors.black12,
-                          child: Icon(
-                            MediaDisplay.typeIcon(item.mediaType),
-                            color: Colors.grey,
-                            size: 26,
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: AppCard(
+        padding: const EdgeInsets.all(10),
+        borderRadius: 16,
+        onTap: () => _openDetail(context, item),
+        // 移除入口收进长按面板；面板里「移除收藏」仍是低风险操作，
+        // 故照旧走「可撤销」而不是二次确认（见 [_showFavoriteActionsSheet]）
+        onLongPress: () => _showFavoriteActionsSheet(context, item),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // 封面（2:3）
+            ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: SizedBox(
+                width: 84,
+                height: 126,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    item.cover.isNotEmpty
+                        ? AppImage(imageUrl: item.cover, fit: BoxFit.cover)
+                        : Container(
+                            color: isDark ? Colors.white10 : Colors.black12,
+                            child: Icon(
+                              MediaDisplay.typeIcon(item.mediaType),
+                              color: Colors.grey,
+                              size: 26,
+                            ),
+                          ),
+                    // 左上角：有更新（扫描信号，与封面左上圆弧呼应，故不做完整圆角）
+                    if (hasUpdate)
+                      Positioned(
+                        left: 0,
+                        top: 0,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2.5,
+                          ),
+                          decoration: const BoxDecoration(
+                            color: AppColors.primary,
+                            borderRadius: BorderRadius.only(
+                              topLeft: Radius.circular(12),
+                              bottomRight: Radius.circular(8),
+                            ),
+                          ),
+                          child: const Text(
+                            'NEW',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 9,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 0.4,
+                            ),
                           ),
                         ),
-                  // 左上角：有更新（扫描信号，与封面左上圆弧呼应，故不做完整圆角）
-                  if (hasUpdate)
-                    Positioned(
-                      left: 0,
-                      top: 0,
-                      child: Container(
+                      ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+
+            // 右侧信息
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          item.title,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 14.5,
+                            fontWeight: FontWeight.w600,
+                            height: 1.25,
+                            color: textPrimary,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      // 类型标签从封面挪到标题同行：筛选栏正是按类型分的，
+                      // 卡片必须能对上；放右侧后也不必再往图上压一层深色底
+                      Container(
+                        margin: const EdgeInsets.only(top: 2),
                         padding: const EdgeInsets.symmetric(
                           horizontal: 6,
-                          vertical: 2.5,
+                          vertical: 2,
                         ),
-                        decoration: const BoxDecoration(
-                          color: AppColors.primary,
-                          borderRadius: BorderRadius.only(
-                            topLeft: Radius.circular(14),
-                            bottomRight: Radius.circular(8),
-                          ),
+                        decoration: BoxDecoration(
+                          color: isDark
+                              ? Colors.white.withValues(alpha: 0.06)
+                              : Colors.black.withValues(alpha: 0.05),
+                          borderRadius: BorderRadius.circular(6),
                         ),
-                        child: const Text(
-                          'NEW',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 9,
-                            fontWeight: FontWeight.bold,
-                            letterSpacing: 0.4,
-                          ),
+                        child: Text(
+                          MediaDisplay.typeLabel(item.mediaType),
+                          style: TextStyle(fontSize: 10, color: muted),
                         ),
                       ),
-                    ),
-                  // 左下角：类型标签（筛选栏按类型分，卡片必须能对上，否则自相矛盾）
-                  Positioned(
-                    left: 6,
-                    bottom: 6,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 5,
-                        vertical: 1.5,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.62),
-                        borderRadius: BorderRadius.circular(5),
-                      ),
-                      child: Text(
-                        MediaDisplay.typeLabel(item.mediaType),
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 9.5,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
+                    ],
                   ),
+                  const SizedBox(height: 10),
+                  // 进度是「我的位置」，也是这一页真正要回答的问题，故用主文本色
+                  _buildInfoLine(
+                    icon: Ionicons.timeOutline,
+                    text: '上次看到：${_progressLabel(item)}',
+                    color: textPrimary,
+                    iconColor: muted,
+                  ),
+                  // 无更新时不占这一行：源站最新集在没有新内容时没有信息量
+                  if (hasUpdate) ...[
+                    const SizedBox(height: 4),
+                    _buildInfoLine(
+                      icon: Ionicons.sparklesOutline,
+                      text:
+                          '更新至：${item.latestEpisode.isNotEmpty ? item.latestEpisode : "有更新"}',
+                      color: AppColors.primary,
+                      iconColor: AppColors.primary,
+                      bold: true,
+                    ),
+                  ],
                 ],
               ),
             ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            item.title,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-              height: 1.25,
-              color: textPrimary,
-            ),
-          ),
-          const SizedBox(height: 3),
-          // 进度是「我的位置」，也是这一页真正要回答的问题，故用主文本色
-          Text(
-            '上次看到：${_progressLabel(item)}',
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 卡片里的一行「图标 + 文案」
+  ///
+  /// 进度与更新共用同一个实现，保证两行左边缘与图标尺寸一致 —— 各写一遍必然会漂。
+  Widget _buildInfoLine({
+    required IconData icon,
+    required String text,
+    required Color color,
+    required Color iconColor,
+    bool bold = false,
+  }) {
+    return Row(
+      children: [
+        Icon(icon, size: 12, color: iconColor),
+        const SizedBox(width: 5),
+        Expanded(
+          child: Text(
+            text,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: TextStyle(fontSize: 11.5, color: textPrimary),
-          ),
-          // 无更新时不占这一行：源站最新集在没有新内容时没有信息量
-          if (hasUpdate) ...[
-            const SizedBox(height: 2),
-            Text(
-              '更新至：${item.latestEpisode.isNotEmpty ? item.latestEpisode : "有更新"}',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-                color: AppColors.primary,
-              ),
+            style: TextStyle(
+              fontSize: 12.5,
+              fontWeight: bold ? FontWeight.w600 : FontWeight.normal,
+              color: color,
             ),
-          ],
-        ],
-      ),
+          ),
+        ),
+      ],
     );
   }
 

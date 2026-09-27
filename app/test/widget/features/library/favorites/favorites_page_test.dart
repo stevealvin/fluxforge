@@ -11,12 +11,14 @@ import 'package:fluxforge/data/library/favorite_service.dart';
 import 'package:fluxforge/data/library/play_history_service.dart';
 import 'package:fluxforge/data/rule/rule_service.dart';
 import 'package:fluxforge/features/library/favorites/favorites_page.dart';
+import 'package:fluxforge/shared/widgets/app_image.dart';
 import 'package:fluxforge/features/media/shared/media_detail_page.dart';
 
 FavoriteItem _item({
   required String id,
   required String title,
   String mediaType = 'novel',
+  String cover = '',
   String lastEpisode = '',
   String latestEpisode = '',
   bool hasUpdate = false,
@@ -26,6 +28,7 @@ FavoriteItem _item({
     id: id,
     title: title,
     mediaType: mediaType,
+    cover: cover,
     lastEpisode: lastEpisode,
     latestEpisode: latestEpisode,
     hasUpdate: hasUpdate,
@@ -180,19 +183,37 @@ void main() {
     );
   });
 
-  testWidgets('顶部标题为「收藏」，栅格为 3 列', (WidgetTester tester) async {
-    await favoriteService.addFavorite(_item(id: 'https://x/1', title: '流光纪元'));
+  testWidgets('筛选条占据顶栏、刷新按钮撤掉，列表为「左封面 + 右信息」单列卡片', (
+    WidgetTester tester,
+  ) async {
+    await favoriteService.addFavorite(
+      _item(id: 'https://x/1', title: '流光纪元', cover: 'https://img.test/c.jpg'),
+    );
 
-    await _pumpPage(tester);
+    // 不用 _pumpPage：本用例带了真实封面地址，AppImage 加载网络图时指示器会一直转，
+    // pumpAndSettle 必然超时
+    await tester.pumpWidget(
+      MaterialApp(theme: AppTheme.lightTheme, home: const FavoritesPage()),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
 
-    expect(find.text('收藏'), findsOneWidget);
+    // 筛选胶囊在 AppBar 内（不再是列表上方独立的一行）
+    expect(
+      find.descendant(of: find.byType(AppBar), matching: find.text('全部')),
+      findsOneWidget,
+    );
+    // 刷新按钮已撤：追更检查只走下拉刷新，而它与该按钮本就是同一条路径
+    expect(find.byTooltip('检查全量追更'), findsNothing);
 
-    final grid = tester.widget<GridView>(find.byType(GridView));
-    final delegate =
-        grid.gridDelegate as SliverGridDelegateWithFixedCrossAxisCount;
-    expect(delegate.crossAxisCount, 3);
-    // 3 列下格宽 ≈113.7：封面要保住 2:3，比例必须跟着重算而不是沿用 4 列的 0.42
-    expect(delegate.childAspectRatio, closeTo(0.47, 0.001));
+    // 单列列表，不再是网格
+    expect(find.byType(ListView), findsOneWidget);
+    expect(find.byType(GridView), findsNothing);
+
+    // 横向布局的验收点：封面在左、文字信息在右
+    final coverLeft = tester.getTopLeft(find.byType(AppImage)).dx;
+    final titleLeft = tester.getTopLeft(find.text('流光纪元')).dx;
+    expect(coverLeft, lessThan(titleLeft), reason: '封面应在信息左侧');
   });
 
   testWidgets('筛选到无条目的类型时给出区分文案', (WidgetTester tester) async {
