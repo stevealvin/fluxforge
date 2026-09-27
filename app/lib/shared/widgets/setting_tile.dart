@@ -89,14 +89,10 @@ class SettingSection extends StatelessWidget {
     return Container(
       margin: margin,
       decoration: BoxDecoration(
+        // 无边框：卡片只靠「底色档差 + 微阴影」从背景浮起。
+        // 那圈 0.8px 描边在浅色下会与内嵌块底色打架，看着像「框里还有框」。
         color: isDark ? AppColors.darkCard : AppColors.lightCard,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: isDark
-              ? Colors.white.withValues(alpha: 0.04)
-              : AppColors.lightBorder,
-          width: 0.8,
-        ),
         boxShadow: [
           BoxShadow(
             color: isDark
