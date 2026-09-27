@@ -2,7 +2,7 @@
 import { computed, useTemplateRef, watch, onMounted, onBeforeUnmount, onActivated } from 'vue'
 import type * as monaco from 'monaco-editor'
 import loader from '@monaco-editor/loader'
-import { addExtraLibFromFetch, addExtraLibs, addGlobalSandboxTypes, detectLanguage } from './util'
+import { addExtraLibs, addGlobalSandboxTypes, detectLanguage } from './util'
 
 interface Props {
   modelId?: string
@@ -78,11 +78,16 @@ const init = async () => {
   setOptions(monaco)
   addCommands(monaco)
 
-  // 添加类型定义 (内置全局沙箱类型及第三方库定义)
+  // 添加类型定义：内置第三方库声明 + 全局沙箱类型
+  //
+  // 第三方库一律走内置声明（lib.type.ts）。曾有一版还会再从 CDN 拉 @types/* 覆盖注入，
+  // 但那些包是旧式「全局 namespace」声明（axios 停在 0.9.1，cheerio 还带
+  // `/// <reference types="node" />`），而注入路径与内置声明**完全相同** ——
+  // 结果不是补充而是覆盖：`import('cheerio')` 随之解析不到，全局 cheerio 也就
+  // 失去了类型，编辑器里连 `cheerio.` 都提示不出东西。
+  // 需要类型的第三方库只有 axios / cheerio 两个，内置声明足够且离线可用。
   addExtraLibs(monaco)
   addGlobalSandboxTypes(monaco)
-  addExtraLibFromFetch(monaco, 'axios')
-  addExtraLibFromFetch(monaco, 'cheerio')
 
   // 如果初始内容为特定语言（如 JSON / HTML），触发一次初始化识别
   if (props.autoDetectLanguage && modelValue.value) {

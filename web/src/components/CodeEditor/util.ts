@@ -1,36 +1,12 @@
 import { libTypes } from './lib.type';
 
-// 内存级类型定义文本缓存 (libName -> d.ts content)
-const extraLibCache = new Map<string, string>();
-
-/**
- * 使用 fetch 获取类型定义文件 并添加到 monaco 中 (带 Map 内存缓存加速)
- */
-export const addExtraLibFromFetch = async (monaco: typeof import('monaco-editor'), libName: string) => {
-  const filePath = `node_modules/@types/${libName}/index.d.ts`;
-
-  // 1. 如果 Map 已经缓存过：直接从 Map 提取并注入 Monaco（0 毫秒、0 网络请求）
-  if (extraLibCache.has(libName)) {
-    const cachedContent = extraLibCache.get(libName)!;
-    monaco.typescript.javascriptDefaults.addExtraLib(cachedContent, filePath);
-    return;
-  }
-
-  // 2. 如果 Map 暂无：发起网络 fetch，获取后存入 Map 并注入 Monaco
-  try {
-    const response = await fetch(`https://cdn.jsdelivr.net/npm/@types/${libName}/index.d.ts`);
-    if (!response.ok) return;
-    const content = await response.text();
-
-    extraLibCache.set(libName, content);
-    monaco.typescript.javascriptDefaults.addExtraLib(content, filePath);
-  } catch (error) {
-    console.warn(`[CodeEditor] 获取类型定义 ${libName} 失败 (已静默跳过):`, error);
-  }
-}
-
 /**
  * 添加第三方库类型定义
+ *
+ * 只用内置声明，**不再从 CDN 拉 `@types/*` 覆盖注入**（原 `addExtraLibFromFetch` 已删除）：
+ * 那些包是旧式的「全局 namespace」声明（axios 停在 0.9.1，cheerio 还带
+ * `/// <reference types="node" />`），而注入路径与内置声明完全相同 —— 结果是覆盖而非补充，
+ * `import('cheerio')` 直接解析不到，全局 cheerio 随之失去类型（编辑器里毫无提示）。
  */
 export const addExtraLibs = async (monaco: typeof import('monaco-editor')) => {
   for (const [key, value] of Object.entries(libTypes)) {

@@ -1,6 +1,9 @@
 export const libTypes = {
+  // `require('cheerio')` 与 axios 一样要取**默认导出**：模块命名空间上并没有 `load`，
+  // 写成 `typeof import('cheerio')` 会让 `const cheerio = require('cheerio')` 之后
+  // `cheerio.` 只提示出一个 default。
   require: `declare function require(moduleName: 'axios'): typeof import('axios').default;
-    declare function require(moduleName: 'cheerio'): typeof import('cheerio');`,
+    declare function require(moduleName: 'cheerio'): typeof import('cheerio').default;`,
   axios: `declare module 'axios' {
     export interface AxiosRequestConfig {
       url?: string;
