@@ -14,6 +14,7 @@ import 'package:fluxforge/shared/widgets/app_card.dart';
 import 'package:fluxforge/shared/widgets/app_confirm_dialog.dart';
 import 'package:fluxforge/shared/widgets/app_delete_snack_bar.dart';
 import 'package:fluxforge/shared/widgets/app_image.dart';
+import 'package:fluxforge/shared/widgets/filter_pill_bar.dart';
 
 /// 打开消费记录对应的媒体详情页
 ///
@@ -122,6 +123,22 @@ class _HistoryCenterPageState extends State<HistoryCenterPage> {
             onPressed: _confirmClearAll,
           ),
         ],
+        // 筛选条移到顶栏下沿（与收藏页同一套胶囊）：原先它挂在列表里，往下翻一屏
+        // 就看不见，也就无法边看边切类型；现在吸顶常驻。
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(42),
+          child: ValueListenableBuilder<List<PlayRecord>>(
+            valueListenable: playHistoryService.recordsNotifier,
+            builder: (context, records, _) => Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: FilterPillBar(
+                items: _filterItems(records),
+                selectedKey: _selectedFilter,
+                onSelected: (key) => setState(() => _selectedFilter = key),
+              ),
+            ),
+          ),
+        ),
       ),
       body: ValueListenableBuilder<List<PlayRecord>>(
         valueListenable: playHistoryService.recordsNotifier,
@@ -144,8 +161,6 @@ class _HistoryCenterPageState extends State<HistoryCenterPage> {
                     title: '观看与阅读历史',
                     count: records.length,
                   ),
-                  const SizedBox(height: 10),
-                  _buildFilterBar(isDark),
                   const SizedBox(height: 10),
                   if (filtered.isEmpty)
                     _buildEmptyHint(
@@ -219,51 +234,26 @@ class _HistoryCenterPageState extends State<HistoryCenterPage> {
     );
   }
 
-  /// 媒体类型过滤条
-  Widget _buildFilterBar(bool isDark) {
-    const filters = <List<String>>[
-      ['all', '全部'],
-      ['video', '影视'],
-      ['novel', '小说'],
-      ['comic', '漫画'],
+  /// 历史中心的筛选项
+  ///
+  /// label 用「漫画」而非收藏页的「漫画/图集」：历史记录里图集本就归在漫画类型下，
+  /// 本页没有单独区分图集的语义。
+  List<FilterPillItem> _filterItems(List<PlayRecord> records) {
+    const defs = [
+      ('all', '全部'),
+      ('video', '影视'),
+      ('novel', '小说'),
+      ('comic', '漫画'),
     ];
 
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Row(
-        children: filters.map((f) {
-          final isSelected = _selectedFilter == f[0];
-          return Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: ChoiceChip(
-              label: Text(f[1]),
-              selected: isSelected,
-              selectedColor: AppColors.primary,
-              backgroundColor: isDark
-                  ? AppColors.darkCard
-                  : AppColors.lightSurface,
-              labelStyle: TextStyle(
-                fontSize: 12,
-                color: isSelected
-                    ? Colors.white
-                    : (isDark
-                          ? AppColors.darkTextSecondary
-                          : AppColors.lightTextSecondary),
-              ),
-              side: BorderSide(
-                color: isSelected
-                    ? AppColors.primary
-                    : (isDark ? AppColors.darkBorder : AppColors.lightBorder),
-                width: 0.8,
-              ),
-              onSelected: (val) {
-                if (val) setState(() => _selectedFilter = f[0]);
-              },
-            ),
-          );
-        }).toList(),
-      ),
-    );
+    int countOf(String key) => key == 'all'
+        ? records.length
+        : records.where((r) => r.mediaType == key).length;
+
+    return [
+      for (final (key, label) in defs)
+        FilterPillItem(key: key, label: label, count: countOf(key)),
+    ];
   }
 
   /// 单条消费记录卡片（封面 + 类型 + 进度 + 相对时间 + 删除）
