@@ -13,19 +13,17 @@ import 'package:fluxforge/features/sites/sites_page.dart';
 
 /// 底部导航各 Tab 的下标
 ///
-/// 抽成常量是因为该下标会被跨组件引用（「我的」页资产卡的「我的规则」要跳到规则 Tab），
-/// 而写死数字时**在中间插入一个 Tab 就会静默跳错页** —— 本次正是在「发现」之后插入
-/// 「收藏」，规则从 1 变成 2，编译器对此不会有任何提示。
+/// 顺序即 [PageView] 与 `NavigationBar.destinations` 的下标顺序：
+/// 发现 0 / 收藏 1 / 规则 2 / 站点 3 / 我的 4。
+///
+/// 只把需要**按名字引用**的下标抽成常量，其余下标只在本文件内按顺序使用：
+/// 写死数字在中间插入 Tab 时会静默跳错页（此前"在发现之后插入收藏、
+/// 规则从 1 变成 2"就属于这种情况），而没人引用的常量只是死代码。
 class _ShellTab {
   const _ShellTab._();
 
-  /// 顺序即 [PageView] 与 `NavigationBar.destinations` 的下标顺序：
-  /// 发现 0 / 收藏 1 / 规则 2 / 站点 3 / 我的 4
-  ///
-  /// 只把**被跨组件引用**的两个留成常量：其余下标没有外部引用方，摆在列表顺序里
-  /// 即可 —— 多写只会得到无人使用的死常量。
+  /// 初始 Tab：启动即「发现」
   static const int discover = 0;
-  static const int rules = 2;
 }
 
 /// FluxForge 应用顶层外壳宿主 (ShellPage)
@@ -87,7 +85,7 @@ class ShellPage extends HookWidget {
                 const RulesPage(),
                 const SitesPage(),
                 // 「我的」页需注入切页回调，以支持资产卡「我的规则」直达规则 Tab
-                ProfilePage(onSwitchToRules: () => goTo(_ShellTab.rules)),
+                const ProfilePage(),
               ],
             ),
           ],

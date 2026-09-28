@@ -4,7 +4,6 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:fluxforge/app/theme/app_colors.dart';
 import 'package:fluxforge/core/utils/app_utils.dart';
-import 'package:fluxforge/domain/rule/rule.dart';
 import 'package:fluxforge/app/di/di.dart';
 import 'package:fluxforge/data/download/download_service.dart';
 import 'package:fluxforge/data/library/play_history_service.dart';
@@ -17,28 +16,20 @@ import 'package:fluxforge/shared/widgets/app_card.dart';
 ///
 /// **收藏卡已移除**：收藏入口迁到首页顶栏（发现页 AppBar），
 /// 「有新更新」的信号也随之带到那个入口上 —— 同一份数据不设两个入口。
-/// 卡片由 2×2 变三张后，让「我的规则」独占一行：与其凑一个空位，
-/// 不如把规则状态（启用数 / 失效数）说清楚。
+///
+/// **规则卡已移除**：规则本就是底部导航的一级 Tab，资产卡只是同一入口的
+/// 第二个门（还要靠下标回调跳转）—— 底部栏就在这一页正下方，走那一条更直接。
 class ProfileAssetGrid extends StatelessWidget {
-  const ProfileAssetGrid({super.key, this.onSwitchToRulesTab});
-
-  /// 切换到底部导航「规则」Tab 的回调（规则统计卡点击直达）
-  final VoidCallback? onSwitchToRulesTab;
+  const ProfileAssetGrid({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return Column(
+    return const Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Expanded(child: _PlayHistoryAssetCard()),
-            const SizedBox(width: 10),
-            const Expanded(child: _DownloadAssetCard()),
-          ],
-        ),
-        const SizedBox(height: 10),
-        _RuleAssetCard(onTap: onSwitchToRulesTab),
+        Expanded(child: _PlayHistoryAssetCard()),
+        SizedBox(width: 10),
+        Expanded(child: _DownloadAssetCard()),
       ],
     );
   }
@@ -63,50 +54,6 @@ class _PlayHistoryAssetCard extends StatelessWidget {
               ? '暂无消费记录'
               : AppUtils.formatRelativeTime(latest.updatedAt),
           onTap: () => context.pushHistory(),
-        );
-      },
-    );
-  }
-}
-
-/// 我的规则资产卡（点击直达规则 Tab）
-class _RuleAssetCard extends StatelessWidget {
-  const _RuleAssetCard({this.onTap});
-
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return ValueListenableBuilder<List<Rule>>(
-      valueListenable: ruleService.rulesNotifier,
-      builder: (context, rules, _) {
-        return ValueListenableBuilder<Map<String, int>>(
-          valueListenable: ruleService.latenciesNotifier,
-          builder: (context, latencies, _) {
-            final enabledCount = rules.where((r) => r.enabled).length;
-            final failedCount = latencies.values
-                .where((ms) => ms < 0 || ms > 2500)
-                .length;
-
-            final String subtitle;
-            if (latencies.isEmpty) {
-              subtitle = '尚未连通测速';
-            } else if (failedCount > 0) {
-              subtitle = '$failedCount 条失效待治理';
-            } else {
-              subtitle = '连通性良好';
-            }
-
-            return _AssetTile(
-              icon: Ionicons.codeSlashOutline,
-              iconColor: AppColors.accentPurple,
-              value: '$enabledCount/${rules.length}',
-              label: '我的规则',
-              subtitle: subtitle,
-              showBadge: failedCount > 0,
-              onTap: onTap,
-            );
-          },
         );
       },
     );

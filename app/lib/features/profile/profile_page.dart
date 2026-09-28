@@ -17,7 +17,7 @@ import 'package:fluxforge/features/profile/widgets/profile_hero.dart';
 /// 经过重新设计，从「功能入口集合」升级为「个人资产仪表盘」，按四大语义区组织：
 /// ① 身份 Hero（昵称 / 沙箱状态 / 主题三态 / 设置唯一入口）
 /// ② 继续观看（跨媒体消费记录横滑流，一键续播）
-/// ③ 我的资产（历史 / 下载 两张 + 规则整宽一张）
+/// ③ 我的资产（历史 / 下载 两张）
 /// ④ 数据与同步（规则市场 / 缓存治理）
 ///
 /// 入口去重约定：
@@ -30,12 +30,7 @@ import 'package:fluxforge/features/profile/widgets/profile_hero.dart';
 ///   数据出现两个入口；该卡位改由「下载管理」承载（含任务数与进行中 / 失败状态）；
 /// - 因此设置列表中原有的「离线下载」项同步移除，避免与资产卡再次重复。
 class ProfilePage extends StatefulWidget {
-  const ProfilePage({super.key, this.onSwitchToRules});
-
-  /// 跳到规则 Tab 的回调（供「我的规则」资产卡直达规则页）
-  ///
-  /// 语义化而非传下标：底部栏一旦插入 / 重排 Tab，传数字的写法会静默跳错页。
-  final VoidCallback? onSwitchToRules;
+  const ProfilePage({super.key});
 
   @override
   State<ProfilePage> createState() => _ProfilePageState();
@@ -130,7 +125,7 @@ class _ProfilePageState extends State<ProfilePage> {
               const SizedBox(height: 18),
 
               // ③ 我的资产（2×2 资产卡网格）
-              ProfileAssetGrid(onSwitchToRulesTab: widget.onSwitchToRules),
+              const ProfileAssetGrid(),
               const SizedBox(height: 22),
 
               // ④ 数据与同步
@@ -179,5 +174,3 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 }
-
-
