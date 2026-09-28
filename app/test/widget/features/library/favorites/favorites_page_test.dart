@@ -13,6 +13,8 @@ import 'package:fluxforge/data/rule/rule_service.dart';
 import 'package:fluxforge/features/library/favorites/favorites_page.dart';
 import 'package:fluxforge/shared/widgets/app_image.dart';
 import 'package:fluxforge/features/media/shared/media_detail_page.dart';
+import 'package:fluxforge/shared/widgets/app_card.dart';
+import 'package:fluxforge/shared/widgets/filter_pill_bar.dart';
 
 FavoriteItem _item({
   required String id,
@@ -183,9 +185,7 @@ void main() {
     );
   });
 
-  testWidgets('筛选条占据顶栏、刷新按钮撤掉，列表为「左封面 + 右信息」单列卡片', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('筛选条占据顶栏、刷新按钮撤掉，列表为「左封面 + 右信息」单列卡片', (WidgetTester tester) async {
     await favoriteService.addFavorite(
       _item(id: 'https://x/1', title: '流光纪元', cover: 'https://img.test/c.jpg'),
     );
@@ -214,6 +214,77 @@ void main() {
     final coverLeft = tester.getTopLeft(find.byType(AppImage)).dx;
     final titleLeft = tester.getTopLeft(find.text('流光纪元')).dx;
     expect(coverLeft, lessThan(titleLeft), reason: '封面应在信息左侧');
+  });
+
+  testWidgets('顶栏：左侧页名 + 中间筛选条', (WidgetTester tester) async {
+    await favoriteService.addFavorite(_item(id: 'https://x/1', title: '流光纪元'));
+
+    await _pumpPage(tester);
+
+    expect(find.text('收藏'), findsOneWidget, reason: '顶栏左侧应有页名');
+
+    // 筛选条在顶栏内，且整条居中（不再是标题）
+    final appBar = tester.getRect(find.byType(AppBar));
+    final bar = tester.getRect(
+      find.descendant(
+        of: find.byType(AppBar),
+        matching: find.byType(FilterPillBar),
+      ),
+    );
+    expect(bar.left, greaterThanOrEqualTo(appBar.left));
+    expect(bar.right, lessThanOrEqualTo(appBar.right));
+    // 居中：右侧留白与左侧（页名之后）留白同量级，允许百来 px 的字体宽度差
+    expect((bar.center.dx - appBar.center.dx).abs(), lessThan(60));
+  });
+
+  testWidgets('卡片封面贴边：封面左沿与上沿与卡片重合', (WidgetTester tester) async {
+    await favoriteService.addFavorite(_item(id: 'https://x/1', title: '流光纪元'));
+
+    await _pumpPage(tester);
+
+    final cardFinder = find.byType(AppCard).first;
+    final card = tester.getRect(cardFinder);
+    final cover = tester.getRect(
+      find.descendant(of: cardFinder, matching: find.byType(ClipRRect)).first,
+    );
+
+    expect(
+      cover.left,
+      moreOrLessEquals(card.left, epsilon: 0.5),
+      reason: '封面不再被卡片内边距推开',
+    );
+    expect(cover.top, moreOrLessEquals(card.top, epsilon: 0.5));
+
+    // 封面四角同半径：右侧两角也要圆（左侧两角与卡片外沿重合）
+    final clip = tester.widget<ClipRRect>(
+      find.descendant(of: cardFinder, matching: find.byType(ClipRRect)).first,
+    );
+    expect(
+      clip.borderRadius,
+      BorderRadius.circular(12),
+      reason: '封面不是直角切口，四角都要圆',
+    );
+  });
+
+  testWidgets('NEW 角标：半透明底', (WidgetTester tester) async {
+    await favoriteService.addFavorite(
+      _item(
+        id: 'https://x/1',
+        title: '流光纪元',
+        latestEpisode: '第 9 章',
+        hasUpdate: true,
+      ),
+    );
+
+    await _pumpPage(tester);
+
+    final badge = tester.widget<Container>(
+      find
+          .ancestor(of: find.text('NEW'), matching: find.byType(Container))
+          .first,
+    );
+    final color = (badge.decoration as BoxDecoration).color;
+    expect(color?.a, lessThan(1.0), reason: '底色改为半透明，压住封面底图的同时透出一层');
   });
 
   testWidgets('筛选到无条目的类型时给出区分文案', (WidgetTester tester) async {

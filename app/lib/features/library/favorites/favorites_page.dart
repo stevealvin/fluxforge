@@ -30,6 +30,9 @@ class FavoritesPage extends StatefulWidget {
   State<FavoritesPage> createState() => _FavoritesPageState();
 }
 
+/// 卡片与封面的统一圆角（同一份取值：封面左侧两角要与卡片外沿重合）
+const double _cardRadius = 12;
+
 class _FavoritesPageState extends State<FavoritesPage> {
   String _selectedFilter = 'all'; // 'all' | 'video' | 'novel' | 'comic'
   bool _isCheckingUpdates = false;
@@ -66,19 +69,32 @@ class _FavoritesPageState extends State<FavoritesPage> {
     return Scaffold(
       backgroundColor: isDark ? AppColors.darkBg : AppColors.lightBg,
       appBar: AppBar(
-        // 筛选条直接占顶栏：底部导航已经写着「收藏」，再放一遍页名是重复，
-        // 省下的整行留给列表。
+        // 左侧页名 + 中间筛选条：筛选是这一页的主操作，居中比贴着左边更好按，
+        // 也给"这是哪一页"留一个锚点。
         //
-        // 刷新入口一并撤掉 —— 它本来就与下拉刷新重复（[RefreshIndicator] 走同一个
+        // 刷新入口仍然不恢复 —— 它本来就与下拉刷新重复（[RefreshIndicator] 走同一个
         // [_checkUpdates]），而追更检查是低频动作，不值得常驻一个按钮。
-        titleSpacing: 10,
-        title: ValueListenableBuilder<List<FavoriteItem>>(
-          valueListenable: favoriteService.favoritesNotifier,
-          builder: (context, favorites, _) => FilterPillBar(
-            items: _filterItems(favorites),
-            selectedKey: _selectedFilter,
-            onSelected: (key) => setState(() => _selectedFilter = key),
-          ),
+        titleSpacing: 12,
+        title: Row(
+          children: [
+            const Text(
+              '收藏',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Center(
+                child: ValueListenableBuilder<List<FavoriteItem>>(
+                  valueListenable: favoriteService.favoritesNotifier,
+                  builder: (context, favorites, _) => FilterPillBar(
+                    items: _filterItems(favorites),
+                    selectedKey: _selectedFilter,
+                    onSelected: (key) => setState(() => _selectedFilter = key),
+                  ),
+                ),
+              ),
+            ),
+          ],
         ),
         backgroundColor: isDark ? AppColors.darkBg : AppColors.lightBg,
         elevation: 0,
@@ -190,8 +206,11 @@ class _FavoritesPageState extends State<FavoritesPage> {
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: AppCard(
-        padding: const EdgeInsets.all(10),
-        borderRadius: 16,
+        // 封面贴边：卡片自己不留内边距，封面直接吃满左侧与上下沿
+        // （内边距由右侧信息区自己控制）
+        padding: EdgeInsets.zero,
+        // 圆角收小一档：单列卡片本身就不宽，16 的角在列表里显得过于圆润
+        borderRadius: 12,
         onTap: () => _openDetail(context, item),
         // 移除入口收进长按面板；面板里「移除收藏」仍是低风险操作，
         // 故照旧走「可撤销」而不是二次确认（见 [_showFavoriteActionsSheet]）
@@ -200,8 +219,11 @@ class _FavoritesPageState extends State<FavoritesPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // 封面（2:3）
+            //
+            // 四角同半径：左侧两角与卡片外沿重合（被卡片裁掉，看不出接缝），
+            // 右侧两角则真的把圆角露出来 —— 封面与信息区之间不再是直角切口
             ClipRRect(
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(_cardRadius),
               child: SizedBox(
                 width: 84,
                 height: 126,
@@ -228,10 +250,12 @@ class _FavoritesPageState extends State<FavoritesPage> {
                             horizontal: 6,
                             vertical: 2.5,
                           ),
-                          decoration: const BoxDecoration(
-                            color: AppColors.primary,
+                          decoration: BoxDecoration(
+                            // 半透明底：与详情页封面上的规则来源角标同一档（75%），
+                            // 压住封面底图的同时仍透出一层，不像实底那样糊住画面
+                            color: AppColors.primary.withValues(alpha: 0.75),
                             borderRadius: BorderRadius.only(
-                              topLeft: Radius.circular(12),
+                              topLeft: Radius.circular(_cardRadius),
                               bottomRight: Radius.circular(8),
                             ),
                           ),
@@ -252,70 +276,73 @@ class _FavoritesPageState extends State<FavoritesPage> {
             ),
             const SizedBox(width: 12),
 
-            // 右侧信息
+            // 右侧信息（卡片内边距由这里提供：封面要贴边，信息区要留白）
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: Text(
-                          item.title,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 14.5,
-                            fontWeight: FontWeight.w600,
-                            height: 1.25,
-                            color: textPrimary,
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            item.title,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 14.5,
+                              fontWeight: FontWeight.w600,
+                              height: 1.25,
+                              color: textPrimary,
+                            ),
                           ),
                         ),
-                      ),
-                      const SizedBox(width: 8),
-                      // 类型标签从封面挪到标题同行：筛选栏正是按类型分的，
-                      // 卡片必须能对上；放右侧后也不必再往图上压一层深色底
-                      Container(
-                        margin: const EdgeInsets.only(top: 2),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 6,
-                          vertical: 2,
+                        const SizedBox(width: 8),
+                        // 类型标签从封面挪到标题同行：筛选栏正是按类型分的，
+                        // 卡片必须能对上；放右侧后也不必再往图上压一层深色底
+                        Container(
+                          margin: const EdgeInsets.only(top: 2),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: isDark
+                                ? Colors.white.withValues(alpha: 0.06)
+                                : Colors.black.withValues(alpha: 0.05),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            MediaDisplay.typeLabel(item.mediaType),
+                            style: TextStyle(fontSize: 10, color: muted),
+                          ),
                         ),
-                        decoration: BoxDecoration(
-                          color: isDark
-                              ? Colors.white.withValues(alpha: 0.06)
-                              : Colors.black.withValues(alpha: 0.05),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Text(
-                          MediaDisplay.typeLabel(item.mediaType),
-                          style: TextStyle(fontSize: 10, color: muted),
-                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    // 进度是「我的位置」，也是这一页真正要回答的问题，故用主文本色
+                    _buildInfoLine(
+                      icon: Ionicons.timeOutline,
+                      text: '上次看到：${_progressLabel(item)}',
+                      color: textPrimary,
+                      iconColor: muted,
+                    ),
+                    // 无更新时不占这一行：源站最新集在没有新内容时没有信息量
+                    if (hasUpdate) ...[
+                      const SizedBox(height: 4),
+                      _buildInfoLine(
+                        icon: Ionicons.sparklesOutline,
+                        text:
+                            '更新至：${item.latestEpisode.isNotEmpty ? item.latestEpisode : "有更新"}',
+                        color: AppColors.primary,
+                        iconColor: AppColors.primary,
+                        bold: true,
                       ),
                     ],
-                  ),
-                  const SizedBox(height: 10),
-                  // 进度是「我的位置」，也是这一页真正要回答的问题，故用主文本色
-                  _buildInfoLine(
-                    icon: Ionicons.timeOutline,
-                    text: '上次看到：${_progressLabel(item)}',
-                    color: textPrimary,
-                    iconColor: muted,
-                  ),
-                  // 无更新时不占这一行：源站最新集在没有新内容时没有信息量
-                  if (hasUpdate) ...[
-                    const SizedBox(height: 4),
-                    _buildInfoLine(
-                      icon: Ionicons.sparklesOutline,
-                      text:
-                          '更新至：${item.latestEpisode.isNotEmpty ? item.latestEpisode : "有更新"}',
-                      color: AppColors.primary,
-                      iconColor: AppColors.primary,
-                      bold: true,
-                    ),
                   ],
-                ],
+                ),
               ),
             ),
           ],
