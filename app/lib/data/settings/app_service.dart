@@ -248,12 +248,6 @@ class AppService {
     await AppStorage.setBool('pref_incognito_mode', newSettings.incognitoMode);
   }
 
-  /// 恢复全部偏好为出厂默认值
-  ///
-  /// 只覆盖**偏好**（主题 / 播放 / 网络相关开关），收藏、历史记录、离线下载、
-  /// 规则库等数据一律不动 —— 这是设置页那个「恢复默认偏好」按钮的语义边界。
-  Future<void> resetToDefaults() => updateSettings(const AppSettings());
-
   /// 更新主题模式
   Future<void> updateThemeMode(ThemeMode mode) async {
     final updated = settings.copyWith(themeMode: mode);

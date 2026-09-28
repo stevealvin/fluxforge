@@ -13,7 +13,6 @@ import 'package:fluxforge/features/media/novel/reader/controllers/reader_prefere
 import 'package:fluxforge/features/media/novel/reader/models/page_turn_mode.dart';
 import 'package:fluxforge/features/settings/widgets/backup_sheet.dart';
 import 'package:fluxforge/features/settings/widgets/custom_ua_sheet.dart';
-import 'package:fluxforge/shared/widgets/app_confirm_dialog.dart';
 import 'package:fluxforge/shared/widgets/setting_tile.dart';
 
 /// 全局系统偏好与沙箱控制台 (SettingsPage - 方案一：现代仪表盘 + 核心场景专区)
@@ -32,7 +31,6 @@ import 'package:fluxforge/shared/widgets/setting_tile.dart';
 ///    - 📦 数据备份与迁移（单文件 JSON 导入导出）
 ///    - 💻 沙箱与系统日志中心（实时错误徽标与控制台日志）
 ///    - ℹ️ 关于 FluxForge（版本、内核说明与本地资产统计）
-///    - 🔄 恢复默认偏好（危险动作，二次确认出厂重置）
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
 
@@ -140,8 +138,9 @@ class _SettingsPageState extends State<SettingsPage> {
                     width: 36,
                     height: 4,
                     decoration: BoxDecoration(
-                      color: (isDark ? Colors.white : Colors.black)
-                          .withValues(alpha: 0.15),
+                      color: (isDark ? Colors.white : Colors.black).withValues(
+                        alpha: 0.15,
+                      ),
                       borderRadius: BorderRadius.circular(2),
                     ),
                   ),
@@ -268,31 +267,6 @@ class _SettingsPageState extends State<SettingsPage> {
     }
   }
 
-  /// 恢复默认偏好（带二次确认弹窗）
-  Future<void> _resetPreferences(BuildContext context) async {
-    final messenger = ScaffoldMessenger.of(context);
-    final confirmed = await showAppConfirmDialog(
-      context,
-      title: '恢复默认偏好？',
-      message:
-          '将把本页所有开关与选项（主题、播放、阅读、网络）恢复为出厂值。\n'
-          '收藏、历史记录、离线下载与规则库不受影响。',
-      confirmText: '恢复默认',
-    );
-    if (!confirmed) return;
-
-    await appService.resetToDefaults();
-    await ReaderPreferences.savePageMode(PageTurnMode.horizontal);
-    await ComicReaderPreferences.saveContinuousMode(false);
-    if (!mounted) return;
-
-    setState(() {
-      _novelPageMode = PageTurnMode.horizontal;
-      _comicContinuous = false;
-    });
-    messenger.showSnackBar(const SnackBar(content: Text('已恢复默认偏好')));
-  }
-
   /// 弹出「关于 FluxForge」应用总览与沙箱架构说明
   Future<void> _showAboutSheet() async {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -317,8 +291,9 @@ class _SettingsPageState extends State<SettingsPage> {
                   width: 36,
                   height: 4,
                   decoration: BoxDecoration(
-                    color: (isDark ? Colors.white : Colors.black)
-                        .withValues(alpha: 0.15),
+                    color: (isDark ? Colors.white : Colors.black).withValues(
+                      alpha: 0.15,
+                    ),
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
@@ -535,15 +510,24 @@ class _SettingsPageState extends State<SettingsPage> {
                             items: const [
                               DropdownMenuItem(
                                 value: 2.0,
-                                child: Text('2.0x', style: TextStyle(fontSize: 12)),
+                                child: Text(
+                                  '2.0x',
+                                  style: TextStyle(fontSize: 12),
+                                ),
                               ),
                               DropdownMenuItem(
                                 value: 3.0,
-                                child: Text('3.0x', style: TextStyle(fontSize: 12)),
+                                child: Text(
+                                  '3.0x',
+                                  style: TextStyle(fontSize: 12),
+                                ),
                               ),
                               DropdownMenuItem(
                                 value: 5.0,
-                                child: Text('5.0x', style: TextStyle(fontSize: 12)),
+                                child: Text(
+                                  '5.0x',
+                                  style: TextStyle(fontSize: 12),
+                                ),
                               ),
                             ],
                             onChanged: (val) {
@@ -566,7 +550,10 @@ class _SettingsPageState extends State<SettingsPage> {
                             items: ResumeBehavior.values.map((r) {
                               return DropdownMenuItem(
                                 value: r,
-                                child: Text(r.label, style: const TextStyle(fontSize: 12)),
+                                child: Text(
+                                  r.label,
+                                  style: const TextStyle(fontSize: 12),
+                                ),
                               );
                             }).toList(),
                             onChanged: (val) {
@@ -668,11 +655,17 @@ class _SettingsPageState extends State<SettingsPage> {
                             items: const [
                               DropdownMenuItem(
                                 value: PageTurnMode.horizontal,
-                                child: Text('平滑横翻', style: TextStyle(fontSize: 12)),
+                                child: Text(
+                                  '平滑横翻',
+                                  style: TextStyle(fontSize: 12),
+                                ),
                               ),
                               DropdownMenuItem(
                                 value: PageTurnMode.verticalScroll,
-                                child: Text('上下滚动', style: TextStyle(fontSize: 12)),
+                                child: Text(
+                                  '上下滚动',
+                                  style: TextStyle(fontSize: 12),
+                                ),
                               ),
                             ],
                             onChanged: (val) {
@@ -694,11 +687,17 @@ class _SettingsPageState extends State<SettingsPage> {
                             items: const [
                               DropdownMenuItem(
                                 value: false,
-                                child: Text('左右翻页', style: TextStyle(fontSize: 12)),
+                                child: Text(
+                                  '左右翻页',
+                                  style: TextStyle(fontSize: 12),
+                                ),
                               ),
                               DropdownMenuItem(
                                 value: true,
-                                child: Text('长条连读', style: TextStyle(fontSize: 12)),
+                                child: Text(
+                                  '长条连读',
+                                  style: TextStyle(fontSize: 12),
+                                ),
                               ),
                             ],
                             onChanged: (val) {
@@ -798,15 +797,24 @@ class _SettingsPageState extends State<SettingsPage> {
                             items: const [
                               DropdownMenuItem(
                                 value: 15,
-                                child: Text('15 秒', style: TextStyle(fontSize: 12)),
+                                child: Text(
+                                  '15 秒',
+                                  style: TextStyle(fontSize: 12),
+                                ),
                               ),
                               DropdownMenuItem(
                                 value: 30,
-                                child: Text('30 秒 (推荐)', style: TextStyle(fontSize: 12)),
+                                child: Text(
+                                  '30 秒 (推荐)',
+                                  style: TextStyle(fontSize: 12),
+                                ),
                               ),
                               DropdownMenuItem(
                                 value: 60,
-                                child: Text('60 秒 (宽容)', style: TextStyle(fontSize: 12)),
+                                child: Text(
+                                  '60 秒 (宽容)',
+                                  style: TextStyle(fontSize: 12),
+                                ),
                               ),
                             ],
                             onChanged: (val) {
@@ -856,7 +864,8 @@ class _SettingsPageState extends State<SettingsPage> {
                           subtitle: '启动时检查已订阅源的最新解析规则',
                           onTap: () => appService.updateSettings(
                             settings.copyWith(
-                              autoCheckRuleUpdates: !settings.autoCheckRuleUpdates,
+                              autoCheckRuleUpdates:
+                                  !settings.autoCheckRuleUpdates,
                             ),
                           ),
                           trailing: Switch(
@@ -1003,7 +1012,10 @@ class _SettingsPageState extends State<SettingsPage> {
     return Scaffold(
       backgroundColor: isDark ? AppColors.darkBg : AppColors.lightBg,
       appBar: AppBar(
-        title: const Text('系统偏好', style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text(
+          '系统偏好',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
         backgroundColor: isDark ? AppColors.darkBg : AppColors.lightBg,
         elevation: 0,
         leading: IconButton(
@@ -1029,10 +1041,10 @@ class _SettingsPageState extends State<SettingsPage> {
               _buildSceneZonesGrid(context, isDark, settings),
               const SizedBox(height: 24),
 
-              // 3. 高级与系统工具 (数据备份、沙箱日志、关于、恢复默认)
+              // 3. 高级与系统工具 (数据备份、沙箱日志、关于)
               const SettingSectionTitle(
                 title: '高级与系统工具',
-                subtitle: '备份迁移、沙箱诊断与出厂偏好重置',
+                subtitle: '备份迁移与沙箱诊断',
               ),
               _buildToolboxSection(context, isDark),
               const SizedBox(height: 24),
@@ -1067,15 +1079,11 @@ class _SettingsPageState extends State<SettingsPage> {
     AppSettings settings,
   ) {
     final cardColor = isDark ? AppColors.darkCard : AppColors.lightCard;
-    final borderColor = isDark
-        ? Colors.white.withValues(alpha: 0.05)
-        : AppColors.lightBorder;
 
     return Container(
       decoration: BoxDecoration(
         color: cardColor,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: borderColor, width: 0.8),
         boxShadow: [
           BoxShadow(
             color: isDark
@@ -1122,7 +1130,9 @@ class _SettingsPageState extends State<SettingsPage> {
                 const Spacer(),
                 InkWell(
                   borderRadius: BorderRadius.circular(14),
-                  onTap: _isCleaningCache ? null : () => _handleCleanCache(context),
+                  onTap: _isCleaningCache
+                      ? null
+                      : () => _handleCleanCache(context),
                   child: Container(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 10,
@@ -1210,10 +1220,15 @@ class _SettingsPageState extends State<SettingsPage> {
               child: Container(
                 height: 6,
                 width: double.infinity,
-                color: isDark ? const Color(0xFF1E293B) : const Color(0xFFE2E8F0),
+                color: isDark
+                    ? const Color(0xFF1E293B)
+                    : const Color(0xFFE2E8F0),
                 alignment: Alignment.centerLeft,
                 child: FractionallySizedBox(
-                  widthFactor: ((_cacheSizeMb ?? 10.0) / 120.0).clamp(0.08, 0.95),
+                  widthFactor: ((_cacheSizeMb ?? 10.0) / 120.0).clamp(
+                    0.08,
+                    0.95,
+                  ),
                   child: Container(
                     decoration: const BoxDecoration(
                       gradient: LinearGradient(
@@ -1260,7 +1275,9 @@ class _SettingsPageState extends State<SettingsPage> {
                         title: errorCount == 0 ? '零异常' : '$errorCount 项待检',
                         label: '沙箱自愈诊断',
                         titleColor: errorCount == 0
-                            ? (isDark ? AppColors.primaryLight : AppColors.primary)
+                            ? (isDark
+                                  ? AppColors.primaryLight
+                                  : AppColors.primary)
                             : AppColors.danger,
                         isDark: isDark,
                         onTap: () => context.pushLogs(),
@@ -1292,7 +1309,8 @@ class _SettingsPageState extends State<SettingsPage> {
             fontSize: 16,
             fontWeight: FontWeight.bold,
             fontFamily: 'monospace',
-            color: titleColor ??
+            color:
+                titleColor ??
                 (isDark
                     ? AppColors.darkTextPrimary
                     : AppColors.lightTextPrimary),
@@ -1303,9 +1321,7 @@ class _SettingsPageState extends State<SettingsPage> {
           label,
           style: TextStyle(
             fontSize: 10.5,
-            color: isDark
-                ? AppColors.darkTextMuted
-                : AppColors.lightTextMuted,
+            color: isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted,
           ),
         ),
       ],
@@ -1428,12 +1444,6 @@ class _SettingsPageState extends State<SettingsPage> {
       decoration: BoxDecoration(
         color: isDark ? AppColors.darkCard : AppColors.lightCard,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: isDark
-              ? Colors.white.withValues(alpha: 0.05)
-              : AppColors.lightBorder,
-          width: 0.8,
-        ),
         boxShadow: [
           BoxShadow(
             color: isDark
@@ -1579,13 +1589,6 @@ class _SettingsPageState extends State<SettingsPage> {
           title: '关于 FluxForge',
           subtitle: '微内核沙箱架构、版本号与本地自治协议',
           onTap: _showAboutSheet,
-        ),
-        SettingRow(
-          icon: Ionicons.refreshOutline,
-          color: AppColors.danger,
-          title: '恢复默认偏好',
-          subtitle: '仅重置本页偏好配置；收藏、历史与下载不受影响',
-          onTap: () => _resetPreferences(context),
         ),
       ],
     );

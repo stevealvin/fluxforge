@@ -127,7 +127,9 @@ void main() {
     expect(appService.settings.themeMode, ThemeMode.light);
   });
 
-  testWidgets('点击「阅读与排版」专区弹出抽屉，下拉切换小说与漫画阅读偏好并写入持久化', (WidgetTester tester) async {
+  testWidgets('点击「阅读与排版」专区弹出抽屉，下拉切换小说与漫画阅读偏好并写入持久化', (
+    WidgetTester tester,
+  ) async {
     await pumpSettings(tester);
 
     await tester.tap(find.text('阅读与排版'));
@@ -142,11 +144,7 @@ void main() {
     await tester.pumpAndSettle();
 
     final novel = await ReaderPreferences.load();
-    expect(
-      novel.pageMode,
-      PageTurnMode.verticalScroll,
-      reason: '必须写进阅读器持久化存储',
-    );
+    expect(novel.pageMode, PageTurnMode.verticalScroll, reason: '必须写进阅读器持久化存储');
 
     // 漫画阅读方式：默认左右翻页 → 选「长条连读」
     await tester.tap(find.byType(DropdownButton<bool>));
@@ -157,33 +155,25 @@ void main() {
     expect(await ComicReaderPreferences.loadContinuousMode(), isTrue);
   });
 
-  testWidgets('恢复默认偏好：二次确认后只重置偏好', (WidgetTester tester) async {
+  testWidgets('页面内的卡片一律不画边框线（只靠底色与投影分层）', (WidgetTester tester) async {
     await pumpSettings(tester);
 
-    // 先改两处，确认重置真把它们改回来
-    await appService.updateSettings(
-      appService.settings.copyWith(
-        enableLongPress2x: false,
-        requestTimeoutSeconds: 60,
-      ),
-    );
-    await ComicReaderPreferences.saveContinuousMode(true);
-    await tester.pumpAndSettle();
+    // 「卡片」判据：有底色 + 有投影的容器。这类容器不该再叠一道 0.8px 描边 ——
+    // 同一层里"底色分档"和"边框分隔"两套语言同时出现，就是噪点。
+    final bordered = <String>[];
+    for (final element in find.byType(Container).evaluate()) {
+      final widget = element.widget;
+      if (widget is! Container) continue;
+      final decoration = widget.decoration;
+      if (decoration is! BoxDecoration) continue;
+      final isCard =
+          decoration.color != null &&
+          (decoration.boxShadow?.isNotEmpty ?? false);
+      if (isCard && decoration.border != null) {
+        bordered.add(decoration.border.toString());
+      }
+    }
 
-    await tester.tap(find.text('恢复默认偏好'));
-    await tester.pumpAndSettle();
-    expect(find.text('恢复默认偏好？'), findsOneWidget, reason: '不可逆操作必须二次确认');
-
-    await tester.tap(find.text('恢复默认'));
-    await tester.pumpAndSettle();
-
-    expect(appService.settings.enableLongPress2x, isTrue);
-    expect(appService.settings.requestTimeoutSeconds, 30);
-    expect(
-      await ComicReaderPreferences.loadContinuousMode(),
-      isFalse,
-      reason: '阅读器的偏好不归 AppSettings 管，重置时必须一并写回默认值',
-    );
-    expect(find.text('已恢复默认偏好'), findsOneWidget);
+    expect(bordered, isEmpty, reason: '带投影的卡片不应再有边框：$bordered');
   });
 }
