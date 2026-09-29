@@ -37,6 +37,12 @@ Future<void> showMediaDownloadSheet(
 
   return showModalBottomSheet<void>(
     context: context,
+    // 高度交给内容自己算：默认的 9/16 屏上限在窄屏上会把「固定头尾 + 网格」
+    // 挤到放不下。放到 0.9 屏，网格自身仍有 220 的上限兜着（见 _buildSelectionSection）。
+    isScrollControlled: true,
+    constraints: BoxConstraints(
+      maxHeight: MediaQuery.sizeOf(context).height * 0.9,
+    ),
     backgroundColor: isDark ? AppColors.darkSurface : AppColors.lightSurface,
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
@@ -197,9 +203,10 @@ class _DownloadSheetBodyState extends State<_DownloadSheetBody> {
     final isDark = widget.isDark;
 
     return SafeArea(
-      // 内容（选集卡片 + 动作行 + 任务状态条）在窄屏上可能超过半屏高度：
-      // 外层可滚动，避免 RenderFlex 溢出把面板顶穿
-      child: SingleChildScrollView(
+      // 面板里**只有选集网格滚动**：标题、动作行、状态条一律固定。
+      // 之前整块塞进 SingleChildScrollView，选集一多，连按钮那片区域都能被拖着滑走；
+      // 窄屏装不下的问题改由网格自己收缩承担（见 [_buildSelectionSection]）。
+      child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 18, 16, 12),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -228,7 +235,9 @@ class _DownloadSheetBodyState extends State<_DownloadSheetBody> {
             ),
 
             if (_canSelect) ...[
-              _buildSelectionSection(isDark),
+              // 网格按可用高度自适应：单元少时贴内容高度（不留大片空白），
+              // 多时最多 220 并在网格内滚动 —— 外面的头部与底部动作行始终不动
+              Flexible(child: _buildSelectionSection(isDark)),
               const SizedBox(height: 12),
             ],
 
@@ -276,8 +285,12 @@ class _DownloadSheetBodyState extends State<_DownloadSheetBody> {
   }
 
   /// 选集区：标题行（摘要 + 全选 / 清空）+ 卡片列表（动作行由 [build] 统一给出）
+  ///
+  /// [mainAxisSize] 取 min：网格用 [Flexible] 拿「可用高度」而不是「全部高度」，
+  /// 单元少时这段就贴着内容高，不会把面板撑成一大片空白。
   Widget _buildSelectionSection(bool isDark) {
     return Column(
+      mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
@@ -319,21 +332,24 @@ class _DownloadSheetBodyState extends State<_DownloadSheetBody> {
           ],
         ),
         const SizedBox(height: 8),
-        ConstrainedBox(
-          // 高度自适应，最多占 220：单元少时不留大片空白，多时网格内滚动
-          constraints: const BoxConstraints(maxHeight: 220),
-          child: GridView.builder(
-            shrinkWrap: true,
-            padding: EdgeInsets.zero,
-            gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-              // 对齐漫画章节目录的紧凑格子：高 40、间距 8，列数仍按可用宽度自适应
-              maxCrossAxisExtent: 112,
-              mainAxisExtent: 40,
-              mainAxisSpacing: 8,
-              crossAxisSpacing: 8,
+        // Flexible：高度自适应，最多占 220 —— 单元少时不留大片空白，
+        // 多时网格内滚动；屏幕再矮也只是网格变矮，不会把面板顶穿
+        Flexible(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 220),
+            child: GridView.builder(
+              shrinkWrap: true,
+              padding: EdgeInsets.zero,
+              gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                // 对齐漫画章节目录的紧凑格子：高 40、间距 8，列数仍按可用宽度自适应
+                maxCrossAxisExtent: 112,
+                mainAxisExtent: 40,
+                mainAxisSpacing: 8,
+                crossAxisSpacing: 8,
+              ),
+              itemCount: widget.units.length,
+              itemBuilder: (context, i) => _buildUnitCard(i, isDark),
             ),
-            itemCount: widget.units.length,
-            itemBuilder: (context, i) => _buildUnitCard(i, isDark),
           ),
         ),
       ],

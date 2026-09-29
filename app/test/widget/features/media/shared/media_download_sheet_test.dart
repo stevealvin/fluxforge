@@ -72,6 +72,38 @@ void main() {
     expect(find.text('下载选中'), findsOneWidget, reason: '未勾选时按钮为占位文案');
   });
 
+  testWidgets('选集很多时：面板头尾固定，只有网格内部滚动', (tester) async {
+    await openSheet(
+      tester,
+      unitList: units(60),
+      onDownloadSelection: (_) async => 'ok',
+    );
+
+    // 面板里不该再有「整块可滚」的外层容器 —— 否则选集一多，
+    // 连标题与按钮那片区域都能被拖走
+    expect(
+      find.byType(SingleChildScrollView),
+      findsNothing,
+      reason: '只有选集网格可滚，其余区域固定',
+    );
+
+    final titleBefore = tester.getTopLeft(find.text('离线下载'));
+    final gridBefore = tester.getRect(find.byType(GridView));
+    final actionBefore = tester.getTopLeft(find.text('下载全部 60 集'));
+
+    await tester.drag(find.byType(GridView), const Offset(0, -120));
+    await tester.pumpAndSettle();
+
+    expect(tester.getTopLeft(find.text('离线下载')), titleBefore, reason: '标题固定');
+    expect(tester.getRect(find.byType(GridView)), gridBefore, reason: '网格框固定');
+    expect(
+      tester.getTopLeft(find.text('下载全部 60 集')),
+      actionBefore,
+      reason: '动作行固定',
+    );
+    expect(find.text('第 1 集'), findsNothing, reason: '滚的是网格内容');
+  });
+
   testWidgets('宿主不提供选集能力时，不出现选集区', (tester) async {
     await openSheet(tester);
 
@@ -203,7 +235,11 @@ void main() {
 
   testWidgets('亮色下未选中格子不得与纯白面板同色（否则区块没有边界）', (tester) async {
     // 亮色面板是纯白，格子若也铺纯白且无边框，就完全看不出边界
-    await openSheet(tester, dark: false, onDownloadSelection: (_) async => 'ok');
+    await openSheet(
+      tester,
+      dark: false,
+      onDownloadSelection: (_) async => 'ok',
+    );
 
     final cell = tester.widget<AppCard>(unitCard(0));
     expect(
