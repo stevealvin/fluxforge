@@ -1,4 +1,6 @@
 // ignore_for_file: depend_on_referenced_packages
+import 'dart:ui' as ui;
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:shared_preferences_platform_interface/in_memory_shared_preferences_async.dart';
@@ -25,7 +27,9 @@ FavoriteItem _item({
   String latestEpisode = '',
   bool hasUpdate = false,
   DateTime? updatedAt,
+  DateTime? lastActiveAt,
 }) {
+  final favoritedAt = updatedAt ?? DateTime(2026, 9, 21);
   return FavoriteItem(
     id: id,
     title: title,
@@ -34,13 +38,15 @@ FavoriteItem _item({
     lastEpisode: lastEpisode,
     latestEpisode: latestEpisode,
     hasUpdate: hasUpdate,
-    updatedAt: updatedAt ?? DateTime(2026, 9, 21),
+    updatedAt: favoritedAt,
+    // 与生产口径一致：收藏当时就算一次活动
+    lastActiveAt: lastActiveAt ?? favoritedAt,
   );
 }
 
 Future<void> _pumpPage(WidgetTester tester) async {
-  // 用手机尺寸：800×600 的默认测试画布又宽又矮，3 列栅格下卡片高度（≈530）
-  // 会高过视口，落在卡片底部的标题就点不到了 —— 长按点不到，面板自然不弹。
+  // 用手机尺寸（390 × 844）：默认 800×600 的画布又宽又矮，与真机比例差得太多，
+  // 布局断言（单列、贴边、行高）在那种画布上量出来的数字没有参考价值。
   tester.view.physicalSize = const Size(1170, 2532); // 390 × 844 @3x
   tester.view.devicePixelRatio = 3.0;
   addTearDown(tester.view.reset);
@@ -157,7 +163,7 @@ void main() {
     await tester.pumpAndSettle();
   });
 
-  testWidgets('点击卡片进入详情页，并清掉「有更新」红点', (WidgetTester tester) async {
+  testWidgets('点击卡片进入详情页：清红点，并记一次「最近活动」', (WidgetTester tester) async {
     await favoriteService.addFavorite(
       _item(
         id: 'https://x/1',
@@ -182,6 +188,13 @@ void main() {
       favoriteService.favorites.single.hasUpdate,
       isFalse,
       reason: '打开详情即视为已知晓更新，只清红点',
+    );
+    expect(
+      favoriteService.favorites.single.lastActiveAt.isAfter(
+        DateTime(2026, 9, 21),
+      ),
+      isTrue,
+      reason: '点击进入即算一次「最近活动」（排序用）',
     );
   });
 
@@ -210,10 +223,17 @@ void main() {
     expect(find.byType(ListView), findsOneWidget);
     expect(find.byType(GridView), findsNothing);
 
-    // 横向布局的验收点：封面在左、文字信息在右
-    final coverLeft = tester.getTopLeft(find.byType(AppImage)).dx;
+    // 版式验收点：封面贴卡片左上，信息落在它右侧
+    final cardFinder = find.byType(AppCard).first;
+    final card = tester.getRect(cardFinder);
+    final cover = tester.getRect(
+      find.descendant(of: cardFinder, matching: find.byType(ClipRRect)).first,
+    );
     final titleLeft = tester.getTopLeft(find.text('流光纪元')).dx;
-    expect(coverLeft, lessThan(titleLeft), reason: '封面应在信息左侧');
+
+    expect(cover.left, moreOrLessEquals(card.left, epsilon: 0.5));
+    expect(cover.top, moreOrLessEquals(card.top, epsilon: 0.5));
+    expect(cover.right, lessThanOrEqualTo(titleLeft), reason: '信息在封面右侧');
   });
 
   testWidgets('顶栏：左侧页名 + 中间筛选条', (WidgetTester tester) async {
@@ -237,8 +257,16 @@ void main() {
     expect((bar.center.dx - appBar.center.dx).abs(), lessThan(60));
   });
 
-  testWidgets('卡片封面贴边：封面左沿与上沿与卡片重合', (WidgetTester tester) async {
-    await favoriteService.addFavorite(_item(id: 'https://x/1', title: '流光纪元'));
+  testWidgets('封面区：贴卡片左上、160×108，且卡片高度等于封面区高度', (WidgetTester tester) async {
+    await favoriteService.addFavorite(
+      // 最坏情况：标题占满两行 + 更新行也在，信息区仍不许把卡片撑高
+      _item(
+        id: 'https://x/1',
+        title: '流光纪元之一个相当长的作品标题会折成两行',
+        hasUpdate: true,
+        latestEpisode: '第 15 章',
+      ),
+    );
 
     await _pumpPage(tester);
 
@@ -248,22 +276,69 @@ void main() {
       find.descendant(of: cardFinder, matching: find.byType(ClipRRect)).first,
     );
 
+    expect(cover.left, moreOrLessEquals(card.left, epsilon: 0.5));
     expect(
-      cover.left,
-      moreOrLessEquals(card.left, epsilon: 0.5),
-      reason: '封面不再被卡片内边距推开',
+      cover.top,
+      moreOrLessEquals(card.top, epsilon: 0.5),
+      reason: '卡片不留内边距，封面直接贴左上',
     );
-    expect(cover.top, moreOrLessEquals(card.top, epsilon: 0.5));
+    expect(cover.width, closeTo(160, 0.5), reason: '左列封面宽度');
+    expect(cover.height, closeTo(108, 0.5), reason: '封面区高度 = 卡片高度');
 
-    // 封面四角同半径：右侧两角也要圆（左侧两角与卡片外沿重合）
-    final clip = tester.widget<ClipRRect>(
-      find.descendant(of: cardFinder, matching: find.byType(ClipRRect)).first,
-    );
+    // 高度契约：封面是标尺，信息区只能在这 108 里排版，不许把卡片撑高
     expect(
-      clip.borderRadius,
-      BorderRadius.circular(12),
-      reason: '封面不是直角切口，四角都要圆',
+      card.height,
+      moreOrLessEquals(cover.height, epsilon: 0.5),
+      reason: '卡片高度 = 封面区高度（信息不参与撑高）',
     );
+  });
+
+  testWidgets('封面区：模糊补边在底、清晰封面居中在上', (WidgetTester tester) async {
+    await favoriteService.addFavorite(
+      _item(
+        id: 'https://x/1',
+        title: '流光纪元',
+        cover: 'https://img.test/cover.jpg',
+      ),
+    );
+
+    // 不用 _pumpPage：本用例带真实封面地址，AppImage 加载网络图时指示器一直转，
+    // pumpAndSettle 必然超时
+    await tester.pumpWidget(
+      MaterialApp(theme: AppTheme.lightTheme, home: const FavoritesPage()),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+
+    final cardFinder = find.byType(AppCard).first;
+
+    // 底：模糊补边（竖封面两侧的空缺靠它填）
+    final blurLayer = find.descendant(
+      of: cardFinder,
+      matching: find.byType(ImageFiltered),
+    );
+    expect(blurLayer, findsOneWidget, reason: '竖封面在宽幅封面区里的留白要靠同一张封面的模糊版补');
+    expect(
+      tester.widget<ImageFiltered>(blurLayer).imageFilter,
+      isA<ui.ImageFilter>(),
+    );
+
+    // 模糊层上必须压遮罩：不压暗的话两侧会比中间的清晰图更抢眼
+    expect(
+      tester.widgetList<ColoredBox>(
+        find.descendant(of: cardFinder, matching: find.byType(ColoredBox)),
+      ),
+      isNotEmpty,
+    );
+
+    // 上：清晰层，与模糊层同源；用 contain 完整显示、不做裁切
+    final images = tester
+        .widgetList<AppImage>(
+          find.descendant(of: cardFinder, matching: find.byType(AppImage)),
+        )
+        .toList();
+    expect(images.length, 2, reason: '同一张封面：一层模糊补边、一层完整居中');
+    expect(images.last.fit, BoxFit.contain, reason: '宽图满幅、竖图居中，都不裁切');
   });
 
   testWidgets('NEW 角标：半透明底', (WidgetTester tester) async {
@@ -330,6 +405,68 @@ void main() {
           (updated.dy == normal.dy && updated.dx < normal.dx),
       isTrue,
     );
+  });
+
+  testWidgets('默认按「最近观看」排序：刚点开过的那条在上', (WidgetTester tester) async {
+    await favoriteService.addFavorite(
+      _item(
+        id: 'https://x/a',
+        title: '刚收藏但没点开',
+        updatedAt: DateTime(2026, 9, 25), // 收藏更晚
+        lastActiveAt: DateTime(2026, 9, 20),
+      ),
+    );
+    await favoriteService.addFavorite(
+      _item(
+        id: 'https://x/b',
+        title: '很久前收藏但刚点开',
+        updatedAt: DateTime(2026, 9, 21), // 收藏更早
+        lastActiveAt: DateTime(2026, 9, 28),
+      ),
+    );
+
+    await _pumpPage(tester);
+
+    expect(find.text('最近观看'), findsOneWidget, reason: '默认档位是最近观看');
+
+    final active = tester.getTopLeft(find.text('很久前收藏但刚点开'));
+    final stale = tester.getTopLeft(find.text('刚收藏但没点开'));
+    expect(active.dy < stale.dy, isTrue, reason: '默认看的是「最近活动」，不是收藏时间');
+  });
+
+  testWidgets('顶栏可切到「收藏时间」排序，切完顺序反转', (WidgetTester tester) async {
+    await favoriteService.addFavorite(
+      _item(
+        id: 'https://x/a',
+        title: '刚收藏但没点开',
+        updatedAt: DateTime(2026, 9, 25), // 收藏更晚
+        lastActiveAt: DateTime(2026, 9, 20),
+      ),
+    );
+    await favoriteService.addFavorite(
+      _item(
+        id: 'https://x/b',
+        title: '很久前收藏但刚点开',
+        updatedAt: DateTime(2026, 9, 21), // 收藏更早
+        lastActiveAt: DateTime(2026, 9, 28),
+      ),
+    );
+
+    await _pumpPage(tester);
+
+    await tester.tap(find.text('最近观看'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('收藏时间'), findsOneWidget, reason: '按钮文案反映当前档位');
+    expect(find.text('已按收藏时间排序'), findsOneWidget);
+
+    final newer = tester.getTopLeft(find.text('刚收藏但没点开'));
+    final older = tester.getTopLeft(find.text('很久前收藏但刚点开'));
+    expect(newer.dy < older.dy, isTrue, reason: '收藏时间倒序：后收藏的在上');
+
+    // 排空提示计时，避免测试结束时残留定时器
+    await tester.pump(const Duration(milliseconds: 1200));
+    await tester.pumpAndSettle();
   });
 
   testWidgets('完全无收藏时展示通用空态', (WidgetTester tester) async {

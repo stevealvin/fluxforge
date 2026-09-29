@@ -22,7 +22,19 @@ class FavoriteItem {
   final String lastEpisode; // 上次观看/阅读的集数或章节
   final String latestEpisode; // 探测到的源站最新集数或章节
   final bool hasUpdate; // 是否有未读的新更新
-  final DateTime updatedAt; // 最近更新时间
+
+  /// 收藏时间：**只在收藏那一刻写入**，之后不再刷新
+  ///
+  /// 名字保留 `updatedAt` 只为兼容已落盘的 JSON；语义上它就是「收藏时间」，
+  /// 供列表的「收藏时间」排序使用（见 `_FavoriteSortMode.favoritedAt`）。
+  final DateTime updatedAt;
+
+  /// 最近活动时间：**点击进入详情**即刷新（见 [FavoriteService.markOpened]）；
+  /// 收藏那一刻与 [updatedAt] 相同
+  ///
+  /// 与 [updatedAt] 分开是必须的 —— 列表要在「收藏时间 / 最近观看」之间二选一，
+  /// 一个字段承担不了两个语义。
+  final DateTime lastActiveAt;
 
   const FavoriteItem({
     required this.id,
@@ -35,6 +47,7 @@ class FavoriteItem {
     this.latestEpisode = '',
     this.hasUpdate = false,
     required this.updatedAt,
+    required this.lastActiveAt,
   });
 
   FavoriteItem copyWith({
@@ -48,6 +61,7 @@ class FavoriteItem {
     String? latestEpisode,
     bool? hasUpdate,
     DateTime? updatedAt,
+    DateTime? lastActiveAt,
   }) {
     return FavoriteItem(
       id: id ?? this.id,
@@ -60,6 +74,7 @@ class FavoriteItem {
       latestEpisode: latestEpisode ?? this.latestEpisode,
       hasUpdate: hasUpdate ?? this.hasUpdate,
       updatedAt: updatedAt ?? this.updatedAt,
+      lastActiveAt: lastActiveAt ?? this.lastActiveAt,
     );
   }
 
@@ -75,10 +90,14 @@ class FavoriteItem {
       'latestEpisode': latestEpisode,
       'hasUpdate': hasUpdate,
       'updatedAt': updatedAt.toIso8601String(),
+      'lastActiveAt': lastActiveAt.toIso8601String(),
     };
   }
 
   factory FavoriteItem.fromJson(Map<String, dynamic> json) {
+    final updatedAt =
+        DateTime.tryParse(json['updatedAt']?.toString() ?? '') ??
+        DateTime.now();
     return FavoriteItem(
       id: json['id']?.toString() ?? '',
       url: json['url']?.toString() ?? '',
@@ -89,9 +108,12 @@ class FavoriteItem {
       lastEpisode: json['lastEpisode']?.toString() ?? '',
       latestEpisode: json['latestEpisode']?.toString() ?? '',
       hasUpdate: json['hasUpdate'] == true,
-      updatedAt: json['updatedAt'] != null
-          ? DateTime.tryParse(json['updatedAt'].toString()) ?? DateTime.now()
-          : DateTime.now(),
+      updatedAt: updatedAt,
+      // 容错兼容：历史旧版本本地数据或老备份 JSON 中无 lastActiveAt，
+      // 此时回退为收藏时间 updatedAt，确保排序平滑且不随反序列化时刻产生时间抖动
+      lastActiveAt:
+          DateTime.tryParse(json['lastActiveAt']?.toString() ?? '') ??
+          updatedAt,
     );
   }
 }
@@ -198,15 +220,22 @@ class FavoriteService {
     }
   }
 
-  /// 标记已读（仅消除追更红点）
+  /// 打开详情：清掉追更红点，并记一次「最近活动」
   ///
-  /// **不再改写 [FavoriteItem.lastEpisode]**：那是「上次看到」的展示来源，
+  /// 「最近活动」的口径刻意定得很简单 —— **点击进入详情就算**，不做更细的
+  /// 播放 / 阅读进度打点（那是 PlayHistoryService 的职责）。两个动作改的是
+  /// 同一条记录，合并成一次写入，避免两次落盘。
+  ///
+  /// **不改写 [FavoriteItem.lastEpisode]**：那是「上次看到」的展示来源，
   /// 打开详情页并不代表用户看完了新一集，把它改成 `latestEpisode` 属于伪造
   /// 观看进度（并且会污染与消费记录的一致性）。真实进度一律从
   /// [FavoriteProgressReader] 注入读取。
-  Future<void> markAsRead(String id) async {
+  Future<void> markOpened(String id) async {
+    final now = DateTime.now();
     final current = favorites.map((item) {
-      if (item.id == id) return item.copyWith(hasUpdate: false);
+      if (item.id == id) {
+        return item.copyWith(hasUpdate: false, lastActiveAt: now);
+      }
       return item;
     }).toList();
     await _saveFavorites(current);

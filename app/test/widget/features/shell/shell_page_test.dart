@@ -68,6 +68,7 @@ void main() {
         mediaType: 'novel',
         hasUpdate: true,
         updatedAt: DateTime(2026, 9, 21),
+        lastActiveAt: DateTime(2026, 9, 21),
       ),
     );
 

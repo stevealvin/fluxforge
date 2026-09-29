@@ -15,7 +15,10 @@ FavoriteItem _item({
   String lastEpisode = '',
   String latestEpisode = '',
   bool hasUpdate = false,
+  DateTime? updatedAt,
+  DateTime? lastActiveAt,
 }) {
+  final favoritedAt = updatedAt ?? DateTime(2026, 9, 21);
   return FavoriteItem(
     id: id,
     title: title,
@@ -23,7 +26,9 @@ FavoriteItem _item({
     lastEpisode: lastEpisode,
     latestEpisode: latestEpisode,
     hasUpdate: hasUpdate,
-    updatedAt: DateTime(2026, 9, 21),
+    updatedAt: favoritedAt,
+    // 与生产口径一致：收藏当时就算一次活动
+    lastActiveAt: lastActiveAt ?? favoritedAt,
   );
 }
 
@@ -64,17 +69,33 @@ void main() {
     expect(reloaded.favorites.single.title, '追光者');
   });
 
-  test('markAsRead 只清红点，不改写「上次看到」（防伪造进度回归）', () async {
+  test('markOpened：清红点 + 记一次最近活动，不改写「上次看到」（防伪造进度回归）', () async {
     await service.addFavorite(
-      _item(lastEpisode: '第 3 章', latestEpisode: '第 9 章', hasUpdate: true),
+      _item(
+        lastEpisode: '第 3 章',
+        latestEpisode: '第 9 章',
+        hasUpdate: true,
+        // 收藏时间放在过去：「最近活动被刷新」才有可观测的差异
+        updatedAt: DateTime(2026, 9, 21),
+      ),
     );
 
-    await service.markAsRead(_id);
+    await service.markOpened(_id);
 
     final item = service.favorites.single;
     expect(item.hasUpdate, isFalse);
     expect(item.lastEpisode, '第 3 章', reason: '打开详情不应伪造观看进度');
     expect(item.latestEpisode, '第 9 章');
+    expect(
+      item.updatedAt,
+      DateTime(2026, 9, 21),
+      reason: '收藏时间是独立字段，打开详情不该改写它',
+    );
+    expect(
+      item.lastActiveAt.isAfter(DateTime(2026, 9, 21)),
+      isTrue,
+      reason: '点击进入即算一次最近活动',
+    );
   });
 
   test('checkUpdates：源站最新 ≠ 本地真实进度时点亮红点', () async {
@@ -146,5 +167,22 @@ void main() {
     final reloaded = FavoriteService();
     await pumpEventQueue();
     expect(reloaded.favorites, isEmpty);
+  });
+
+  test('FavoriteItem.fromJson：老版本数据缺少 lastActiveAt 时自动回退为 updatedAt', () {
+    final oldTime = DateTime(2026, 8, 15, 12, 0);
+    final json = {
+      'id': 'https://x/old',
+      'title': '老版本数据',
+      'updatedAt': oldTime.toIso8601String(),
+      // 故意不包含 lastActiveAt
+    };
+    final item = FavoriteItem.fromJson(json);
+    expect(item.updatedAt, oldTime);
+    expect(
+      item.lastActiveAt,
+      oldTime,
+      reason: '缺少独立活动时间的老数据应平滑对齐收藏时间，避免时间抖动',
+    );
   });
 }

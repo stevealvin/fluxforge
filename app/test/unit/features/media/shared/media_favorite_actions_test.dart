@@ -145,6 +145,7 @@ void main() {
         id: 'https://x/1',
         title: 'A',
         updatedAt: DateTime(2026, 9, 21),
+        lastActiveAt: DateTime(2026, 9, 21),
       );
       expect(await MediaFavoriteActions.probeLatest(item), isNull);
     });
@@ -155,6 +156,7 @@ void main() {
         title: 'A',
         ruleId: '1',
         updatedAt: DateTime(2026, 9, 21),
+        lastActiveAt: DateTime(2026, 9, 21),
       );
       expect(await MediaFavoriteActions.probeLatest(item), isNull);
     });
@@ -166,6 +168,7 @@ void main() {
       title: 'A',
       ruleId: '不存在的规则',
       updatedAt: DateTime(2026, 9, 21),
+      lastActiveAt: DateTime(2026, 9, 21),
     );
     expect(MediaFavoriteActions.ruleOf(item), isNull);
   });

@@ -81,6 +81,9 @@ class MediaFavoriteActions {
         ? MediaType.video.value
         : data.mediaType.value;
 
+    // 收藏即一次活动：两个时间起点相同，此后各自独立刷新
+    // （收藏时间不再变，最近活动随「点击进入详情」推进）
+    final now = DateTime.now();
     await favoriteService.addFavorite(
       FavoriteItem(
         id: id,
@@ -92,7 +95,8 @@ class MediaFavoriteActions {
         ruleId: rule?.id?.toString() ?? '',
         lastEpisode: playHistoryService.getById(id)?.episodeName ?? '',
         latestEpisode: latestEpisodeOf(data),
-        updatedAt: DateTime.now(),
+        updatedAt: now,
+        lastActiveAt: now,
       ),
     );
     return '已加入收藏，追更已开启';
