@@ -3,6 +3,11 @@ name: Build Android
 on:
   workflow_dispatch:
 
+# 新增：创建 Release 需要写权限。
+# 仓库 Settings → Actions → Workflow permissions 若为只读，缺这段会在发布时报 403。
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -22,6 +27,15 @@ jobs:
       - name: Build Apk
         working-directory: app
         run: flutter build apk
+
+      - name: Publish Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "build-${{ github.run_number }}" \
+            "app/build/app/outputs/flutter-apk/app-release.apk" \
+            --title "Build #${{ github.run_number }}" \
+            --generate-notes
 
       - name: Upload APK
         uses: actions/upload-artifact@v7
