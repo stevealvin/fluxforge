@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fluxforge/features/media/comic/reader/comic_reader_page.dart';
+import 'package:fluxforge/shared/widgets/setting_tile.dart';
 
 /// 图片阅读器：底部入口 + 页进度滑动
 void main() {
@@ -81,6 +82,28 @@ void main() {
     await settle(tester);
     expect(find.text('左右翻页'), findsOneWidget);
     expect(find.byType(ListView), findsNothing);
+  });
+
+  testWidgets('阅读方式面板用统一设置行，不再是"紧凑一行"', (tester) async {
+    await pumpReader(tester);
+
+    await tester.tap(find.text('左右翻页'));
+    await settle(tester);
+
+    expect(
+      find.byType(SettingRow),
+      findsNWidgets(2),
+      reason: '两个选项都走全仓统一的设置行（图标徽章 + 标题 + 说明）',
+    );
+
+    final rowHeight = tester
+        .getSize(find.byKey(const ValueKey('reading_mode_false')))
+        .height;
+    expect(
+      rowHeight,
+      greaterThan(50),
+      reason: '此前手写行的行高不到 45，也没有 Material 的最小点击热区',
+    );
   });
 
   testWidgets('章节形态：目录入口同样在底部栏', (tester) async {

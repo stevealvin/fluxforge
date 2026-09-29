@@ -7,6 +7,7 @@ import 'package:ionicons/ionicons.dart';
 import 'package:fluxforge/app/theme/app_colors.dart';
 import 'package:fluxforge/features/media/comic/reader/controllers/comic_reader_preferences.dart';
 import 'package:fluxforge/shared/widgets/app_image.dart';
+import 'package:fluxforge/shared/widgets/setting_tile.dart';
 
 /// 图片「加载中 / 加载失败」占位页的高度
 ///
@@ -742,14 +743,14 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 2),
+                    padding: const EdgeInsets.fromLTRB(20, 16, 20, 6),
                     child: Text(
                       '阅读方式',
                       style: TextStyle(
                         color: isDark
                             ? AppColors.darkTextPrimary
                             : AppColors.lightTextPrimary,
-                        fontSize: 15,
+                        fontSize: 16,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
@@ -788,38 +789,28 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
     required String subtitle,
   }) {
     final current = _isContinuousMode == value;
-    final isDark = Theme.of(sheetContext).brightness == Brightness.dark;
-    final textColor = isDark
-        ? AppColors.darkTextPrimary
-        : AppColors.lightTextPrimary;
-    final mutedColor = isDark
-        ? AppColors.darkTextMuted
-        : AppColors.lightTextMuted;
 
-    return InkWell(
+    // 复用全仓统一的设置行（图标徽章 + 标题 + 说明 + 可选尾部）
+    //
+    // 此前这里是手写的一行：图标 18 / 标题 13.5 / 竖向内边距 11 —— 比设置页、
+    // 主题面板那些面板都小一号，也没有 Material 的最小点击热区。行高该由同一处
+    // 实现决定，才不会每个面板各写一套"紧凑度"。
+    return SettingRow(
       key: ValueKey('reading_mode_$value'),
+      icon: icon,
+      color: AppColors.primary,
+      title: title,
+      subtitle: subtitle,
       onTap: () => Navigator.pop(sheetContext, value),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
-        child: Row(
-          children: [
-            Icon(icon, size: 18, color: textColor),
-            const SizedBox(width: 10),
-            Text(title, style: TextStyle(fontSize: 13.5, color: textColor)),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                subtitle,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: 11, color: mutedColor),
-              ),
-            ),
-            // 选中只给一个勾：此前整项染绿，而模式名本身已说明当前选择
-            if (current) Icon(Ionicons.checkmark, size: 16, color: textColor),
-          ],
-        ),
-      ),
+      // 未选中用零尺寸占位：尾部非 null 即不画箭头，同时不占横向空间
+      //（与设置页主题面板的选中态写法一致）
+      trailing: current
+          ? const Icon(
+              Icons.check_circle_rounded,
+              color: AppColors.primary,
+              size: 20,
+            )
+          : const SizedBox.shrink(),
     );
   }
 
