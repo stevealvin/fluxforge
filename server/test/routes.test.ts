@@ -39,6 +39,41 @@ async function runTests() {
   console.log('POST /api/rules/run Status:', res.status);
   console.log('POST /api/rules/run Result:', await res.json());
 
+  console.log('\n--- Testing POST /api/rules/run (内置 crypto-js) ---');
+  res = await app.request('/api/rules/run', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      // 三种写法必须拿到同一个单例：ESM import / CommonJS require / 全局 CryptoJS
+      code: `
+        import CryptoJS from 'crypto-js';
+        export default async function() {
+          const viaImport = CryptoJS.MD5('hello').toString();
+          const viaRequire = require('crypto-js').SHA1('hello').toString().slice(0, 8);
+          const roundTrip = CryptoJS.AES.decrypt(
+            CryptoJS.AES.encrypt('fluxforge', 'secret-key').toString(),
+            'secret-key'
+          ).toString(CryptoJS.enc.Utf8);
+          return [viaImport, viaRequire, roundTrip].join(' | ');
+        }
+      `
+    })
+  });
+  const cryptoPayload = (await res.json()) as any;
+  const cryptoText = String(cryptoPayload?.result ?? '');
+  console.log('POST /api/rules/run (crypto-js) Status:', res.status);
+  console.log('POST /api/rules/run (crypto-js) Result:', cryptoText);
+
+  // 固定期望值：MD5('hello') 可离线核对，SHA1 只取前 8 位，AES 往返必须还原原文
+  const expectedMd5 = '5d41402abc4b2a76b9719d911017c592';
+  if (!cryptoText.startsWith(expectedMd5) || !cryptoText.endsWith('fluxforge')) {
+    throw new Error(
+      `crypto-js 沙箱用例失败：期望以 ${expectedMd5} 开头、以 fluxforge 结尾，实际 ${cryptoText}`
+    );
+  }
+
   console.log('\n--- Testing POST /api/rules/run with context and arrow function ---');
   res = await app.request('/api/rules/run', {
     method: 'POST',

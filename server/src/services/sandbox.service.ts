@@ -4,6 +4,7 @@ import axios from 'axios';
 import * as cheerio from 'cheerio';
 import crypto from 'node:crypto';
 import iconv from 'iconv-lite';
+import CryptoJS from 'crypto-js';
 import { DEFAULT_USER_AGENT } from './crawler.service.js';
 
 const require = createRequire(import.meta.url);
@@ -112,8 +113,31 @@ export const sandboxService = {
 
     const runCode = transformESMToCJS(code);
 
-    const allowModules = ['axios', 'cheerio', 'crypto', 'buffer', 'url', 'querystring', 'iconv-lite', 'iconv'];
+    // crypto-js 走**内置单例**（与移动端沙箱同源）：于是规则里
+    // `import CryptoJS from 'crypto-js'`、`require('crypto-js')` 与直接用全局 `CryptoJS`
+    // 三种写法完全等价，也都指向同一个对象。
+    const allowModules = [
+      'axios',
+      'cheerio',
+      'crypto',
+      'crypto-js',
+      'buffer',
+      'url',
+      'querystring',
+      'iconv-lite',
+      'iconv'
+    ];
     const sandboxRequire = (name: string) => {
+      if (name === 'crypto-js') {
+        return CryptoJS;
+      }
+      // 子模块路径（crypto-js/aes 之类）不去解析真实文件：单例上已经有 AES / SHA256 等同名属性，
+      // 这里直接报错并给出正确写法，比静默返回整个对象更好排查
+      if (name.startsWith('crypto-js/')) {
+        throw new Error(
+          `crypto-js 子模块路径 "${name}" 不受支持，请改用全局单例写法（如 CryptoJS.AES、CryptoJS.enc.Utf8）`
+        );
+      }
       if (!allowModules.includes(name)) {
         throw new Error(`Module "${name}" is not permitted in rule sandbox`);
       }
@@ -148,6 +172,8 @@ export const sandboxService = {
       axios,
       cheerio,
       crypto,
+      // 全局 CryptoJS：规则可以直接写 CryptoJS.MD5(...)，无需任何 import / require
+      CryptoJS,
       iconv,
       Buffer,
       URL,

@@ -43,6 +43,11 @@ export const addGlobalSandboxTypes = (monaco: typeof import('monaco-editor')) =>
       const cheerio: import('cheerio').CheerioAPI;
 
       /**
+       * 全局内置 CryptoJS 加密库（MD5 / SHA 系列 / Hmac / AES / DES / Base64 / Hex …）
+       */
+      const CryptoJS: typeof import('crypto-js').default;
+
+      /**
        * 基础媒体简项 (用于发现网格、搜索列表、相关推荐)
        */
       interface MediaItem {

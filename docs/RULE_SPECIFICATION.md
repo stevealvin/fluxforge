@@ -53,10 +53,13 @@ FluxForge 的规则系统致力于将互联网上异构的多媒体内容源（�
 | **`baseUrl`** | `string` | 目标站点根域名（如 `https://example.com`），用于相对路径补全 |
 | **`axios`** | `AxiosInstance` | 预置防爬请求头与 Cookie 容器的高性能 HTTP 客户端 |
 | **`cheerio`** | `CheerioAPI` | 服务端轻量高性能 HTML DOM 解析器（语法同 jQuery） |
+| **`CryptoJS`** | `CryptoJS` | 内置加密库：MD5 / SHA1 / SHA256 / SHA512 / Hmac 系列 / AES / DES / TripleDES / RC4 / Base64 / Hex，用于接口签名、密码与参数加密等场景 |
 | **`ua`** | `string` | 标准 Modern Mobile / Desktop User-Agent 字符串 |
 | **`defineRule`** | `Function` | 规则定义与类型辅助函数，用于包装导出规则对象 |
 
 > 规则脚本内部**严禁编写任何 `import` 或 `require` 语句**，直接使用注入的全局对象即可。
+>
+> 为兼容既有规则，`import CryptoJS from 'crypto-js'` 与 `require('crypto-js')` 会被沙箱解析到**同一个全局单例**（三种写法完全等价）；但新规则请统一使用全局 `CryptoJS`。注意 `crypto-js/aes` 这类子模块路径不受支持，请写 `CryptoJS.AES`、`CryptoJS.enc.Utf8`。
 
 ---
 

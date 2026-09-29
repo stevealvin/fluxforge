@@ -3,7 +3,8 @@ export const libTypes = {
   // 写成 `typeof import('cheerio')` 会让 `const cheerio = require('cheerio')` 之后
   // `cheerio.` 只提示出一个 default。
   require: `declare function require(moduleName: 'axios'): typeof import('axios').default;
-    declare function require(moduleName: 'cheerio'): typeof import('cheerio').default;`,
+    declare function require(moduleName: 'cheerio'): typeof import('cheerio').default;
+    declare function require(moduleName: 'crypto-js'): typeof import('crypto-js').default;`,
   axios: `declare module 'axios' {
     export interface AxiosRequestConfig {
       url?: string;
@@ -99,5 +100,95 @@ export const libTypes = {
     }
     const cheerio: CheerioAPI;
     export default cheerio;
+  }`,
+  // crypto-js：沙箱内置单例，`import CryptoJS from 'crypto-js'` / `require('crypto-js')`
+  // 与直接用全局 `CryptoJS` 三种写法等价。命名对齐库自身导出
+  // （MD5 / SHA256 / HmacSHA256 / AES / enc / mode / pad / format）。
+  cryptoJs: `declare module 'crypto-js' {
+    export interface WordArray {
+      words: number[];
+      sigBytes: number;
+      toString(encoder?: Encoder): string;
+      concat(other: WordArray): WordArray;
+      clamp(): void;
+      clone(): WordArray;
+    }
+
+    export interface Encoder {
+      stringify(wordArray: WordArray): string;
+      parse(str: string): WordArray;
+    }
+
+    export interface CipherParams {
+      ciphertext: WordArray;
+      key?: WordArray;
+      iv?: WordArray;
+      salt?: WordArray;
+      toString(formatter?: any): string;
+    }
+
+    export interface Hasher {
+      (message: string | WordArray, cfg?: any): WordArray;
+      create(cfg?: any): any;
+    }
+
+    export interface HmacHasher {
+      (message: string | WordArray, key: string | WordArray): WordArray;
+    }
+
+    export interface Cipher {
+      encrypt(message: string | WordArray, key: string | WordArray, cfg?: any): CipherParams;
+      decrypt(ciphertext: string | CipherParams, key: string | WordArray, cfg?: any): WordArray;
+    }
+
+    export interface CryptoJSApi {
+      MD5: Hasher;
+      SHA1: Hasher;
+      SHA224: Hasher;
+      SHA256: Hasher;
+      SHA384: Hasher;
+      SHA512: Hasher;
+      SHA3: Hasher;
+      RIPEMD160: Hasher;
+      HmacMD5: HmacHasher;
+      HmacSHA1: HmacHasher;
+      HmacSHA224: HmacHasher;
+      HmacSHA256: HmacHasher;
+      HmacSHA384: HmacHasher;
+      HmacSHA512: HmacHasher;
+      HmacSHA3: HmacHasher;
+      HmacRIPEMD160: HmacHasher;
+      AES: Cipher;
+      DES: Cipher;
+      TripleDES: Cipher;
+      RC4: Cipher;
+      RC4Drop: Cipher;
+      Rabbit: Cipher;
+      RabbitLegacy: Cipher;
+      enc: {
+        Utf8: Encoder;
+        Latin1: Encoder;
+        Hex: Encoder;
+        Base64: Encoder;
+        Utf16: Encoder;
+        Utf16LE: Encoder;
+      };
+      mode: { CBC: any; CFB: any; CTR: any; CTRGladman: any; OFB: any; ECB: any };
+      pad: {
+        Pkcs7: any;
+        AnsiX923: any;
+        Iso10126: any;
+        Iso97971: any;
+        ZeroPadding: any;
+        NoPadding: any;
+      };
+      format: { OpenSSL: any; Hex: any };
+      lib: { WordArray: any; CipherParams: any };
+      algo: any;
+      kdf: { OpenSSL: any };
+    }
+
+    const CryptoJS: CryptoJSApi;
+    export default CryptoJS;
   }`
 }
