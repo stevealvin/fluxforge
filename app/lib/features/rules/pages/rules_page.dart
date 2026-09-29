@@ -726,7 +726,9 @@ class _RulesPageState extends State<RulesPage> {
 
           const SizedBox(height: 8),
 
-          // 底部：左侧站点直达链接（点击跳转 WebView） + 右侧删除按钮
+          // 底部：左侧站点直达链接（点击跳转 WebView） + 右侧规则测试入口。
+          // 删除**不摆在这里**：破坏性动作只留长按面板一处（见 [_showRuleActionSheet]），
+          // 浏览流里放删除按钮既碍眼、又让同一动作出现两个入口。
           Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
@@ -811,24 +813,6 @@ class _RulesPageState extends State<RulesPage> {
                           ? AppColors.primaryLight
                           : AppColors.primary,
                     ),
-                  ),
-                ),
-              ),
-
-              const SizedBox(width: 8),
-
-              // 删除规则按钮（消除原生 IconButton 默认占用的 48px 隐形点击高度）
-              InkWell(
-                borderRadius: BorderRadius.circular(6),
-                onTap: () => _confirmDeleteRule(context, rule),
-                child: Padding(
-                  padding: const EdgeInsets.all(4),
-                  child: Icon(
-                    Ionicons.trashOutline,
-                    size: 14,
-                    color: isDark
-                        ? Colors.redAccent.withValues(alpha: 0.85)
-                        : Colors.redAccent,
                   ),
                 ),
               ),
