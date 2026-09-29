@@ -38,7 +38,7 @@ class ReaderChapterBridge extends StatelessWidget {
   /// 目标章正文是否已就绪（命中内存缓存 / 已下载 / 预取中）
   final bool isReady;
 
-  /// 主标题（如「正在进入下一章」）
+  /// 主标题（如「正在加载本章」）
   final String heading;
 
   /// 就绪 / 未就绪时的副文案

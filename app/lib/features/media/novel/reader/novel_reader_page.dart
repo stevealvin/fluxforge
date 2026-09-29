@@ -1729,9 +1729,13 @@ class _NovelReaderPageState extends State<NovelReaderPage>
       isReady: _isChapterContentAvailable(chapter),
       heading: error != null
           ? '本章正文加载失败'
-          : isCurrent
-          ? '正在加载本章'
-          : (chapter < _currentChapterIndex ? '正在加载上一章' : '正在进入下一章'),
+          // 一律「本章」：横向模式一屏一页，占位页能出现在眼前，就说明读者的落点
+          // 就在这一章（拖拽期间手指指向哪章就已静默预载哪章，见 [_onHorizontalPageChanged]）。
+          //
+          // 此前按"章号 < [_currentChapterIndex]"改成「正在加载上一章 / 正在进入下一章」——
+          // 而那个索引只在**松手落地**后才更新，于是往回翻、手指已抬起的吸附动画里，
+          // 屏幕上明明是读者要去的那一章，文案却在说"上一章"。
+          : '正在加载本章',
       readyHint: '正文已就绪，即将无缝续读',
       loadingHint: '正在加载正文...',
       errorMessage: error,

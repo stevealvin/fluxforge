@@ -292,7 +292,7 @@ void main() {
     // 核心断言 2：正文已就绪时必须与点击翻页完全一致 —— 零等待直接进入下一章
     expect(find.text('第2章 终点'), findsWidgets);
     // 过渡页文案不应在屏幕上停留（下一章已就绪，无需任何加载提示）
-    expect(find.text('正在进入下一章'), findsNothing);
+    expect(find.text('正在加载本章'), findsNothing);
 
     expect(tester.takeException(), isNull);
   });
@@ -534,7 +534,9 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('拖拽跨出去再滑回原位后松手，必须停在当前章（不得消费陈旧的跨章意图）', (WidgetTester tester) async {
+  testWidgets('拖拽跨出去再滑回原位后松手，必须停在当前章（不得消费陈旧的跨章意图）', (
+    WidgetTester tester,
+  ) async {
     final chapters = List<NovelChapter>.generate(
       5,
       (i) => NovelChapter(title: '第${i + 1}章', content: '第${i + 1}章正文内容。'),
@@ -583,19 +585,13 @@ void main() {
     // 第 1 章正文只存在于沙盒（offlineStore），网络抓取不可用 ——
     // 于是「滑过去能看到正文」只能来自「离线 → 内存 → 分片」这条预载通路。
     final store = _FakeOfflineStore({
-      0: List.generate(
-        20,
-        (i) => '第 1 章第 ${i + 1} 段正文内容，用于撑出多页。',
-      ).join('\n\n'),
+      0: List.generate(20, (i) => '第 1 章第 ${i + 1} 段正文内容，用于撑出多页。').join('\n\n'),
     });
     final chapters = [
       const NovelChapter(title: '第1章 起点', url: 'https://example.com/chapter-1'),
       NovelChapter(
         title: '第2章 终点',
-        content: List.generate(
-          8,
-          (i) => '第 2 章第 ${i + 1} 段正文内容。',
-        ).join('\n\n'),
+        content: List.generate(8, (i) => '第 2 章第 ${i + 1} 段正文内容。').join('\n\n'),
       ),
     ];
 
@@ -620,7 +616,7 @@ void main() {
     await tester.pumpAndSettle();
 
     // 预载已把第 1 章正文读进内存并完成分片 → 窗口内不再有未就绪占位页
-    expect(find.text('正在加载上一章'), findsNothing);
+    expect(find.text('正在加载本章'), findsNothing);
     expect(find.text('正文已就绪，即将无缝续读'), findsNothing);
 
     // 滑到上一章：必须直接是正文，而不是「已就绪待分片」的占位页
@@ -636,9 +632,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('拖拽途中邻居章正文到达（页索引整体平移）不得打断手势或提前切章', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('拖拽途中邻居章正文到达（页索引整体平移）不得打断手势或提前切章', (WidgetTester tester) async {
     final completer = Completer<Object?>();
     final chapters = [
       const NovelChapter(title: '第1章 起点', url: 'https://example.com/chapter-1'),
