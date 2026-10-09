@@ -1,0 +1,760 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>FluxForge · 加载动画重设计方案预览</title>
+<!--
+  说明：这是一份一次性的「加载动画方案预览稿」。
+  目的是在浏览器中直观对比 AppLoading 现状与三个候选新方案，选定后再把对应数学搬进 Flutter 的 CustomPainter。
+  所有图形都用 Canvas 2D 逐帧绘制，参数（弧长、周期、线宽比例、配色）刻意与 Flutter 侧实现保持一致。
+-->
+<style>
+  /* 主题变量：默认浅色「纯净星暮白」，body.dark 切换为「曜夜极光翡翠」 */
+  :root {
+    --bg: #F8FAFC;
+    --card: #FFFFFF;
+    --border: #E2E8F0;
+    --text: #0F172A;
+    --sub: #64748B;
+    --accent: #059669;
+    --btn-bg: #F1F5F9;
+    --shadow: 0 10px 30px rgba(5, 150, 105, 0.10);
+  }
+  body.dark {
+    --bg: #0A0D14;
+    --card: #151C2C;
+    --border: #1E293B;
+    --text: #F8FAFC;
+    --sub: #94A3B8;
+    --accent: #34D399;
+    --btn-bg: #1B2436;
+    --shadow: 0 10px 30px rgba(0, 0, 0, 0.50);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 26px 20px 56px;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", Roboto, sans-serif;
+    transition: background 0.25s ease, color 0.25s ease;
+    -webkit-font-smoothing: antialiased;
+  }
+  header {
+    max-width: 1180px;
+    margin: 0 auto 20px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 14px;
+  }
+  h1 { font-size: 19px; margin: 0 0 6px; letter-spacing: -0.3px; }
+  .hint { font-size: 12.5px; color: var(--sub); line-height: 1.75; margin: 0; max-width: 760px; }
+  .hint code {
+    background: var(--btn-bg);
+    color: var(--accent);
+    padding: 1px 5px;
+    border-radius: 5px;
+    font-size: 11.5px;
+  }
+  .theme-btn {
+    appearance: none;
+    border: 1px solid var(--border);
+    background: var(--card);
+    color: var(--text);
+    font-size: 12.5px;
+    padding: 9px 16px;
+    border-radius: 10px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: border-color 0.2s ease, transform 0.12s ease;
+  }
+  .theme-btn:hover { border-color: var(--accent); }
+  .theme-btn:active { transform: scale(0.97); }
+  main {
+    max-width: 1180px;
+    margin: 0 auto;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(276px, 1fr));
+    gap: 16px;
+  }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    padding: 18px 18px 20px;
+    box-shadow: var(--shadow);
+    transition: background 0.25s ease, border-color 0.25s ease;
+  }
+  .group-head { grid-column: 1 / -1; margin: 12px 2px -2px; }
+  .group-head h2 { font-size: 15px; margin: 0 0 5px; letter-spacing: -0.2px; }
+  .group-head p { font-size: 12px; color: var(--sub); margin: 0; line-height: 1.7; }
+  .card h2 { font-size: 14px; margin: 0 0 8px; letter-spacing: -0.2px; }
+  .card h2 .tag {
+    display: inline-block;
+    font-size: 10.5px;
+    font-weight: 500;
+    color: var(--accent);
+    border: 1px solid var(--accent);
+    border-radius: 6px;
+    padding: 1px 6px;
+    margin-left: 8px;
+    vertical-align: 1px;
+    opacity: 0.85;
+  }
+  .desc { font-size: 12px; color: var(--sub); line-height: 1.72; margin: 0 0 16px; }
+  .row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 16px;
+    padding: 4px 0 16px;
+    min-height: 156px;
+  }
+  .item { display: flex; flex-direction: column; align-items: center; gap: 7px; }
+  .item .cap { font-size: 10.5px; color: var(--sub); white-space: nowrap; }
+  /* 按钮内联场景：模拟真实胶囊按钮里嵌 14px 指示器 */
+  .demo-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 15px;
+    border-radius: 11px;
+    background: var(--btn-bg);
+    border: 1px solid var(--border);
+    font-size: 12.5px;
+    color: var(--text);
+    transition: background 0.25s ease, border-color 0.25s ease;
+  }
+  footer { max-width: 1180px; margin: 26px auto 0; font-size: 12px; color: var(--sub); line-height: 1.8; }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>FluxForge · 加载动画「方案 A 系列」预览（共 6 版）</h1>
+    <p class="hint">
+      按你的要求把极光彗星环拆成了 6 版（A0 基准 + A1~A5 变体），每版都在五种尺寸下实时播放（14 / 20 / 28 / 42 / 128px），底部另附按钮内联场景。
+      请重点看 <strong>14px 与 20px</strong> 两档 —— 那是真机上出现最多、也最容易糊掉的尺寸。配色随深浅主题切换，定稿后参数会原样搬进 Flutter 的 <code>CustomPainter</code>。
+    </p>
+  </div>
+  <button class="theme-btn" id="themeBtn">切换到深色主题</button>
+</header>
+
+<main id="grid"></main>
+
+<footer>
+  提示：128px 档仅为看清笔触而放大，真机不会用到。选定版次后，我会连同 <code>&lt;20px</code> 的实色降级分支一起搬进 Flutter 实现。
+</footer>
+
+<script>
+/* ============================================================
+   1. 主题与配色（与 app/lib/app/theme/app_colors.dart 对齐）
+   ============================================================ */
+const THEMES = {
+  light: {
+    // 浅色「纯净星暮白」：品牌主色 #059669 幽绿 + 辅助极光青绿 #14B8A6
+    primary: '#059669',
+    secondary: '#14B8A6',
+    dark: false,
+  },
+  dark: {
+    // 深色「曜夜极光翡翠」：极光荧光绿 #34D399 + 辅助科技蓝 #0EA5E9
+    primary: '#34D399',
+    secondary: '#0EA5E9',
+    dark: true,
+  },
+};
+let themeName = 'light';
+const theme = () => THEMES[themeName];
+
+/* ============================================================
+   2. 颜色工具
+   ============================================================ */
+function hexToRgb(hex) {
+  const v = hex.replace('#', '');
+  return [
+    parseInt(v.substring(0, 2), 16),
+    parseInt(v.substring(2, 4), 16),
+    parseInt(v.substring(4, 6), 16),
+  ];
+}
+/** 把 #RRGGBB 转成带透明度的 rgba() 字符串 */
+function rgba(hex, alpha) {
+  const [r, g, b] = hexToRgb(hex);
+  return `rgba(${r}, ${g}, ${b}, ${Math.max(0, Math.min(1, alpha))})`;
+}
+/** 两个十六进制色按比例线性混合，k=0 取 a，k=1 取 b */
+function mixHex(a, b, k) {
+  const A = hexToRgb(a), B = hexToRgb(b);
+  const c = A.map((v, i) => Math.round(v + (B[i] - v) * k));
+  return `rgb(${c[0]}, ${c[1]}, ${c[2]})`;
+}
+/** 给任意色值（#RRGGBB 或 rgb(...)）套上透明度，得到可用的 strokeStyle */
+function tint(color, alpha) {
+  if (color.startsWith('rgb(')) {
+    return color.replace('rgb(', 'rgba(').replace(')', `, ${alpha})`);
+  }
+  return rgba(color, alpha);
+}
+
+/* ============================================================
+   3. 通用：沿圆弧的扫掠渐变（与 Flutter SweepGradient 一致）
+   ============================================================ */
+/**
+ * 构造沿弧的扫掠渐变笔刷。
+ * @param stops 形如 [[占整圈比例, 颜色], ...]，位置按「整圈 2π」换算
+ */
+function sweepBrush(ctx, cx, cy, startAngle, stops) {
+  if (typeof ctx.createConicGradient !== 'function') {
+    return stops[stops.length - 1][1]; // 老浏览器降级为单色
+  }
+  const g = ctx.createConicGradient(startAngle, cx, cy);
+  for (const [pos, color] of stops) g.addColorStop(pos, color);
+  return g;
+}
+
+/* ============================================================
+   4. 现状：五层叠加（对照用，严格按现有 Flutter 代码复刻）
+   ============================================================ */
+function drawLegacy(ctx, size, t, C) {
+  const stroke = Math.min(size * 0.067, 2.8);
+  const R = size / 2 - stroke / 2 - 0.5;
+  const cx = size / 2, cy = size / 2;
+  const prog = (t / 1.6) % 1; // 原实现 1600ms 一圈
+  const showInner = size >= 24;
+  const showGlow = size > 26;
+
+  // 1) 外环超轻底轨
+  ctx.lineCap = 'butt';
+  ctx.lineWidth = stroke * 0.7;
+  ctx.strokeStyle = rgba(C.primary, C.dark ? 0.12 : 0.07);
+  ctx.beginPath();
+  ctx.arc(cx, cy, R, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // 2) 外环极光流光（280° 弧 + 扫掠渐变）
+  const outerSweep = Math.PI * 1.55;
+  const fOuter = outerSweep / (Math.PI * 2);
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(prog * Math.PI * 2);
+  ctx.lineWidth = stroke;
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = sweepBrush(ctx, 0, 0, 0, [
+    [0, rgba(C.primary, 0)],
+    [0.3 * fOuter, rgba(C.secondary, 0.35)],
+    [0.7 * fOuter, rgba(C.secondary, 1)],
+    [fOuter, rgba(C.primary, 1)],
+  ]);
+  ctx.beginPath();
+  ctx.arc(0, 0, R, 0, outerSweep);
+  ctx.stroke();
+  ctx.restore();
+
+  // 3) 内环反向差速（225° 弧，1.6 倍反向转速）
+  if (showInner) {
+    const innerR = R * 0.62;
+    const innerStroke = stroke * 0.75;
+    ctx.lineWidth = innerStroke * 0.7;
+    ctx.lineCap = 'butt';
+    ctx.strokeStyle = rgba(C.secondary, C.dark ? 0.09 : 0.05);
+    ctx.beginPath();
+    ctx.arc(cx, cy, innerR, 0, Math.PI * 2);
+    ctx.stroke();
+
+    const innerSweep = Math.PI * 1.25;
+    const fInner = innerSweep / (Math.PI * 2);
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(-prog * 3.2 * Math.PI);
+    ctx.lineWidth = innerStroke;
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = sweepBrush(ctx, 0, 0, 0, [
+      [0, rgba(C.secondary, 0)],
+      [0.25 * fInner, rgba(C.primary, 0.4)],
+      [0.7 * fInner, rgba(C.primary, 1)],
+      [fInner, rgba(C.secondary, 1)],
+    ]);
+    ctx.beginPath();
+    ctx.arc(0, 0, innerR, 0, innerSweep);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // 4) 中心呼吸微芒核心 + 光晕
+  if (showGlow) {
+    const pulse = (Math.sin(prog * Math.PI * 2) + 1) / 2;
+    const coreR = R * 0.22 * (0.8 + 0.3 * pulse);
+    if (C.dark) {
+      const glowR = R * 0.5 * (0.8 + 0.3 * pulse);
+      const rg = ctx.createRadialGradient(cx, cy, 0, cx, cy, glowR);
+      rg.addColorStop(0, rgba(C.primary, 0.32 * (0.7 + 0.3 * pulse)));
+      rg.addColorStop(1, rgba(C.primary, 0));
+      ctx.fillStyle = rg;
+      ctx.beginPath();
+      ctx.arc(cx, cy, glowR, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.fillStyle = rgba(C.dark ? C.primary : C.secondary, 0.85 + 0.15 * pulse);
+    ctx.beginPath();
+    ctx.arc(cx, cy, coreR, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+/* ============================================================
+   5. 方案 A 系列 · 极光彗星环（A0 基准 + 5 个变体）
+   共同基底：单环 + 渐隐彗尾（尾部透明 → 头部实色）+ 头部彗核亮点，
+   旋转带正弦调制（非匀速），1.4s 一圈；<20px 自动降级为实色纯弧。
+   各版只在这些维度上取舍：线宽 / 弧长 / 有无彗核 / 有无底轨 / 有无颗粒 / 是否呼吸 / 单尾还是双尾。
+   ============================================================ */
+
+/** 基础几何：按尺寸推导线宽与半径（全系列共用同一套尺寸策略，保证各版缩放一致） */
+function cometMetrics(size, widthRatio, maxStroke) {
+  const small = size < 20;
+  const stroke = small
+    ? Math.max(1.4, size * 0.115)
+    : Math.max(1.2, Math.min(size * widthRatio, maxStroke));
+  return { small, stroke, R: size / 2 - stroke / 2 - 0.5, cx: size / 2, cy: size / 2 };
+}
+
+/** 旋转相位：整体匀速 + 一层正弦浮动，转速在 1x 上下呼吸，长时间盯着看也不机械 */
+function cometPhase(t, period = 1.4, wobble = 0.34) {
+  const u = (t / period) % 1;
+  return u * Math.PI * 2 + Math.sin(u * Math.PI * 2) * wobble;
+}
+
+/** 小尺寸降级：实色纯弧，零渐变，边缘最锐利 */
+function strokePlainArc(ctx, cx, cy, R, stroke, head, sweep, color) {
+  ctx.lineWidth = stroke;
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = color;
+  ctx.beginPath();
+  ctx.arc(cx, cy, R, head - sweep, head);
+  ctx.stroke();
+}
+
+/**
+ * 渐隐彗尾：尾部（head - sweep）完全透明 → 头部实色。
+ * pivotA / pivotB 是两个中间渐变的落点（占弧长比例），调大则尾巴更长更淡。
+ */
+function strokeCometTail(ctx, cx, cy, R, stroke, head, sweep, C, pivotA = 0.3, pivotB = 0.72) {
+  const tail = head - sweep;
+  const f = sweep / (Math.PI * 2);
+  ctx.lineWidth = stroke;
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = sweepBrush(ctx, cx, cy, tail, [
+    [0, rgba(C.primary, 0)],
+    [pivotA * f, rgba(C.secondary, 0.42)],
+    [pivotB * f, rgba(C.secondary, 1)],
+    [f, rgba(C.primary, 1)],
+  ]);
+  ctx.beginPath();
+  ctx.arc(cx, cy, R, tail, head);
+  ctx.stroke();
+  return tail;
+}
+
+/** 彗核亮点：头部一颗实色小圆，让流动方向一眼可辨 */
+function strokeCometCore(ctx, cx, cy, R, stroke, head, color) {
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.arc(cx + Math.cos(head) * R, cy + Math.sin(head) * R, stroke * 0.62, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+/** A0 · 基准版：112° 彗尾 + 彗核，即上一轮看到的方案 A */
+function drawCometBase(ctx, size, t, C) {
+  const { small, stroke, R, cx, cy } = cometMetrics(size, 0.075, 2.8);
+  const head = -Math.PI / 2 + cometPhase(t);
+  const sweep = ((small ? 130 : 112) * Math.PI) / 180;
+  if (small) return strokePlainArc(ctx, cx, cy, R, stroke, head, sweep, C.primary);
+  strokeCometTail(ctx, cx, cy, R, stroke, head, sweep, C);
+  strokeCometCore(ctx, cx, cy, R, stroke, head, C.primary);
+}
+
+/** A1 · 轻量细尾：线更细、弧更短、去掉彗核，尾巴渐变拉长 → 最素净的一版 */
+function drawCometSlim(ctx, size, t, C) {
+  const { small, stroke, R, cx, cy } = cometMetrics(size, 0.055, 2.1);
+  const head = -Math.PI / 2 + cometPhase(t);
+  const sweep = ((small ? 112 : 94) * Math.PI) / 180;
+  if (small) return strokePlainArc(ctx, cx, cy, R, stroke, head, sweep, C.primary);
+  strokeCometTail(ctx, cx, cy, R, stroke, head, sweep, C, 0.44, 0.8);
+}
+
+/** A2 · 呼吸弧长：旋转改匀速，弧长在 88°~150° 之间起伏（1.9s，与 1.4s 旋转错频，不会共振） */
+function drawCometBreath(ctx, size, t, C) {
+  const { small, stroke, R, cx, cy } = cometMetrics(size, 0.075, 2.8);
+  const u = (t / 1.4) % 1;
+  const head = -Math.PI / 2 + u * Math.PI * 2;
+  const breath = (Math.sin((t / 1.9) * Math.PI * 2 - Math.PI / 2) + 1) / 2;
+  const sweep = ((small ? 112 + 40 * breath : 88 + 62 * breath) * Math.PI) / 180;
+  if (small) return strokePlainArc(ctx, cx, cy, R, stroke, head, sweep, C.primary);
+  strokeCometTail(ctx, cx, cy, R, stroke, head, sweep, C);
+  strokeCometCore(ctx, cx, cy, R, stroke, head, C.primary);
+}
+
+/** A3 · 颗粒拖尾：彗尾之后继续散落 4 颗渐隐颗粒 → 流星散尾，动感更足 */
+function drawCometDust(ctx, size, t, C) {
+  const { small, stroke, R, cx, cy } = cometMetrics(size, 0.075, 2.8);
+  const head = -Math.PI / 2 + cometPhase(t);
+  const sweep = ((small ? 130 : 112) * Math.PI) / 180;
+  if (small) return strokePlainArc(ctx, cx, cy, R, stroke, head, sweep, C.primary);
+  const tail = strokeCometTail(ctx, cx, cy, R, stroke, head, sweep, C);
+  strokeCometCore(ctx, cx, cy, R, stroke, head, C.primary);
+  // 颗粒沿运动反方向依次变小变淡
+  for (let k = 1; k <= 4; k++) {
+    const ang = tail - k * 0.2;
+    ctx.fillStyle = rgba(C.secondary, 0.5 - 0.1 * k);
+    ctx.beginPath();
+    ctx.arc(cx + Math.cos(ang) * R, cy + Math.sin(ang) * R, stroke * (0.62 - 0.1 * k), 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+/** A4 · 淡底轨：补一条极淡的整圆轨道（深 0.10 / 浅 0.06），形状感最完整，弧长收短到 100° */
+function drawCometRing(ctx, size, t, C) {
+  const { small, stroke, R, cx, cy } = cometMetrics(size, 0.075, 2.8);
+  const head = -Math.PI / 2 + cometPhase(t);
+  const sweep = ((small ? 126 : 100) * Math.PI) / 180;
+  if (!small) {
+    ctx.lineWidth = stroke * 0.75;
+    ctx.lineCap = 'butt';
+    ctx.strokeStyle = rgba(C.primary, C.dark ? 0.1 : 0.06);
+    ctx.beginPath();
+    ctx.arc(cx, cy, R, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  if (small) return strokePlainArc(ctx, cx, cy, R, stroke, head, sweep, C.primary);
+  strokeCometTail(ctx, cx, cy, R, stroke, head, sweep, C);
+  strokeCometCore(ctx, cx, cy, R, stroke, head, C.primary);
+}
+
+/** A5 · 双尾对置：主尾（绿 112°）与对置短尾（蓝 54°）同步旋转，对称张力最强 */
+function drawCometTwin(ctx, size, t, C) {
+  const { small, stroke, R, cx, cy } = cometMetrics(size, 0.072, 2.6);
+  const head = -Math.PI / 2 + cometPhase(t, 1.4, 0.3);
+  if (small) return strokePlainArc(ctx, cx, cy, R, stroke, head, (130 * Math.PI) / 180, C.primary);
+
+  // 副尾：对置 180°，纯辅助色渐变，长度约主尾一半
+  const sweepB = (54 * Math.PI) / 180;
+  const headB = head + Math.PI;
+  const fB = sweepB / (Math.PI * 2);
+  ctx.lineWidth = stroke * 0.8;
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = sweepBrush(ctx, cx, cy, headB - sweepB, [
+    [0, rgba(C.secondary, 0)],
+    [0.35 * fB, rgba(C.secondary, 0.35)],
+    [fB, rgba(C.secondary, 0.9)],
+  ]);
+  ctx.beginPath();
+  ctx.arc(cx, cy, R, headB - sweepB, headB);
+  ctx.stroke();
+
+  // 主尾后画，压在副尾之上（主次分明）
+  strokeCometTail(ctx, cx, cy, R, stroke, head, (112 * Math.PI) / 180, C);
+  strokeCometCore(ctx, cx, cy, R, stroke, head, C.primary);
+}
+
+/* ============================================================
+   6. 方案 B · 沙箱节点轨道
+   中心六边形「沙箱核心」反向自转（2.4s），外圈 3 个光点等距绕行（1.6s），
+   每点带 4 颗渐隐拖尾。小尺寸自动去掉六边形并放大光点。
+   ============================================================ */
+function drawOrbit(ctx, size, t, C) {
+  const small = size < 20;
+  const cx = size / 2, cy = size / 2;
+  const R = size / 2 - Math.max(1.8, size * 0.075);
+
+  // 1) 中心六边形沙箱核心（仅大尺寸绘制）
+  if (!small) {
+    const rHex = R * 0.36;
+    ctx.save();
+    ctx.translate(cx, cy);
+    // 反向自转：角度必须连续递增，不能对时间取模（取模会在循环边界产生可见跳变）
+    ctx.rotate(-(t / 2.4) * Math.PI * 2);
+    ctx.lineWidth = Math.max(0.9, Math.min(size * 0.03, 1.35));
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = rgba(C.primary, C.dark ? 0.7 : 0.55);
+    ctx.beginPath();
+    for (let i = 0; i < 6; i++) {
+      const a = (i * Math.PI) / 3 - Math.PI / 2;
+      const x = Math.cos(a) * rHex, y = Math.sin(a) * rHex;
+      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // 2) 三个绕行光点 + 拖尾
+  const rOrbit = R * (small ? 0.72 : 0.82);
+  const dotR = small ? Math.max(1.4, R * 0.26) : Math.max(1.8, R * 0.155);
+  const trails = small ? 2 : 4;
+  const base = (t / 1.6) * Math.PI * 2;
+
+  for (let i = 0; i < 3; i++) {
+    const ang = base + (i * Math.PI * 2) / 3;
+
+    // 拖尾（沿运动反方向逐颗衰减）
+    for (let k = trails; k >= 1; k--) {
+      const ta = ang - k * 0.16;
+      const tr = rOrbit * (1 - 0.055 * k);
+      const trr = dotR * (1 - 0.18 * k);
+      ctx.fillStyle = rgba(C.primary, 0.5 * (1 - k / (trails + 1.2)));
+      ctx.beginPath();
+      ctx.arc(cx + Math.cos(ta) * tr, cy + Math.sin(ta) * tr, trr, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // 主光点（深色主题下带一圈极光外发光）
+    if (C.dark) {
+      ctx.shadowColor = rgba(C.primary, 0.85);
+      ctx.shadowBlur = dotR * 1.8;
+    }
+    ctx.fillStyle = C.primary;
+    ctx.beginPath();
+    ctx.arc(cx + Math.cos(ang) * rOrbit, cy + Math.sin(ang) * rOrbit, dotR, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+  }
+}
+
+/* ============================================================
+   7. 方案 C · 熔炉流光带
+   270° 主弧上跑一段高斯高光（0.9s 走完整弧，与 1.6s 的整体旋转错频），
+   叠加 90° 反向副弧（0.8s，半步频差速）。
+   ============================================================ */
+function drawRibbon(ctx, size, t, C) {
+  const small = size < 20;
+  const stroke = Math.max(1.8, Math.min(size * 0.086, 3.6));
+  const R = size / 2 - stroke / 2 - 0.5;
+  const cx = size / 2, cy = size / 2;
+  const sweep = (270 * Math.PI) / 180;
+
+  // 主弧起点随时间整体旋转
+  const head = -Math.PI / 2 + ((t / 1.6) % 1) * Math.PI * 2;
+  const segs = small ? 40 : size >= 64 ? 108 : 72;
+  const hi = (t / 0.9) % 1; // 高光在弧上的循环位置
+
+  ctx.lineWidth = stroke;
+  ctx.lineCap = 'butt';
+  for (let i = 0; i < segs; i++) {
+    const s0 = i / segs, s1 = (i + 1) / segs;
+    const mid = (s0 + s1) / 2;
+
+    // 高斯脉冲：离高光越近越亮（弧是环形的，取最短环距）
+    let d = Math.abs(mid - hi);
+    if (d > 0.5) d = 1 - d;
+    const pulse = Math.exp(-(d * d) / (2 * 0.1 * 0.1));
+
+    const alpha = small ? 0.32 + 0.62 * pulse : 0.22 + 0.72 * pulse;
+    // 深色主题下把高光往白绿提亮，浅色主题直接用品牌色（提高 alpha 即足够）
+    const col = C.dark && !small ? mixHex(C.primary, '#A7F3D0', 0.55 * pulse) : C.primary;
+    ctx.strokeStyle = tint(col, alpha);
+
+    ctx.beginPath();
+    ctx.arc(cx, cy, R, head + sweep * s0, head + sweep * s1 + 0.004);
+    ctx.stroke();
+  }
+
+  // 反向副弧：90°，半分频，作为差速对比层
+  const h2 = -Math.PI / 2 - ((t / 0.8) % 1) * Math.PI * 2;
+  ctx.lineWidth = stroke * 0.72;
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = rgba(C.secondary, C.dark ? 0.55 : 0.45);
+  ctx.beginPath();
+  ctx.arc(cx, cy, R, h2 - (90 * Math.PI) / 180, h2);
+  ctx.stroke();
+}
+
+/* ============================================================
+   8. 方案清单与分组
+   ============================================================ */
+const VARIANTS = {
+  cometBase: {
+    name: 'A0 · 基准版',
+    tag: '上一轮看过的 A',
+    desc: '112° 渐隐彗尾 + 头部彗核亮点，1.4s 带正弦调制。相对现状已大幅减负，作为后续几版的比较基准。',
+    draw: drawCometBase,
+  },
+  cometSlim: {
+    name: 'A1 · 轻量细尾',
+    tag: '最素净',
+    desc: '线宽比例降到 0.055、弧长收到 94°、去掉彗核，尾巴渐变拉长（0.44 / 0.80）。整体最轻，适合长时间驻留的页面。',
+    draw: drawCometSlim,
+  },
+  cometBreath: {
+    name: 'A2 · 呼吸弧长',
+    tag: '节奏感',
+    desc: '旋转改匀速并去掉彗核，弧长在 88°~150° 之间呼吸（1.9s，与 1.4s 旋转错频）。接近系统级 spinner 的节律，尾巴渐变更柔和。',
+    draw: drawCometBreath,
+  },
+  cometDust: {
+    name: 'A3 · 颗粒拖尾',
+    tag: '流星感',
+    desc: '基准版基础上，在弧尾之后追加 4 颗依次变小变淡的颗粒，尾巴不再硬截断，观感更像流星划过。',
+    draw: drawCometDust,
+  },
+  cometRing: {
+    name: 'A4 · 淡底轨',
+    tag: '形状最完整',
+    desc: '补一条极淡的整圆轨道（深色 0.10 / 浅色 0.06），弧长收到 100°。既有「环」的完整形状感，又远比现状干净。',
+    draw: drawCometRing,
+  },
+  cometTwin: {
+    name: 'A5 · 双尾对置',
+    tag: '最活跃',
+    desc: '主尾（绿 112°）与对置短尾（蓝 54°）同步旋转，形成 180° 对称张力；元素仍只有两条弧 + 一颗核，不会显乱。',
+    draw: drawCometTwin,
+  },
+  orbit: {
+    name: '方案 B · 沙箱节点轨道',
+    tag: '产品语义最强',
+    desc: '中心六边形「沙箱核心」反向自转（2.4s），外圈 3 个光点等距绕行（1.6s）各带 4 颗渐隐拖尾，语义直指规则沙箱并发解析；光点在 14px 下仍是一个清晰的点。',
+    draw: drawOrbit,
+  },
+  ribbon: {
+    name: '方案 C · 熔炉流光带',
+    tag: '动感最强',
+    desc: '270° 主弧上跑高斯高光（0.9s 走完整弧），叠加 90° 反向副弧（0.8s 半步频）形成差速；只有两个元素却比现状干净，与 Web 端流光渐变气质一致。',
+    draw: drawRibbon,
+  },
+  legacy: {
+    name: '现状（对照）',
+    tag: 'AppLoading 现版',
+    desc: '外环流光 + 反向差速内环 + 双层底轨 + 呼吸核心 + 中心光晕，5 层元素叠加在同一个圆里；小尺寸时细节互相糊在一起。',
+    draw: drawLegacy,
+  },
+};
+
+/** 页面分组：A 系列为本轮重点，B / C 与现状留作备选对照 */
+const GROUPS = [
+  {
+    title: '方案 A 系列 · 极光彗星环（本轮重点，共 6 版）',
+    note: '同一基底，差异只在线宽 / 弧长 / 彗核 / 底轨 / 颗粒 / 节奏 / 单双尾。请重点比较 14px 与 20px 两档。',
+    keys: ['cometBase', 'cometSlim', 'cometBreath', 'cometDust', 'cometRing', 'cometTwin'],
+  },
+  {
+    title: '其它方向（已看过，保留备选）',
+    note: '若 A 系列都不合意，可回头考虑这两条路线，或维持现状。',
+    keys: ['orbit', 'ribbon', 'legacy'],
+  },
+];
+
+const SIZES = [
+  { size: 14, label: '14 · 按钮内联' },
+  { size: 20, label: '20 · 紧凑' },
+  { size: 28, label: '28 · 占位' },
+  { size: 42, label: '42 · 区域加载' },
+  { size: 128, label: '128 · 细节' },
+];
+
+/* ============================================================
+   9. DOM 构建与逐帧驱动
+   ============================================================ */
+const instances = [];
+
+/** 在 parent 内挂载一个 size×size 的 canvas（按 devicePixelRatio 提清晰度）并登记到渲染队列 */
+function mountCanvas(parent, size, draw) {
+  const dpr = window.devicePixelRatio || 1;
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(size * dpr);
+  canvas.height = Math.round(size * dpr);
+  canvas.style.width = size + 'px';
+  canvas.style.height = size + 'px';
+  canvas.style.display = 'block';
+  // 实例直接持有绘制函数引用，避免每帧做一次查找
+  instances.push({ ctx: canvas.getContext('2d'), size, dpr, draw });
+  parent.appendChild(canvas);
+  return canvas;
+}
+
+function buildCard(variant) {
+  const sec = document.createElement('section');
+  sec.className = 'card';
+
+  const h2 = document.createElement('h2');
+  h2.textContent = variant.name + ' ';
+  const tag = document.createElement('span');
+  tag.className = 'tag';
+  tag.textContent = variant.tag;
+  h2.appendChild(tag);
+  sec.appendChild(h2);
+
+  const p = document.createElement('p');
+  p.className = 'desc';
+  p.textContent = variant.desc;
+  sec.appendChild(p);
+
+  // 五种尺寸横向排列
+  const row = document.createElement('div');
+  row.className = 'row';
+  for (const { size, label } of SIZES) {
+    const item = document.createElement('div');
+    item.className = 'item';
+    mountCanvas(item, size, variant.draw);
+    const cap = document.createElement('span');
+    cap.className = 'cap';
+    cap.textContent = label;
+    item.appendChild(cap);
+    row.appendChild(item);
+  }
+  sec.appendChild(row);
+
+  // 按钮内联真实场景
+  const btn = document.createElement('div');
+  btn.className = 'demo-btn';
+  mountCanvas(btn, 14, variant.draw);
+  const text = document.createElement('span');
+  text.textContent = '立即同步';
+  btn.appendChild(text);
+  sec.appendChild(btn);
+
+  return sec;
+}
+
+const grid = document.getElementById('grid');
+for (const group of GROUPS) {
+  // 分组标题：网格里跨整行展示
+  const head = document.createElement('div');
+  head.className = 'group-head';
+  const title = document.createElement('h2');
+  title.textContent = group.title;
+  const note = document.createElement('p');
+  note.textContent = group.note;
+  head.appendChild(title);
+  head.appendChild(note);
+  grid.appendChild(head);
+
+  for (const key of group.keys) grid.appendChild(buildCard(VARIANTS[key]));
+}
+
+// 单一 rAF 循环统一驱动全部 canvas，避免每个实例各起一个定时器
+const startTime = performance.now();
+function loop(now) {
+  const t = (now - startTime) / 1000;
+  const C = theme();
+  for (const inst of instances) {
+    inst.ctx.setTransform(inst.dpr, 0, 0, inst.dpr, 0, 0);
+    inst.ctx.clearRect(0, 0, inst.size, inst.size);
+    inst.ctx.shadowBlur = 0;
+    inst.draw(inst.ctx, inst.size, t, C);
+  }
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+// 深浅主题切换
+const themeBtn = document.getElementById('themeBtn');
+themeBtn.addEventListener('click', () => {
+  themeName = themeName === 'light' ? 'dark' : 'light';
+  document.body.classList.toggle('dark', themeName === 'dark');
+  themeBtn.textContent = themeName === 'dark' ? '切换到浅色主题' : '切换到深色主题';
+});
+</script>
+</body>
+</html>
