@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
+import 'package:fluxforge/app/di/di.dart';
 import 'package:fluxforge/core/storage/app_storage.dart';
 
 /// 广告拦截规则订阅源模型
@@ -80,6 +81,40 @@ class AdBlockEngine {
   /// 引擎是否已经完成初始化
   bool _isInitialized = false;
 
+  /// 各订阅源解析出的规则条数（sourceId → 条数）
+  ///
+  /// 规则中心的源列表用它替代此前的「N 个加速镜像容灾节点」——
+  /// 镜像数量对用户没有任何信息量，而「这个源贡献了多少条规则」才是同步成功与否的唯一判据。
+  final Map<String, int> _sourceRuleCounts = {};
+
+  /// 各源规则条数对外广播（页面展示「N 条规则 / 暂无规则」）
+  final ValueNotifier<Map<String, int>> sourceRuleCountsNotifier =
+      ValueNotifier<Map<String, int>>(const {});
+
+  /// 例外元素隐藏选择器 (`domain#@#.selector`)：命中即不再注入隐藏 CSS
+  final Set<String> _cosmeticExceptionRules = {};
+
+  /// 含通配符的 URL 规则预编译缓存（ABP 的 `*` 代表任意字符序列）
+  final Map<String, RegExp> _wildcardRegexCache = {};
+
+  /// 累计拦截广告条数（由注入脚本批量上报，跨会话持久化）
+  final ValueNotifier<int> blockedCountNotifier = ValueNotifier<int>(0);
+
+  /// 拦截计数的落盘时间戳：脚本侧已按 500ms 批量上报，这里再按 5s 聚合落盘
+  DateTime _lastBlockedPersistAt = DateTime.fromMillisecondsSinceEpoch(0);
+
+  /// 注入脚本携带的规则上限（紧凑换行编码：1 万条约 200KB）
+  ///
+  /// 此前是 `take(1500)` / `take(200)` —— 而 easylist 系规则绝大多数是带路径的 URL 规则，
+  /// 只带前 200 条进页面，等于页面内拦截基本失效。这里放宽到能覆盖主流的量级，
+  /// 代价是注入字符串变大（页面加载时一次性解析，实测可接受）。
+  static const int _maxInjectedDomains = 8000;
+  static const int _maxInjectedPatterns = 1500;
+  static const int _maxInjectedSelectors = 600;
+
+  /// 累计拦截数的持久化键
+  static const String _kBlockedCountKey = 'adblock_blocked_count';
+
   /// 预设高可用规则订阅源列表 (首选国内加速与官方镜像)
   final List<AdFilterSource> _sources = [
     AdFilterSource(
@@ -113,7 +148,8 @@ class AdBlockEngine {
         'https://cdn.jsdelivr.net/gh/easylist/easylistchina@master/easylistchina.txt',
       ],
       isBuiltIn: true,
-      isEnabled: false,
+      // 默认启用：这是压制国内站点广告的主力名单，默认关闭等于「开关开了也没效果」
+      isEnabled: true,
     ),
     AdFilterSource(
       id: 'easylist_global',
@@ -296,6 +332,7 @@ class AdBlockEngine {
 
     try {
       await _loadSourcesState();
+      await _restoreBlockedCount();
 
       _blockedDomains.clear();
       _whitelistDomains.clear();
@@ -303,6 +340,9 @@ class AdBlockEngine {
       _regexRules.clear();
       _genericCosmeticRules.clear();
       _domainCosmeticRules.clear();
+      _cosmeticExceptionRules.clear();
+      // 规则集重建，通配符正则缓存同步失效
+      _wildcardRegexCache.clear();
 
       // 1. 先注入内置种子规则名单 (保证离线可用)
       _blockedDomains.addAll(_kSeedDomainBlacklist);
@@ -311,21 +351,28 @@ class AdBlockEngine {
       // 2. 检查读取本地沙箱中的已下载规则文件
       final dir = await _getFiltersDirectory();
       int loadedCustomRulesCount = 0;
+      _sourceRuleCounts.clear();
 
       for (final source in _sources) {
         if (!source.isEnabled) continue;
         final file = File(p.join(dir.path, '${source.id}.txt'));
         if (await file.exists()) {
           final content = await file.readAsString();
-          final count = _parseRuleContent(content);
+          final count = parseRuleContent(content);
           loadedCustomRulesCount += count;
+          // 按源记账：规则中心要展示「这个源贡献了多少条」，0 条即同步失败/未同步
+          _sourceRuleCounts[source.id] = count;
         }
       }
+      sourceRuleCountsNotifier.value = Map.unmodifiable(_sourceRuleCounts);
 
-      // 3. 读取上次同步时间记录
+      // 3. 读取上次同步时间记录（同时也是「规则是否过期」的判据）
       final syncTimeStr = await AppStorage.getString('adblock_last_sync_time');
-      if (syncTimeStr != null && syncTimeStr.isNotEmpty) {
-        lastUpdatedNotifier.value = DateTime.tryParse(syncTimeStr);
+      final lastSync = (syncTimeStr != null && syncTimeStr.isNotEmpty)
+          ? DateTime.tryParse(syncTimeStr)
+          : null;
+      if (lastSync != null) {
+        lastUpdatedNotifier.value = lastSync;
       }
 
       _isInitialized = true;
@@ -338,8 +385,13 @@ class AdBlockEngine {
         '专属域名规则 ${_domainCosmeticRules.length} 站, 本地缓存补充 $loadedCustomRulesCount 条',
       );
 
-      // 4. 若为新安装无本地缓存文件，在后台静默触发拉取最新规则（不阻塞 UI）
-      if (loadedCustomRulesCount == 0 && !isUpdatingNotifier.value) {
+      // 4. 后台静默更新策略（不阻塞 UI）：
+      //    - 本地一份规则都没有（新装 / 缓存被清）→ 无条件拉取；
+      //    - 已有缓存 → 看「启动时检查已订阅源」开关 + 距上次同步是否超过 24h。
+      //    此前只看「有没有文件」，导致规则一旦下载成功就永久冻结，
+      //    且设置页那个开关从未被任何代码消费过。
+      if (!isUpdatingNotifier.value &&
+          _shouldAutoSync(loadedCustomRulesCount, lastSync)) {
         Future.delayed(const Duration(seconds: 2), () {
           updateRules();
         });
@@ -351,6 +403,63 @@ class AdBlockEngine {
       _isInitialized = true;
       _updateTotalRulesCount();
     }
+  }
+
+  /// 自动同步判定：
+  /// - 本地无任何规则文件 → 必须拉（首次安装 / 缓存被清）；
+  /// - 已有缓存 → 受「启动时检查已订阅源」开关控制，且距上次同步超过 24h 才算过期。
+  bool _shouldAutoSync(int loadedCount, DateTime? lastSync) {
+    if (loadedCount == 0) return true;
+
+    bool autoCheck;
+    try {
+      autoCheck = appService.settings.autoCheckRuleUpdates;
+    } catch (_) {
+      // 服务定位器尚未就绪（极早期启动阶段）：保守起见不发网络请求
+      return false;
+    }
+    if (!autoCheck) return false;
+    if (lastSync == null) return true;
+    return DateTime.now().difference(lastSync) > const Duration(hours: 24);
+  }
+
+  /// 从存储恢复累计拦截数（幂等：只在存储值更大时覆盖）
+  Future<void> _restoreBlockedCount() async {
+    try {
+      final stored = await AppStorage.getInt(_kBlockedCountKey);
+      if (stored != null && stored > blockedCountNotifier.value) {
+        blockedCountNotifier.value = stored;
+      }
+    } catch (_) {}
+  }
+
+  /// 接收注入脚本上报的拦截增量（脚本侧已按 500ms 批量聚合）
+  ///
+  /// 这里只做内存累加 + 5s 节流落盘 —— 拦截可能密集发生，
+  /// 逐次写 SharedPreferences 会把 JS 桥拖慢。
+  void reportBlockedFromPage(int delta) {
+    if (delta <= 0) return;
+    blockedCountNotifier.value += delta;
+
+    final now = DateTime.now();
+    if (now.difference(_lastBlockedPersistAt).inSeconds < 5) return;
+    _lastBlockedPersistAt = now;
+    // 落盘失败不影响统计本身（存储未就绪时只是不持久化）
+    try {
+      AppStorage.setInt(
+        _kBlockedCountKey,
+        blockedCountNotifier.value,
+      ).catchError((_) {});
+    } catch (_) {}
+  }
+
+  /// 清空累计拦截计数（供规则中心的重置入口调用）
+  Future<void> resetBlockedCount() async {
+    blockedCountNotifier.value = 0;
+    _lastBlockedPersistAt = DateTime.fromMillisecondsSinceEpoch(0);
+    try {
+      await AppStorage.setInt(_kBlockedCountKey, 0);
+    } catch (_) {}
   }
 
   void _updateTotalRulesCount() {
@@ -396,9 +505,9 @@ class AdBlockEngine {
 
     final urlLower = url.toLowerCase();
 
-    // 3. URL 路径与关键词匹配
+    // 3. URL 路径与关键词匹配（支持 ABP 通配符 `*`）
     for (final pattern in _blockedUrlPatterns) {
-      if (urlLower.contains(pattern)) {
+      if (_matchesUrlPattern(urlLower, pattern)) {
         return true;
       }
     }
@@ -427,6 +536,24 @@ class AdBlockEngine {
     return false;
   }
 
+  /// URL 规则匹配：无通配符走 `contains` 快路径，含 `*` 的按通配符正则匹配（结果缓存）
+  ///
+  /// 此前一律用 `contains`，导致 `||example.com/ads/*` 这类规则**永远匹配不上**
+  /// （真实 URL 里不会有 `*` 字面量），而 easylist 系里带通配符的规则占比很高。
+  bool _matchesUrlPattern(String urlLower, String pattern) {
+    if (!pattern.contains('*')) return urlLower.contains(pattern);
+
+    final regex = _wildcardRegexCache.putIfAbsent(pattern, () {
+      final buffer = StringBuffer();
+      for (final rune in pattern.runes) {
+        final ch = String.fromCharCode(rune);
+        buffer.write(ch == '*' ? '.*' : RegExp.escape(ch));
+      }
+      return RegExp(buffer.toString());
+    });
+    return regex.hasMatch(urlLower);
+  }
+
   /// 根据当前访问的目标页面 URL，解析出专属生效的 CSS 隐藏选择器
   List<String> getCosmeticSelectorsForUrl(String pageUrl) {
     final uri = Uri.tryParse(pageUrl);
@@ -448,11 +575,16 @@ class AdBlockEngine {
       }
     }
 
-    // 2. 提取全局通用隐藏选择器 (限制前 400 条，保证注入速度与 CSSOM 渲染效率)
-    matched.addAll(_genericCosmeticRules.take(400));
+    // 2. 提取全局通用隐藏选择器（限制条数，保证注入速度与 CSSOM 渲染效率）
+    matched.addAll(_genericCosmeticRules.take(_maxInjectedSelectors));
 
     // 3. 补充保底高频选择器
     matched.addAll(_kSeedElementHidingSelectors);
+
+    // 4. 剔除例外规则 (#@#)：订阅源明确要求放行的选择器不得再隐藏
+    if (_cosmeticExceptionRules.isNotEmpty) {
+      matched.removeAll(_cosmeticExceptionRules);
+    }
 
     return matched.toList();
   }
@@ -461,25 +593,63 @@ class AdBlockEngine {
   String buildContentScriptForUrl(String pageUrl) {
     final relevantSelectors = getCosmeticSelectorsForUrl(pageUrl);
 
-    // 提取高频域名阻断子集 (前 1500 条) 与关键词 (前 200 条) 注入 JS 内存快速 Set
+    // 域名阻断集合：种子 + 全部订阅域名（紧凑换行编码，比 JSON 数组省约 30% 体积）
     final highFreqDomains = <String>{};
     highFreqDomains.addAll(_kSeedDomainBlacklist);
-    highFreqDomains.addAll(_blockedDomains.take(1500));
+    highFreqDomains.addAll(_blockedDomains);
 
-    final highFreqPatterns = _blockedUrlPatterns.take(200).toList();
+    // URL 规则分流：无通配符的走 indexOf 快路径；含 `*` 的在 Dart 侧就转成正则源码
+    final plainPatterns = <String>[];
+    final wildcardRegexSources = <String>[];
+    for (final pattern in _blockedUrlPatterns.take(_maxInjectedPatterns)) {
+      if (pattern.contains('*')) {
+        wildcardRegexSources.add(_wildcardRegexSource(pattern));
+      } else {
+        plainPatterns.add(pattern);
+      }
+    }
 
-    final jsonDomains = jsonEncode(highFreqDomains.toList());
-    final jsonKeywords = jsonEncode(highFreqPatterns);
-    final jsonSelectors = jsonEncode(relevantSelectors);
+    final domainPayload = highFreqDomains.take(_maxInjectedDomains).join('\n');
+    final plainPayload = plainPatterns.join('\n');
+    final wildcardPayload = wildcardRegexSources.join('\n');
+    final selectorPayload = relevantSelectors.join('\n');
 
     return '''
 (function() {
-  if (window.__fluxforge_adblock_installed) return;
-  window.__fluxforge_adblock_installed = true;
+  function _splitLines(text) { return text ? text.split('\\n') : []; }
 
-  const BLOCKED_DOMAINS = new Set($jsonDomains);
-  const BLOCKED_KEYWORDS = $jsonKeywords;
-  const COSMETIC_SELECTORS = $jsonSelectors;
+  // 1. 规则数据：每次注入都整体刷新。
+  //    引擎初始化是异步的、可能晚于首屏注入，重注入负责把完整规则补齐，
+  //    因此数据挂在 window 上而不是闭包里。
+  var wildcardRegexes = [];
+  var wildcardSources = _splitLines('$wildcardPayload');
+  for (var wi = 0; wi < wildcardSources.length; wi++) {
+    try { wildcardRegexes.push(new RegExp(wildcardSources[wi])); } catch (e) {}
+  }
+  window.__ff_adblock_rules = {
+    domains: new Set(_splitLines('$domainPayload')),
+    plain: _splitLines('$plainPayload'),
+    wildcard: wildcardRegexes,
+    selectors: _splitLines('$selectorPayload')
+  };
+
+  // 2. 拦截计数：500ms 批量上报一次，避免高频 postMessage 压垮 JS 桥
+  var blockedBuffer = 0;
+  var reportTimer = null;
+  function reportBlocked() {
+    blockedBuffer++;
+    if (reportTimer) return;
+    reportTimer = setTimeout(function() {
+      reportTimer = null;
+      var delta = blockedBuffer;
+      blockedBuffer = 0;
+      try {
+        if (window.FluxAdBlockChannel) {
+          window.FluxAdBlockChannel.postMessage(String(delta));
+        }
+      } catch (e) {}
+    }, 500);
+  }
 
   function extractHost(url) {
     try {
@@ -496,9 +666,10 @@ class AdBlockEngine {
 
   function isDomainBlocked(host) {
     if (!host) return false;
+    const set = window.__ff_adblock_rules.domains;
     let cur = host;
     while (cur) {
-      if (BLOCKED_DOMAINS.has(cur)) return true;
+      if (set.has(cur)) return true;
       const dot = cur.indexOf('.');
       if (dot === -1) break;
       cur = cur.substring(dot + 1);
@@ -506,24 +677,40 @@ class AdBlockEngine {
     return false;
   }
 
+  // URL 判定每次都读全局规则对象：重注入后的新规则立即生效
   function shouldBlockUrl(url) {
     if (!url || typeof url !== 'string') return false;
     if (url.startsWith('data:') || url.startsWith('blob:') || url.startsWith('about:')) return false;
-    const host = extractHost(url);
-    if (isDomainBlocked(host)) return true;
+    if (isDomainBlocked(extractHost(url))) return true;
+
     const lower = url.toLowerCase();
-    for (let i = 0; i < BLOCKED_KEYWORDS.length; i++) {
-      if (lower.indexOf(BLOCKED_KEYWORDS[i]) !== -1) return true;
+    const rules = window.__ff_adblock_rules;
+    let i;
+    for (i = 0; i < rules.plain.length; i++) {
+      if (lower.indexOf(rules.plain[i]) !== -1) return true;
+    }
+    // 含 ABP 通配符 `*` 的规则：已在 Dart 侧转成正则源码
+    for (i = 0; i < rules.wildcard.length; i++) {
+      if (rules.wildcard[i].test(lower)) return true;
     }
     return false;
   }
 
-  // 1. 网络层全覆盖拦截 Hook (对标 AdBlock 插件 webRequest API)
+  // 4. 事件 hook 只安装一次：重复包裹原生 API 会造成多层拦截与重复计数；
+  //    已安装时只刷新隐藏样式（规则数据在上面已整体刷新），让新规则立即生效。
+  if (window.__fluxforge_adblock_installed) {
+    try { applyCosmeticFilters(); } catch (e) {}
+    return;
+  }
+  window.__fluxforge_adblock_installed = true;
+
+  // 5. 网络层全覆盖拦截 Hook (对标 AdBlock 插件 webRequest API)
   try {
     const origFetch = window.fetch;
     window.fetch = function(input, init) {
       const url = typeof input === 'string' ? input : (input && input.url ? input.url : '');
       if (url && shouldBlockUrl(url)) {
+        reportBlocked();
         console.log('[FluxForge AdBlock] 成功拦截 Fetch 广告请求:', url);
         return Promise.reject(new TypeError('Blocked by FluxForge AdBlock'));
       }
@@ -544,6 +731,7 @@ class AdBlockEngine {
     XMLHttpRequest.prototype.send = function() {
       if (this.__flux_blocked) {
         this.abort();
+        reportBlocked();
         return;
       }
       return origSend.apply(this, arguments);
@@ -557,6 +745,7 @@ class AdBlockEngine {
       Object.defineProperty(HTMLScriptElement.prototype, 'src', {
         set: function(val) {
           if (val && shouldBlockUrl(val)) {
+            reportBlocked();
             console.log('[FluxForge AdBlock] 成功拦截 Script 广告标签:', val);
             this.setAttribute('data-flux-adblock', 'blocked');
             return origScriptSet.call(this, 'data:text/javascript;void(0);');
@@ -577,6 +766,7 @@ class AdBlockEngine {
       Object.defineProperty(HTMLIFrameElement.prototype, 'src', {
         set: function(val) {
           if (val && shouldBlockUrl(val)) {
+            reportBlocked();
             console.log('[FluxForge AdBlock] 成功拦截 IFrame 广告:', val);
             this.setAttribute('data-flux-adblock', 'blocked');
             return origIframeSet.call(this, 'about:blank');
@@ -597,6 +787,7 @@ class AdBlockEngine {
       Object.defineProperty(HTMLImageElement.prototype, 'src', {
         set: function(val) {
           if (val && shouldBlockUrl(val)) {
+            reportBlocked();
             return origImgSet.call(this, 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7');
           }
           return origImgSet.call(this, val);
@@ -608,7 +799,9 @@ class AdBlockEngine {
     }
   } catch(e) {}
 
-  // 2. 容错式 CSS 元素隐藏注入 (对标 uBlock Origin Cosmetic Filtering)
+  // 3. 容错式 CSS 元素隐藏注入 (对标 uBlock Origin Cosmetic Filtering)
+  //    一次性写入 style 文本：比重注入时逐条 insertRule 快得多；
+  //    且单条选择器无效时浏览器只会丢弃那一条，不影响其余规则。
   function applyCosmeticFilters() {
     let style = document.getElementById('fluxforge-adblock-style');
     if (!style) {
@@ -616,15 +809,12 @@ class AdBlockEngine {
       style.id = 'fluxforge-adblock-style';
       (document.head || document.documentElement).appendChild(style);
     }
-    const sheet = style.sheet;
-    if (!sheet) return;
-
-    for (let i = 0; i < COSMETIC_SELECTORS.length; i++) {
-      try {
-        const rule = COSMETIC_SELECTORS[i] + ' { display: none !important; visibility: hidden !important; width: 0 !important; height: 0 !important; pointer-events: none !important; }';
-        sheet.insertRule(rule, sheet.cssRules.length);
-      } catch(e) {}
+    const selectors = window.__ff_adblock_rules.selectors;
+    const css = [];
+    for (let i = 0; i < selectors.length; i++) {
+      css.push(selectors[i] + ' { display: none !important; visibility: hidden !important; width: 0 !important; height: 0 !important; pointer-events: none !important; }');
     }
+    style.textContent = css.join('\\n');
   }
 
   // 3. 动态 DOM 监听与牛皮癣悬浮清理 (MutationObserver)
@@ -636,6 +826,7 @@ class AdBlockEngine {
         const f = frames[i];
         if (f.src && shouldBlockUrl(f.src)) {
           f.remove();
+          reportBlocked();
         }
       }
 
@@ -644,6 +835,7 @@ class AdBlockEngine {
         const s = scripts[i];
         if (s.src && shouldBlockUrl(s.src)) {
           s.remove();
+          reportBlocked();
         }
       }
 
@@ -657,6 +849,7 @@ class AdBlockEngine {
             const txt = (el.innerText || '').trim();
             if (txt.includes('下载APP') || txt.includes('打开APP') || txt.includes('立即下载') || txt.includes('点击查看') || txt.includes('广告')) {
               el.style.setProperty('display', 'none', 'important');
+              reportBlocked();
             }
           }
         }
@@ -709,6 +902,27 @@ class AdBlockEngine {
 })();
 ''';
   }
+
+  /// 把 ABP 通配符规则转成 JS 正则源码（`*` → `.*`，其余正则元字符转义）
+  ///
+  /// 放在 Dart 侧做，避免在注入的 JS 里再写一遍转义逻辑（那会与 Dart 的字符串插值打架）。
+  static String _wildcardRegexSource(String pattern) {
+    final buffer = StringBuffer();
+    for (final rune in pattern.runes) {
+      final ch = String.fromCharCode(rune);
+      if (ch == '*') {
+        buffer.write('.*');
+      } else if (_jsRegexMetaChars.contains(ch)) {
+        buffer.write('\\$ch');
+      } else {
+        buffer.write(ch);
+      }
+    }
+    return buffer.toString();
+  }
+
+  /// JS 正则元字符（需要前置反斜杠转义）
+  static const String _jsRegexMetaChars = r'\^$.*+?()[]{}|';
 
   /// 兼容旧版调用
   String buildElementHidingScript([String? url]) {
@@ -831,7 +1045,11 @@ class AdBlockEngine {
   }
 
   /// 解析标准 ABP / AdGuard 规则文本内容并分类存入内存索引
-  int _parseRuleContent(String data) {
+  ///
+  /// 标为测试可见：解析是整条链路的核心（`*` 通配符、`#@#` 例外、`$` 修饰符截断
+  /// 都在这里决定），必须能直接喂文本验证分类结果。
+  @visibleForTesting
+  int parseRuleContent(String data) {
     int parsedCount = 0;
     final regexList = <String>[];
 
@@ -859,7 +1077,21 @@ class AdBlockEngine {
         continue;
       }
 
-      // 2. DOM 元素隐藏规则 (以 ## 开头或 domain1,domain2## 开头)
+      // 2. 例外元素隐藏规则 (domain#@#.selector)：命中即放行，不再注入隐藏 CSS
+      //
+      // 必须放在 `##` 判断之前：`#@#` 与 `##` 在字符串层面不冲突，但语义相反，
+      // 先收进例外集合，才能在注入时把它从隐藏选择器里剔掉。
+      final exceptionIndex = line.indexOf('#@#');
+      if (exceptionIndex != -1) {
+        final selector = line.substring(exceptionIndex + 3).trim();
+        if (selector.isNotEmpty) {
+          _cosmeticExceptionRules.add(selector);
+          parsedCount++;
+        }
+        continue;
+      }
+
+      // 3. DOM 元素隐藏规则 (以 ## 开头或 domain1,domain2## 开头)
       final cosmeticIndex = line.indexOf('##');
       if (cosmeticIndex != -1) {
         final domainPart = line.substring(0, cosmeticIndex).trim();

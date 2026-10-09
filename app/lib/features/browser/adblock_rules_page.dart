@@ -388,6 +388,42 @@ class _AdBlockRulesPageState extends State<AdBlockRulesPage> {
                 ),
               ],
             ),
+            const SizedBox(height: 10),
+
+            // 累计拦截统计：数据由注入脚本按 500ms 批量上报，跨会话持久化
+            ValueListenableBuilder<int>(
+              valueListenable: _engine.blockedCountNotifier,
+              builder: (context, blockedCount, _) {
+                return Row(
+                  children: [
+                    const Icon(
+                      Ionicons.shieldCheckmarkOutline,
+                      size: 12,
+                      color: AppColors.primary,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      '已拦截广告 $blockedCount 条',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.primary,
+                      ),
+                    ),
+                    const Spacer(),
+                    Text(
+                      '安装以来累计',
+                      style: TextStyle(
+                        fontSize: 10.5,
+                        color: isDark
+                            ? AppColors.darkTextTertiary
+                            : AppColors.lightTextTertiary,
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
           ],
         ],
       ),
@@ -538,22 +574,37 @@ class _AdBlockRulesPageState extends State<AdBlockRulesPage> {
             // 底部：镜像节点数 + 操作按钮
             Row(
               children: [
-                Icon(
-                  Ionicons.serverOutline,
-                  size: 11.5,
-                  color: isDark
-                      ? AppColors.darkTextTertiary
-                      : AppColors.lightTextTertiary,
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  '${source.mirrorUrls.length} 个加速镜像容灾节点',
-                  style: TextStyle(
-                    fontSize: 10.5,
-                    color: isDark
-                        ? AppColors.darkTextTertiary
-                        : AppColors.lightTextTertiary,
-                  ),
+                ValueListenableBuilder<Map<String, int>>(
+                  valueListenable: _engine.sourceRuleCountsNotifier,
+                  builder: (context, counts, _) {
+                    // 展示「该源贡献了多少条规则」：0 条即尚未同步成功。
+                    // 此前这里写的是「N 个加速镜像容灾节点」—— 镜像数量对用户没有任何信息量，
+                    // 而规则条数是「这个源到底有没有生效」的唯一判据。
+                    final count = counts[source.id] ?? 0;
+                    final hasRules = count > 0;
+                    final color = hasRules
+                        ? AppColors.primary
+                        : (isDark
+                              ? AppColors.darkTextTertiary
+                              : AppColors.lightTextTertiary);
+                    return Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          hasRules
+                              ? Ionicons.checkmarkCircleOutline
+                              : Ionicons.timeOutline,
+                          size: 11.5,
+                          color: color,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          hasRules ? '$count 条规则' : '暂无规则，待同步',
+                          style: TextStyle(fontSize: 10.5, color: color),
+                        ),
+                      ],
+                    );
+                  },
                 ),
                 const Spacer(),
 

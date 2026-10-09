@@ -42,6 +42,9 @@ class _BrowserPageState extends State<BrowserPage> {
   late final WebViewController _controller;
   String _title = '';
 
+  /// 当前页地址：广告拦截在「引擎初始化完成后」要据此对该页重注入一次
+  String _currentUrl = '';
+
   bool _canGoBack = false;
   double _loadProgress = 0;
 
@@ -62,7 +65,18 @@ class _BrowserPageState extends State<BrowserPage> {
 
     // 若开启广告拦截，启动广告与弹窗拦截引擎
     if (_isAdBlockActive) {
-      AdBlockEngine.instance.initialize();
+      // 初始化是异步的（要读规则文件并逐行解析），很可能晚于首屏注入完成。
+      // 因此完成后再对当前页重注入一次：脚本支持重复注入（规则数据整体刷新、
+      // 事件 hook 只安装一次），否则首屏那一次注入拿到的只有保底种子规则。
+      AdBlockEngine.instance.initialize().then((_) {
+        if (!mounted) return;
+        if (_currentUrl.isEmpty) return;
+        _controller
+            .runJavaScript(
+              AdBlockEngine.instance.buildContentScriptForUrl(_currentUrl),
+            )
+            .catchError((_) {});
+      });
     }
 
     _controller = WebViewController()
@@ -72,6 +86,15 @@ class _BrowserPageState extends State<BrowserPage> {
         'FluxExternalLinkChannel',
         onMessageReceived: (JavaScriptMessage message) {
           _promptExternalLink(message.message);
+        },
+      )
+      // 广告拦截计数通道：脚本侧已按 500ms 批量聚合，这里只做累加与节流落盘
+      ..addJavaScriptChannel(
+        'FluxAdBlockChannel',
+        onMessageReceived: (JavaScriptMessage message) {
+          AdBlockEngine.instance.reportBlockedFromPage(
+            int.tryParse(message.message) ?? 0,
+          );
         },
       )
       ..setNavigationDelegate(
@@ -93,6 +116,8 @@ class _BrowserPageState extends State<BrowserPage> {
             }
           },
           onPageStarted: (String url) {
+            // 记下当前地址：引擎初始化完成后要据此重注入一次
+            _currentUrl = url;
             if (mounted) {
               setState(() {
                 _loadProgress = 0.1;
