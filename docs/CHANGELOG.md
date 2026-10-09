@@ -2,6 +2,101 @@
 
 本文档用于记录 FluxForge（包括 App 移动端、Server 服务端、Web 管理端）在开发过程中的重要功能迭代、UI 体验调优与架构重构日志。
 
+## [2026-10-09]
+
+### 🎬 网页视频手势 HUD 轻量化与详情页入口收敛
+
+- **内置浏览器网页视频手势 HUD（`WebVideoGestureEngine`）视觉减负**：
+  - 移除浮层描边（`border`），提示完全依赖半透明底色与投影融入画面，不再出现生硬边框；
+  - 背景不透明度由 `0.55` 下调至 `0.30`，保留毛玻璃质感的同时更加通透；
+  - 浮层位置由屏幕正中上移至中上部（`top: 50% → 38%`），避开画面视觉中心，快进/快退秒数与时间、亮度、音量提示更不遮挡主体画面。
+- **媒体详情页顶部栏入口收敛**：移除右上角「刷新 / 重新解析」图标按钮，顶部栏精简为「返回 + 标题 + 收藏 + 离线下载」，重新解析能力仅保留首次进入自动加载与加载失败时的错误重试入口。
+
+### ⏳ 全局加载指示器重设计：极光彗星环（A0 基准版）
+
+- **绘制器全量重写（`app/lib/shared/widgets/app_loading.dart`）**：
+  - 旧版为「外环流光 + 反向差速内环 + 双层底轨 + 呼吸核心 + 中心光晕」五层叠加，到 12~18px（按钮内联 / 筛选栏 / 章节抽屉）时糊成一团且看不出旋转朝向；
+  - 新版只剩两个元素：**112° 渐隐彗尾 + 头部彗核亮点**，单圈 1.4s 并叠加正弦调制（转速不匀速，长时间盯着看不机械）；
+  - 小尺寸（<20px）自动降级为**实色纯弧**（130°、零渐变、无彗核），保证 14px 下依然锐利；
+  - 线宽按尺寸自适应（小尺寸 0.115 比例 / 大尺寸 0.075 比例）并用 `[1.2, strokeWidth]` 收敛，调用方传入的细线意图不被突破。
+- **API 收敛（14 处调用点零改动）**：
+  - 保留 `AppLoading` / `AppLoading.compact` 与 `message` / `size` / `strokeWidth` / `color` 参数；
+  - 删除全仓零调用点的 `AppLoading.card` / `AppLoading.pulse` 两个命名构造与 `_PulseLoadingPainter`，以及无引用方的 `showGlow` / `showInnerRing` / `secondaryColor` / `padding` 参数（组件由 431 行收敛至约 230 行）；
+  - `strokeWidth` 语义由「固定线宽」调整为「线宽上限」，实际线宽自适应尺寸。
+- **无障碍与耗电**：接入 `MediaQuery.disableAnimations`（系统开启「减少动画」时停止 Ticker 并停在固定相位），组件不可见时由 `TickerMode` 自动静音，不产生后台空转帧。
+- **质量验证**：`flutter analyze` **0 问题**；`flutter test` **545/545 通过**。
+- 附带产出 `docs/app_loading_preview.html`：方案 A 系列（A0 基准 + A1~A5 变体）与 B / C 的浏览器端动效对照稿，后续再调整形态时可复用。
+
+### ⚡ App 全局性能治理（图片解码 / 滚动节流 / 资源释放 / 并发封顶）
+
+> 背景：一次覆盖 152 个 Dart 文件的四维度（动画重绘 / 列表构建 / 图片与 IO / 泄漏与异步）排查共确认 20 余处隐患。
+> 本批次修复了收益确定、风险可控的部分；对若干条排查结论做了**复核修正**，避免为改而改（见末尾）。
+
+- **图片解码降采样（内存峰值的主要来源）**：
+  - `AppImage` 新增 `autoCacheWidth`：按组件**实际布局宽度 × dpr** 自动降采样，免去调用点各自写 `LayoutBuilder`；
+  - 补齐 `AppImage` **本地文件分支**此前漏传的 `cacheWidth / cacheHeight` —— 离线漫画过去完全没有降采样收益；
+  - 漫画阅读器按「屏宽 × dpr」降采样（两种阅读模式都走 `BoxFit.fitWidth`）；
+  - 8 处封面/列表/剧照调用点补降采样：搜索网格卡 ×2、搜索列表卡、规则目录 ×4、历史中心、下载管理、继续观看横滑、视频剧照横滑；
+  - `player_video_surface` 的播放器海报由裸 `Image.network` 改走 `AppImage`（补回请求头兜底、磁盘缓存与降采样）。
+- **漫画连续阅读滚动节流（`comic_reader_page`）**：
+  - 此前每个 `ScrollUpdateNotification`（滚动期间即每帧）都做一次「整章图片数」的全量 `findRenderObject` 测量；
+  - 现改为**时间节流**（120ms 一次）+ `ScrollEndNotification` 停止后补测一次；
+  - **索引回写与 `setState` 一行未动** —— 页码显示与「看到第几页」上报的实时性不受影响，这是本次刻意划定的安全边界；
+  - 新增回归测试「滚动期间页码仍实时回写」（此前该行为无任何测试覆盖）。
+- **Splash 启动页三处缺陷**：补 `dispose()` 释放 `AnimationController`（本页是初始路由，控制器与 ticker 原本永久泄漏）；`Future.delayed` 与 `statusListener` 补 `mounted` 守卫（避免在已卸载 State 上用 context 导航）；`AnimatedBuilder` 改用 `child` 复用 + `FadeTransition`，图标与 Hero 不再逐帧重建、也不再每帧 `saveLayer`。
+- **并发封顶**：`pingAllRules` 由「一次性 `Future.wait` 全部启用规则」改为每批 3 条；`resolveComicOfflineImages` 由一次性并发改为每批 8 张（一章上百图曾产生数百个并发文件 IO）。
+- **缓存与死代码收敛**：`discover_page._discoveryCache` 增加容量上限（8）与 LRU 语义（原为跨页面永生的静态 Map，每切一个分类就多存一份完整列表）；删除全仓零调用、且带无界静态计时器表的 `AppUtils.debounce`。
+- **正则提为静态常量**：`novel_text.cleanNovelContent`（3 个，阅读器与下载链路反复调用）、`HlsPlaylistParser`（2 个）、`FfmpegCommandBuilder.parseDurationFromLog`（挂在日志回调上，曾对**每一行** FFmpeg 日志重新编译）。
+- **其它零散缺陷**：`market_page._fetchMarketRules` 请求返回后补 `mounted` 守卫（同文件导入路径早有守卫，属漏写）；`AppLoading` 增加 `RepaintBoundary`（60fps 动画不再把重绘冒泡到整页）。
+- **质量验证**：`flutter analyze` **0 问题**；`flutter test` **546/546 通过**（较上轮 +1，为本次新增的滚动回归测试）。
+- **复核后判定「不改」的条目（避免为改而改）**：
+  - `download_service._rateMeters / _sizeProbed`：源码注释已明确是「可丢弃的瞬时值 / 避免重复 HEAD 探测」的**有意设计**，非疏漏；
+  - `favorites_page`：已是 `ListView.builder` 懒构建，不存在全量构建问题；
+  - `settings_page`：`children` 是固定的十几个分节（非长列表），全量构建与懒构建无差别；
+  - 各弹窗内的局部 `TextEditingController`：弹窗关闭即无引用、可被 GC 回收，属规范性而非性能问题，改动面大于收益；
+  - `_measuredHeight` 与阅读器按章索引的 `Set/Map`：作用域是「单个章节页面」的生命周期，上限即该章张数，不存在跨会话累积。
+- **待单独排期（本批次未做，需专门验证）**：
+  - **广告规则解析移出主 isolate**：`_parseRuleContent` 目前直接写实例字段，需先抽成纯函数再走 `compute()`，并回归验证解析结果一致（拦截失效属不易察觉的功能回归）；
+  - **小说分页**：排查时建议的「搬进 isolate」**技术上不可行** —— 分页依赖 `TextPainter.layout()`，而 `TextPainter` 绑定 `dart:ui`，只能在主 isolate 运行。可行方向是分帧计算或结果缓存，需单独设计。
+
+### 🛡 广告拦截链路修复 + 拦截条数统计
+
+> 背景：排查「广告规则解析后拦截不生效」。逐段读完后确认不是单点 bug，
+> 而是「规则来源 → 解析 → 注入 → 页面生效」整条链路上 6 处缺陷叠加。
+
+- **修复「启动时检查已订阅源」死开关**：`autoCheckRuleUpdates` 此前只有 UI 与字段，**全仓无任何消费方**（`AppService.autoUpdateScript` 也无人调用）。现引擎初始化后按「无本地规则 → 必拉」「有缓存 → 开关开启且距上次同步超 24h → 过期刷新」判定。
+- **修复「规则一旦下载成功就永久冻结」**：原判定只看 `loadedCustomRulesCount == 0`，首装成功后不再自动更新。
+- **默认启用 `easylistchina`**：压制国内站点广告的主力名单此前默认关闭 —— 等于「开关开了也没效果」（仅影响新装，用户既有启停状态仍以持久化配置为准）。
+- **修复含通配符的规则永久失效**：`||example.com/ads/*` 这类规则此前用 `url.contains(pattern)` 判断，而真实 URL 不含 `*` 字面量，**永远匹配不上**。现改为通配符匹配（`*` → `.*`、其余元字符转义）：Dart 侧带 `_wildcardRegexCache` 编译缓存，JS 侧在构建脚本时就把规则转成正则源码。
+- **支持 `#@#` 例外隐藏规则**：此前整行被丢弃（订阅源要求放行的元素仍被隐藏），现收进例外集合并在注入时剔除。
+- **注入配额放宽**：域名 `1500 → 8000`、URL 规则 `200 → 1500`、通用选择器 `400 → 600`，并改用「换行分隔」紧凑编码（比 JSON 数组省约 30% 体积）。此前只带前 200 条 URL 规则进页面，等于页面内拦截基本失效。
+- **消除初始化时序竞态**：`initialize()` 是异步的、可能晚于首屏注入，导致首屏只拿到保底种子规则。现注入脚本支持**重复注入**（规则数据整体刷新、事件 hook 只安装一次），并在初始化完成后对当前页重注入一次。
+- **新增「已拦截广告条数」统计**：脚本在每个拦截点（fetch / XHR / script / iframe / img / 动态节点清理 / 牛皮癣悬浮隐藏）计数，按 **500ms 批量**经 `FluxAdBlockChannel` 上报；客户端按 5s 节流落盘、跨会话累计。
+- **规则源列表左下角改为规则条数**：原「N 个加速镜像容灾节点」改为「N 条规则 / 暂无规则，待同步」（引擎新增 `sourceRuleCountsNotifier` 按源记账）—— 镜像数对用户没有信息量，规则条数才是「这个源有没有生效」的判据；规则中心总览卡同时新增「已拦截广告 N 条」。
+- **可测性**：`_parseRuleContent` → `parseRuleContent`（`@visibleForTesting`），新增 **11 项**解析与注入单测：父域回溯、通配符、白名单优先、`$` 修饰符截断、`#@#` 例外、按站点隔离、注释忽略、注入脚本结构、计数累加与非法增量。
+- **质量验证**：`flutter analyze` **0 问题**；`flutter test` 全量通过（含上述 11 项新单测）。
+
+### 💬 二次确认弹窗重设计（`AppConfirmDialog` 第二版）
+
+- **修掉「硬切出现」的根因**：`material_ui` 的 `DialogRoute` 把 `transitionBuilder` 写死成
+  「原样返回 child」（见其 `dialog.dart` 的 `_buildMaterialDialogTransitions`），
+  所以走 `showDialog` 的弹窗**没有任何入场动画**、瞬间出现 —— 这是它此前缺少「浮入感」的真正原因。
+  现改为直接构造 `RawDialogRoute`，自行接管「缩放 0.92 → 1.0 + 淡入」：
+  时长 240ms、`easeOutCubic` 收尾（比默认 150ms 更从容），遮罩随动画一同淡入淡出。
+- **表面层次**：卡片顶部铺一层强调色微光向下淡出（`LinearGradient` + `Color.alphaBlend`），
+  不再是「一块死色」；26px 圆角，阴影更大更柔（blur 38、负 spread 收边）。
+- **图标徽章**：由「纯色正圆」改为 **54px squircle（圆角 18）+ 对角渐变 + 同色柔光 + 描边**，
+  危险 / 常规两套配色（`#EF4444 → #F87171` / `#059669 → #34D399`）。
+- **文字层级**：标题 18px / 700 / 字距 -0.3；正文 13.5px / 行高 1.6，并新增
+  **限高 220 + 可滚动**（超长说明不再把弹窗撑出屏幕）。
+- **操作区**：取消键由「描边」改为**柔和底色（无描边）**；确认键外套一层同色光晕，
+  在柔和底色上"亮"出来；圆角统一 14；破坏性操作保留中强度触觉反馈。
+- **宽度收敛**：`ConstrainedBox(minWidth: 292, maxWidth: 356)` —— 短文案不会缩成一条、长文案不顶到屏幕边。
+- **API 与语义零改动**：`showAppConfirmDialog` 签名、非空 `bool` 返回口径、`AppConfirmDialog`
+  参数全部保持不变，5 处调用点与既有 5 条测试无需修改。
+- **测试**：新增 2 条（入场动画存在性回归保护 / 超长正文限高与按钮可点性），组件 7 条测试全部通过；
+  `flutter analyze` **0 问题**；`flutter test` 全量通过。
+
 ## [2026-09-24]
 
 ### 🚀 设置页面全新重设计（方案一：现代仪表盘 + 核心场景专区）

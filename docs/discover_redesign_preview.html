@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>FluxForge · 发现页重设计方案对比</title>
+<!--
+  说明：这是一份一次性的「发现页设计方案预览稿」。
+  四个手机框并排：现状对照 + 三套候选方案，全部用 CSS 手绘（不依赖网络图片），
+  便于离线查看与快速迭代。选定方向后再落到 Flutter。
+-->
+<style>
+  :root {
+    --page-bg: #EEF1F6;
+    --page-fg: #0F172A;
+    --page-sub: #64748B;
+    --card: #FFFFFF;
+    --line: #E2E8F0;
+    --brand: #059669;
+    --brand-soft: rgba(5, 150, 105, 0.12);
+    --phone-body: #0B0F17;
+    --shadow: 0 18px 44px rgba(15, 23, 42, 0.16);
+  }
+  body.dark {
+    --page-bg: #070A10;
+    --page-fg: #F8FAFC;
+    --page-sub: #94A3B8;
+    --card: #151C2C;
+    --line: #1E293B;
+    --brand: #34D399;
+    --brand-soft: rgba(52, 211, 153, 0.16);
+    --phone-body: #000000;
+    --shadow: 0 18px 44px rgba(0, 0, 0, 0.6);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 26px 20px 60px;
+    background: var(--page-bg);
+    color: var(--page-fg);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    transition: background .25s ease, color .25s ease;
+  }
+  header { max-width: 1500px; margin: 0 auto 22px; display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-end; justify-content: space-between; }
+  h1 { font-size: 20px; margin: 0 0 8px; letter-spacing: -.3px; }
+  .hint { font-size: 12.5px; color: var(--page-sub); line-height: 1.75; margin: 0; max-width: 860px; }
+  .hint code { background: var(--card); color: var(--brand); padding: 1px 5px; border-radius: 5px; font-size: 11.5px; }
+  .theme-btn {
+    appearance: none; border: 1px solid var(--line); background: var(--card); color: var(--page-fg);
+    font-size: 12.5px; padding: 9px 16px; border-radius: 10px; cursor: pointer; white-space: nowrap;
+  }
+  .theme-btn:hover { border-color: var(--brand); }
+
+  .stage { max-width: 1500px; margin: 0 auto; display: flex; flex-wrap: wrap; gap: 26px; align-items: flex-start; }
+
+  .col { width: 320px; }
+  .col-title { font-size: 14px; font-weight: 700; margin: 0 0 4px; }
+  .col-title .tag {
+    font-size: 10px; font-weight: 500; color: var(--brand);
+    border: 1px solid var(--brand); border-radius: 6px; padding: 1px 6px; margin-left: 6px; vertical-align: 1px;
+  }
+  .col-note { font-size: 11.5px; color: var(--page-sub); line-height: 1.6; margin: 0 0 12px; min-height: 54px; }
+  .col-note b { color: var(--brand); font-weight: 600; }
+
+  /* 手机外框 */
+  .phone {
+    width: 320px; height: 646px; border-radius: 38px; padding: 8px;
+    background: var(--phone-body); box-shadow: var(--shadow); position: relative;
+  }
+  .screen {
+    width: 100%; height: 100%; border-radius: 30px; overflow: hidden;
+    background: #F8FAFC; position: relative; display: flex; flex-direction: column;
+  }
+  .phone.dark-mode .screen { background: #0A0D14; }
+  .notch {
+    position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+    width: 96px; height: 20px; border-radius: 12px; background: #0B0F17; z-index: 30;
+  }
+  .phone.dark-mode .notch { background: #000; }
+
+  /* 主题变量：浅色版（默认） */
+  .screen {
+    --fg: #0F172A; --sub: #64748B; --weak: #94A3B8;
+    --surface: #FFFFFF; --bg: #F8FAFC; --border: #E2E8F0; --chip: #F1F5F9;
+    --blur: rgba(255,255,255,.82);
+  }
+  .phone.dark-mode .screen {
+    --fg: #F8FAFC; --sub: #94A3B8; --weak: #64748B;
+    --surface: #151C2C; --bg: #0A0D14; --border: #1E293B; --chip: #1B2436;
+    --blur: rgba(10,13,20,.72);
+  }
+
+  .statusbar {
+    height: 42px; flex: 0 0 42px; display: flex; align-items: center; justify-content: space-between;
+    padding: 0 22px; font-size: 11px; font-weight: 600; color: var(--fg); position: relative; z-index: 20;
+  }
+  .statusbar .icons { display: flex; gap: 5px; align-items: center; font-size: 10px; opacity: .85; }
+
+  .body-scroll { flex: 1; overflow: hidden; position: relative; }
+  .blur-bar {
+    position: absolute; left: 0; right: 0; bottom: 0; height: 62px;
+    background: var(--blur); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+    border-top: 1px solid var(--border); display: flex; align-items: center; justify-content: space-around;
+    padding: 0 8px 10px; z-index: 20;
+  }
+  .blur-bar .nav { display: flex; flex-direction: column; align-items: center; gap: 3px; font-size: 9.5px; color: var(--weak); }
+  .blur-bar .nav.on { color: var(--brand); font-weight: 700; }
+  .blur-bar .nav .dot { width: 17px; height: 17px; border-radius: 6px; background: currentColor; opacity: .22; }
+
+  /* ───────── 现状对照 ───────── */
+  .cur-appbar { padding: 6px 16px 10px; display: flex; align-items: center; justify-content: space-between; }
+  .cur-logo { font-size: 17px; font-weight: 800; letter-spacing: -.4px; color: var(--fg); }
+  .icon-btn { width: 30px; height: 30px; border-radius: 10px; background: var(--chip); display: grid; place-items: center; }
+  .icon-btn svg { width: 14px; height: 14px; stroke: var(--sub); }
+  .chiprow { display: flex; gap: 8px; padding: 0 16px 10px; }
+  .chip {
+    font-size: 12px; padding: 5px 13px; border-radius: 16px; border: .8px solid var(--border);
+    color: var(--sub); background: transparent; white-space: nowrap;
+  }
+  .chip.on { color: var(--brand); border-color: var(--brand); background: var(--brand-soft); font-weight: 700; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 11px; padding: 2px 16px 90px; }
+  .poster { border-radius: 12px; position: relative; overflow: hidden; }
+  .poster.p23 { aspect-ratio: 2/3; }
+  .poster.p169 { aspect-ratio: 16/9; }
+  .poster .cap {
+    position: absolute; left: 0; right: 0; bottom: 0; padding: 18px 7px 6px;
+    background: linear-gradient(to top, rgba(0,0,0,.72), transparent);
+    color: #fff; font-size: 9.5px; font-weight: 600;
+  }
+  .meta { font-size: 10.5px; color: var(--weak); margin-top: 5px; line-height: 1.4; }
+  .meta .name { color: var(--fg); font-size: 12px; font-weight: 600; display: block; margin-bottom: 2px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* 通用海报渐变（用色相区分内容，纯 CSS 无需联网） */
+  .g1 { background: linear-gradient(150deg, #667eea, #764ba2); }
+  .g2 { background: linear-gradient(150deg, #f093fb, #f5576c); }
+  .g3 { background: linear-gradient(150deg, #4facfe, #00f2fe); }
+  .g4 { background: linear-gradient(150deg, #43e97b, #38f9d7); }
+  .g5 { background: linear-gradient(150deg, #fa709a, #fee140); }
+  .g6 { background: linear-gradient(150deg, #30cfd0, #330867); }
+  .g7 { background: linear-gradient(150deg, #ff9a44, #fc6076); }
+  .g8 { background: linear-gradient(150deg, #5ee7df, #b490ca); }
+
+  /* 类型角标 */
+  .badge {
+    position: absolute; top: 7px; left: 7px; font-size: 8.5px; font-weight: 700; color: #fff;
+    background: rgba(0,0,0,.55); backdrop-filter: blur(6px); padding: 2px 6px; border-radius: 5px;
+  }
+  .badge.right { left: auto; right: 7px; }
+  .badge.hot { background: linear-gradient(135deg, #ff5f6d, #ffc371); }
+  .badge.done { background: rgba(5,150,105,.85); }
+
+  /* ───────── 方案通用顶栏 ───────── */
+  .bar { padding: 4px 16px 0; display: flex; align-items: center; gap: 10px; }
+  .bar .brand { font-size: 17px; font-weight: 800; letter-spacing: -.4px; color: var(--fg); display: flex; align-items: center; gap: 6px; }
+  .bar .brand i { width: 16px; height: 16px; border-radius: 5px; background: linear-gradient(135deg, var(--brand), #38BDF8); display: block; }
+  .searchpill {
+    flex: 1; height: 32px; border-radius: 11px; background: var(--chip); border: 1px solid var(--border);
+    display: flex; align-items: center; gap: 7px; padding: 0 11px; font-size: 11.5px; color: var(--weak);
+  }
+  .searchpill svg { width: 13px; height: 13px; stroke: var(--weak); }
+  .avatar { width: 30px; height: 30px; border-radius: 10px; background: linear-gradient(135deg, #5ee7df, #b490ca); }
+
+  /* 源选择（方案 A：胶囊 + 下划线） */
+  .sourcetabs { display: flex; gap: 16px; padding: 12px 16px 0; border-bottom: 1px solid var(--border); }
+  .sourcetabs .st { font-size: 13px; color: var(--sub); padding-bottom: 8px; position: relative; white-space: nowrap; }
+  .sourcetabs .st.on { color: var(--fg); font-weight: 700; }
+  .sourcetabs .st.on::after {
+    content: ""; position: absolute; left: 50%; transform: translateX(-50%); bottom: -1px;
+    width: 18px; height: 2.5px; border-radius: 2px; background: var(--brand);
+  }
+
+  /* 分类页签 */
+  .catrow { display: flex; gap: 7px; padding: 11px 16px 9px; overflow: hidden; }
+  .cat {
+    font-size: 11.5px; padding: 4px 12px; border-radius: 9px; background: var(--chip); color: var(--sub); white-space: nowrap;
+  }
+  .cat.on { background: var(--brand); color: #fff; font-weight: 700; }
+  .phone.dark-mode .cat.on { color: #06120E; }
+
+  /* ───────── 方案 A 内容 ───────── */
+  .track-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px 9px; }
+  .track-head .t { font-size: 13.5px; font-weight: 700; color: var(--fg); display: flex; align-items: center; gap: 7px; }
+  .track-head .t::before { content: ""; width: 3px; height: 13px; border-radius: 2px; background: var(--brand); }
+  .track-head .more { font-size: 10.5px; color: var(--weak); }
+  .rail { display: flex; gap: 10px; padding: 0 16px 4px; overflow: hidden; }
+  .rail .item { width: 96px; flex: 0 0 96px; }
+  .rail .item .poster { border-radius: 10px; }
+  .rail .item .name { font-size: 11px; color: var(--fg); margin-top: 6px; font-weight: 600;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rail .item .sub { font-size: 9.5px; color: var(--weak); margin-top: 2px; }
+
+  /* ───────── 方案 B Hero ───────── */
+  .hero { margin: 12px 16px 0; border-radius: 16px; overflow: hidden; position: relative; aspect-ratio: 16/10; }
+  .hero .veil {
+    position: absolute; inset: 0;
+    background: linear-gradient(to top, rgba(3,7,18,.92) 6%, rgba(3,7,18,.35) 52%, rgba(3,7,18,.08));
+  }
+  .hero .txt { position: absolute; left: 14px; right: 14px; bottom: 12px; color: #fff; }
+  .hero .txt .h-name { font-size: 16.5px; font-weight: 800; letter-spacing: -.2px; }
+  .hero .txt .h-meta { font-size: 10.5px; opacity: .82; margin-top: 4px; display: flex; align-items: center; gap: 7px; }
+  .hero .txt .h-meta .score { color: #FBBF24; font-weight: 800; }
+  .hero .acts { display: flex; gap: 8px; margin-top: 10px; }
+  .btn-play {
+    flex: 1; height: 32px; border-radius: 10px; background: #fff; color: #0B0F17;
+    font-size: 12px; font-weight: 800; display: flex; align-items: center; justify-content: center; gap: 5px;
+  }
+  .btn-fav {
+    width: 32px; height: 32px; border-radius: 10px; background: rgba(255,255,255,.2);
+    backdrop-filter: blur(8px); display: grid; place-items: center; color: #fff; font-size: 14px;
+  }
+  .hero .top-badges { position: absolute; top: 10px; left: 10px; display: flex; gap: 6px; }
+
+  /* 方案 B 顶栏里的源下拉 */
+  .source-drop {
+    height: 30px; border-radius: 10px; background: var(--chip); border: 1px solid var(--border);
+    display: flex; align-items: center; gap: 5px; padding: 0 9px; font-size: 11.5px; color: var(--fg); font-weight: 600;
+  }
+  .source-drop .caret { font-size: 8px; color: var(--weak); }
+
+  /* ───────── 方案 C 瀑布流 ───────── */
+  .masonry { columns: 2; column-gap: 11px; padding: 2px 16px 90px; }
+  .masonry .cell { break-inside: avoid; margin-bottom: 11px; }
+  .masonry .poster { border-radius: 12px; }
+  .masonry .name { font-size: 12px; font-weight: 600; color: var(--fg); margin-top: 6px;
+    display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
+  .masonry .sub { font-size: 10px; color: var(--weak); margin-top: 3px; display: flex; align-items: center; gap: 5px; }
+  .masonry .sub .type { color: var(--brand); font-weight: 600; }
+
+  .double-chip { display: flex; gap: 8px; padding: 10px 16px 0; }
+  .double-chip .dc {
+    flex: 1; height: 32px; border-radius: 11px; background: var(--chip); border: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between; padding: 0 11px; font-size: 11.5px; color: var(--fg); font-weight: 600;
+  }
+  .double-chip .dc .caret { font-size: 8px; color: var(--weak); }
+
+  .legend { max-width: 1500px; margin: 26px auto 0; display: flex; flex-wrap: wrap; gap: 12px; }
+  .legend .lg {
+    flex: 1 1 300px; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px;
+  }
+  .legend .lg h3 { font-size: 13px; margin: 0 0 7px; }
+  .legend .lg ul { margin: 0; padding-left: 17px; font-size: 11.5px; color: var(--page-sub); line-height: 1.8; }
+  .legend .lg b { color: var(--page-fg); }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>FluxForge · 发现页重设计（三套方案对比）</h1>
+    <p class="hint">
+      四个手机框：最左是<strong>现状</strong>，右边三套是候选方案。全部用 CSS 手绘，离线可看。
+      右侧按钮可切深浅双主题（项目是「曜夜极光翡翠 / 纯净星暮白」双主题，三套方案都必须两套都成立）。<br />
+      另需说明：规则契约 <code>discovery({ tab, page })</code> 里的 <code>tabs</code>（分类页签）与
+      <code>hasMore</code>（分页）在当前实现中<strong>从未被使用</strong>——三套方案都把它们补上了，这是本次重设计的主要功能增量。
+    </p>
+  </div>
+  <button class="theme-btn" id="themeBtn">切换到深色主题</button>
+</header>
+
+<main class="stage" id="stage"></main>
+
+<section class="legend" id="legend"></section>
+
+<script>
+/* ───────────────── 海报假数据（纯 CSS 渐变，不联网） ───────────────── */
+const P = (cls, ratio, name, sub, badges = '') =>
+  `<div class="poster ${ratio} ${cls}">${badges}<div class="cap">${name}</div></div>`;
+
+/* 瀑布流专用：高度不等高，模拟真实发现流 */
+const P2 = (cls, h, name, badges = '') =>
+  `<div class="poster ${cls}" style="height:${h}px">${badges}<div class="cap">${name}</div></div>`;
+
+const svgSearch = '<svg viewBox="0 0 24 24" fill="none" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.5-3.5"></path></svg>';
+
+/* ───────────────── 四套布局 ───────────────── */
+const VARIANTS = [
+  {
+    key: 'current',
+    title: '现状（对照）',
+    tag: 'AppLoading 现版',
+    note: '规则源 chip + 2 列等比例网格，朴素但结构扁平。<b>没有分类页签</b>、<b>没有分页</b>，无法在页内切「电影 / 电视剧 / 动漫」。',
+    dark: false,
+    html: `
+      <div class="cur-appbar">
+        <span class="cur-logo">发现</span>
+        <div style="display:flex;gap:8px">
+          <div class="icon-btn">${svgSearch}</div>
+          <div class="icon-btn"><svg viewBox="0 0 24 24" fill="none" stroke-width="2.2"><circle cx="12" cy="12" r="3"></circle><path d="M12 3v3M12 18v3M3 12h3M18 12h3"></path></svg></div>
+        </div>
+      </div>
+      <div class="chiprow">
+        <span class="chip on">极光影视</span>
+        <span class="chip">星辰书库</span>
+        <span class="chip">漫野</span>
+        <span class="chip">光影视界</span>
+      </div>
+      <div class="grid2">
+        ${['g1','g2','g3','g4'].map((g, i) =>
+          `<div>${P(g, 'p23', ['星海拾遗','长夜将至','雾都列车','第九座城'][i], '', `<span class="badge">电视剧</span>`)}
+           <div class="meta"><span class="name">${['星海拾遗','长夜将至','雾都列车','第九座城'][i]}</span>更新至 12 集</div></div>`
+        ).join('')}
+      </div>`,
+  },
+  {
+    key: 'planA',
+    title: '方案 A · 分类吸顶 + 竖版海报',
+    tag: '推荐',
+    note: '结构最清晰：一眼看清「在哪个源、哪个分类、有哪些内容」。<b>补上 tabs 分类页签与分页加载</b>，改动可控、适配所有内容类型。',
+    dark: false,
+    html: `
+      <div class="bar" style="padding-top:6px">
+        <span class="brand"><i></i>流光视界</span>
+        <div class="searchpill">${svgSearch}搜影片 / 书籍 / 漫画</div>
+        <div class="avatar"></div>
+      </div>
+
+      <div class="sourcetabs">
+        <span class="st on">极光影视</span>
+        <span class="st">星辰书库</span>
+        <span class="st">漫野漫画</span>
+        <span class="st">光影视界</span>
+      </div>
+
+      <div class="catrow">
+        <span class="cat on">推荐</span>
+        <span class="cat">电影</span>
+        <span class="cat">电视剧</span>
+        <span class="cat">动漫</span>
+        <span class="cat">综艺</span>
+      </div>
+
+      <div class="grid2">
+        <div>
+          ${P('g1','p23','星海拾遗','', '<span class="badge">电视剧</span><span class="badge right hot">热播</span>')}
+          <div class="meta"><span class="name">星海拾遗</span>更新至 12 集 · 科幻</div>
+        </div>
+        <div>
+          ${P('g2','p23','长夜将至','', '<span class="badge">电影</span>')}
+          <div class="meta"><span class="name">长夜将至</span>2026 · 悬疑犯罪</div>
+        </div>
+        <div>
+          ${P('g6','p23','雾都列车','', '<span class="badge">动漫</span><span class="badge right done">全 24 话</span>')}
+          <div class="meta"><span class="name">雾都列车</span>全 24 话 · 蒸汽朋克</div>
+        </div>
+        <div>
+          ${P('g3','p23','第九座城','', '<span class="badge">综艺</span>')}
+          <div class="meta"><span class="name">第九座城</span>更新至 2026-10-05</div>
+        </div>
+      </div>`,
+  },
+  {
+    key: 'planB',
+    title: '方案 B · 首屏 Hero + 横向轨道',
+    tag: '冲击力最强',
+    note: '流媒体 app 的经典结构：首条内容做成大图 Hero（带播放与追加入口），下方接横向轨道与网格。<b>首屏更有「内容感」</b>，但需要规则源能给出足够优质的首条。',
+    dark: false,
+    html: `
+      <div class="bar" style="padding-top:6px">
+        <span class="brand"><i></i>流光</span>
+        <div class="source-drop">极光影视 <span class="caret">▼</span></div>
+        <div style="flex:1"></div>
+        <div class="icon-btn">${svgSearch}</div>
+      </div>
+
+      <div class="hero g6">
+        <div class="veil"></div>
+        <div class="top-badges">
+          <span class="badge hot">热播 TOP1</span>
+          <span class="badge">电视剧</span>
+        </div>
+        <div class="txt">
+          <div class="h-name">星海拾遗</div>
+          <div class="h-meta"><span class="score">9.2</span><span>2026</span><span>科幻 · 悬疑</span><span>更新至 12 集</span></div>
+          <div class="acts">
+            <div class="btn-play">▶ 立即播放</div>
+            <div class="btn-fav">＋</div>
+            <div class="btn-fav">⇩</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="track-head"><span class="t">热播推荐</span><span class="more">更多 ›</span></div>
+      <div class="rail">
+        ${[['g1','星海拾遗','9.2'],['g2','长夜将至','8.7'],['g3','第九座城','8.1'],['g4','春山可望','7.9']].map(([g,n,s]) =>
+          `<div class="item">${P(g,'p23',n,'', `<span class="badge">剧</span>`)}<div class="name">${n}</div><div class="sub">评分 ${s}</div></div>`
+        ).join('')}
+      </div>
+
+      <div class="track-head"><span class="t">最新更新</span><span class="more">更多 ›</span></div>
+      <div class="grid2" style="padding-bottom:90px">
+        <div>
+          ${P('g5','p169','暗河','', '<span class="badge">电影</span>')}
+          <div class="meta"><span class="name">暗河</span>刚刚更新</div>
+        </div>
+        <div>
+          ${P('g8','p169','深海回声','', '<span class="badge">动漫</span>')}
+          <div class="meta"><span class="name">深海回声</span>2 小时前</div>
+        </div>
+      </div>`,
+  },
+  {
+    key: 'planC',
+    title: '方案 C · 瀑布流发现流',
+    tag: '可逛性最强',
+    note: '信息密度最高、最像「发现」页：封面不等高、混合类型（剧 / 漫 / 书）混排，配合类型徽章快速识别。<b>代价</b>是等比例封面会显得不整齐，对规则源的封面质量要求最高。',
+    dark: true,
+    html: `
+      <div class="bar" style="padding-top:8px">
+        <div class="searchpill" style="height:34px">${svgSearch}搜索影片、书籍、漫画…</div>
+        <div class="avatar"></div>
+      </div>
+
+      <div class="double-chip">
+        <div class="dc">极光影视 <span class="caret">▼</span></div>
+        <div class="dc">推荐 <span class="caret">▼</span></div>
+      </div>
+
+      <div class="catrow" style="padding-top:9px">
+        <span class="cat on">综合</span>
+        <span class="cat">影视</span>
+        <span class="cat">小说</span>
+        <span class="cat">漫画</span>
+      </div>
+
+      <div class="masonry">
+        <div class="cell">
+          ${P2('g1',188,'星海拾遗','<span class="badge">热播</span>')}
+          <div class="name">星海拾遗</div>
+          <div class="sub"><span class="type">电视剧</span>· 更新至 12 集</div>
+        </div>
+        <div class="cell">
+          ${P2('g2',132,'长夜将至','')}
+          <div class="name">长夜将至</div>
+          <div class="sub"><span class="type">电影</span>· 2026 悬疑</div>
+        </div>
+        <div class="cell">
+          ${P2('g4',158,'春山可望','')}
+          <div class="name">春山可望</div>
+          <div class="sub"><span class="type">小说</span>· 已完结 328 章</div>
+        </div>
+        <div class="cell">
+          ${P2('g6',205,'雾都列车','')}
+          <div class="name">雾都列车</div>
+          <div class="sub"><span class="type">漫画</span>· 全 24 话</div>
+        </div>
+        <div class="cell">
+          ${P2('g3',142,'第九座城','')}
+          <div class="name">第九座城</div>
+          <div class="sub"><span class="type">综艺</span>· 本周更新</div>
+        </div>
+        <div class="cell">
+          ${P2('g5',176,'暗河','')}
+          <div class="name">暗河</div>
+          <div class="sub"><span class="type">电影</span>· 4K 修复</div>
+        </div>
+      </div>`,
+  },
+];
+
+/* ───────────────── 渲染 ───────────────── */
+function navBar() {
+  const items = [['发现', true], ['搜索', false], ['收藏', false], ['下载', false], ['我的', false]];
+  return `<div class="blur-bar">${items.map(([n, on]) =>
+    `<div class="nav ${on ? 'on' : ''}"><span class="dot"></span>${n}</div>`).join('')}</div>`;
+}
+
+function render() {
+  const stage = document.getElementById('stage');
+  stage.innerHTML = VARIANTS.map((v) => `
+    <div class="col">
+      <h2 class="col-title">${v.title}<span class="tag">${v.tag}</span></h2>
+      <p class="col-note">${v.note}</p>
+      <div class="phone ${v.dark ? 'dark-mode' : ''}">
+        <div class="notch"></div>
+        <div class="screen">
+          <div class="statusbar"><span>9:41</span><span class="icons">▮▮▮ ⌁ 100%</span></div>
+          <div class="body-scroll">${v.html}${navBar()}</div>
+        </div>
+      </div>
+    </div>`).join('');
+
+  const legend = document.getElementById('legend');
+  legend.innerHTML = `
+    <div class="lg">
+      <h3>方案 A · 分类吸顶 + 竖版海报</h3>
+      <ul>
+        <li><b>信息架构最完整</b>：源页签（带下划线）+ 分类胶囊 + 双列海报，三层一目了然</li>
+        <li>补齐 <b>tabs 分类</b>与 <b>hasMore 分页</b>，这是规则契约早已提供、当前却没用的能力</li>
+        <li>改动成本最低：现有网格与卡片可复用，只加两层导航 + 触底加载</li>
+        <li>适配四种内容形态最稳（竖版海报对影视 / 小说 / 漫画都成立）</li>
+      </ul>
+    </div>
+    <div class="lg">
+      <h3>方案 B · 首屏 Hero</h3>
+      <ul>
+        <li>首屏冲击力最强，接近主流流媒体 app 的观感</li>
+        <li>把「播放 / 追剧 / 下载」三个高频动作直接提到首屏</li>
+        <li>代价：需要规则源第一条足够优质；Hero 会挤掉一屏内容位</li>
+        <li>建议：可作为 <b>A 的增强项</b> —— 分类为「推荐」时展示 Hero，其它分类回到网格</li>
+      </ul>
+    </div>
+    <div class="lg">
+      <h3>方案 C · 瀑布流发现流</h3>
+      <ul>
+        <li>可逛性最强，混合类型混排（剧 / 电影 / 小说 / 漫画同屏）</li>
+        <li>最能体现 FluxForge「跨媒体聚合」的定位</li>
+        <li>代价：封面比例不统一时视觉参差；对规则源封面质量要求最高</li>
+        <li>建议：影视 / 漫画用固定比例，只有小说混排时才放开高度</li>
+      </ul>
+    </div>`;
+}
+render();
+
+const themeBtn = document.getElementById('themeBtn');
+themeBtn.addEventListener('click', () => {
+  const dark = !document.body.classList.contains('dark');
+  document.body.classList.toggle('dark', dark);
+  // 手机屏与页面主题联动：浅色页面看浅色机、深色页面看深色机（方案 C 固定深色做对比）
+  document.querySelectorAll('.phone').forEach((p, i) => {
+    if (VARIANTS[i].dark) return;
+    p.classList.toggle('dark-mode', dark);
+  });
+  themeBtn.textContent = dark ? '切换到浅色主题' : '切换到深色主题';
+});
+</script>
+</body>
+</html>
