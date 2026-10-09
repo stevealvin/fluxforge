@@ -114,7 +114,6 @@ class SearchVideoListCard extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           fontSize: 13.5,
-                          fontWeight: FontWeight.bold,
                           color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
                           height: 1.25,
                         ),
@@ -224,7 +223,6 @@ class SearchPortraitListCard extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           fontSize: 15,
-                          fontWeight: FontWeight.bold,
                           color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
                         ),
                       ),

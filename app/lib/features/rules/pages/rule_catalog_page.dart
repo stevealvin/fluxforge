@@ -767,7 +767,6 @@ class _RuleCatalogPageState extends State<RuleCatalogPage> {
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       fontSize: 12.5,
-                      fontWeight: FontWeight.w600,
                       height: 1.25,
                     ),
                   ),
@@ -861,7 +860,6 @@ class _RuleCatalogPageState extends State<RuleCatalogPage> {
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       fontSize: 13,
-                      fontWeight: FontWeight.bold,
                       color: Colors.white,
                     ),
                   ),
@@ -951,7 +949,6 @@ class _RuleCatalogPageState extends State<RuleCatalogPage> {
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           fontSize: 13.5,
-                          fontWeight: FontWeight.bold,
                           height: 1.25,
                         ),
                       ),
@@ -1039,7 +1036,6 @@ class _RuleCatalogPageState extends State<RuleCatalogPage> {
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
                               fontSize: 14,
-                              fontWeight: FontWeight.bold,
                             ),
                           ),
                           if (item.desc.isNotEmpty) ...[

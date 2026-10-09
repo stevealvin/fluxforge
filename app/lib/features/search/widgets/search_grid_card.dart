@@ -145,7 +145,6 @@ class SearchVideoGridCard extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       fontSize: 12.5,
-                      fontWeight: FontWeight.w600,
                       color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
                       height: 1.25,
                     ),
@@ -251,7 +250,6 @@ class SearchPosterGridCard extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     fontSize: 13,
-                    fontWeight: FontWeight.bold,
                     color: Colors.white,
                   ),
                 ),
