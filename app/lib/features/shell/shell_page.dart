@@ -72,7 +72,7 @@ class ShellPage extends HookWidget {
                 ),
               ),
             ),
-            // 主标签页面视图 (发现 / 收藏 / 规则 / 站点 / 我的)
+            // 主标签页面视图 (发现 / 规则 / 收藏 / 站点 / 我的)
             PageView(
               physics: const NeverScrollableScrollPhysics(),
               controller: pageController,
@@ -81,8 +81,8 @@ class ShellPage extends HookWidget {
               },
               children: [
                 const DiscoverPage(),
-                const FavoritesPage(),
                 const RulesPage(),
+                const FavoritesPage(),
                 const SitesPage(),
                 // 「我的」页需注入切页回调，以支持资产卡「我的规则」直达规则 Tab
                 const ProfilePage(),
@@ -119,15 +119,6 @@ class ShellPage extends HookWidget {
                       label: '发现',
                     ),
                     const NavigationDestination(
-                      icon: Icon(Ionicons.bookmarkOutline, size: 22),
-                      selectedIcon: Icon(
-                        Ionicons.bookmarkOutline,
-                        size: 24,
-                        color: AppColors.primary,
-                      ),
-                      label: '收藏',
-                    ),
-                    const NavigationDestination(
                       icon: Icon(Ionicons.codeSlashOutline, size: 22),
                       selectedIcon: Icon(
                         Ionicons.codeSlashOutline,
@@ -135,6 +126,15 @@ class ShellPage extends HookWidget {
                         color: AppColors.primary,
                       ),
                       label: '规则',
+                    ),
+                    const NavigationDestination(
+                      icon: Icon(Ionicons.bookmarkOutline, size: 22),
+                      selectedIcon: Icon(
+                        Ionicons.bookmarkOutline,
+                        size: 24,
+                        color: AppColors.primary,
+                      ),
+                      label: '收藏',
                     ),
                     const NavigationDestination(
                       icon: Icon(Ionicons.globeOutline, size: 22),

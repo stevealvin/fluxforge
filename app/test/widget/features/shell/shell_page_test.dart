@@ -44,7 +44,7 @@ void main() {
       barOf(tester).destinations
           .map((d) => (d as NavigationDestination).label)
           .toList(),
-      const ['发现', '收藏', '规则', '站点', '我的'],
+      const ['发现', '规则', '收藏', '站点', '我的'],
     );
   });
 
@@ -56,7 +56,8 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
 
-    expect(barOf(tester).selectedIndex, 1);
+    // 收藏换到第 3 位（下标 2）
+    expect(barOf(tester).selectedIndex, 2);
     expect(find.byType(FavoritesPage), findsOneWidget);
   });
 
