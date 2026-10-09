@@ -9,6 +9,7 @@ Future<List<bool>> _pumpHost(
   WidgetTester tester, {
   bool destructive = true,
   String confirmText = '确认清空',
+  bool settle = true,
 }) async {
   final results = <bool>[];
 
@@ -39,7 +40,13 @@ Future<List<bool>> _pumpHost(
   );
 
   await tester.tap(find.text('触发'));
-  await tester.pumpAndSettle();
+  if (settle) {
+    await tester.pumpAndSettle();
+  } else {
+    // 只推进到过渡途中：供「入场动画」用例观察动画中间态
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 80));
+  }
   return results;
 }
 
@@ -95,5 +102,65 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(results, [true]);
+  });
+
+  testWidgets('入场带缩放淡入（不依赖 material_ui 那套无过渡的 DialogRoute）', (WidgetTester tester) async {
+    await _pumpHost(tester, settle: false);
+
+    // 我们注入的 ScaleTransition 应处在 < 1 的缩放上。
+    // 这条是回归保护 —— 若有人把实现改回 `showDialog`，
+    // material_ui 的 DialogRoute 会把 transitionBuilder 原样返回（硬切出现），此断言即失败。
+    final animating = tester
+        .widgetList<ScaleTransition>(find.byType(ScaleTransition))
+        .any((transition) => transition.scale.value < 0.999);
+    expect(animating, isTrue, reason: '弹窗应当处于缩放入场过程中');
+
+    await tester.pumpAndSettle();
+    expect(find.byType(AppConfirmDialog), findsOneWidget);
+  });
+
+  testWidgets('超长正文限高可滚动，不会把弹窗撑出屏幕', (WidgetTester tester) async {
+    final longMessage = List.generate(
+      40,
+      (i) => '第 $i 行说明文字，用于验证超长正文的限高与滚动。',
+    ).join('\n');
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.lightTheme,
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => Center(
+              child: TextButton(
+                onPressed: () => showAppConfirmDialog(
+                  context,
+                  title: '超长说明',
+                  message: longMessage,
+                  confirmText: '我知道了',
+                ),
+                child: const Text('触发'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('触发'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(AppConfirmDialog), findsOneWidget);
+
+    // 正文被包在限高滚动区内，且高度确实被压在上限以内
+    final scrollView = find.descendant(
+      of: find.byType(AppConfirmDialog),
+      matching: find.byType(SingleChildScrollView),
+    );
+    expect(scrollView, findsOneWidget);
+    expect(tester.getSize(scrollView).height, lessThanOrEqualTo(220.5));
+
+    // 关键行为：按钮仍完整落在视口内且可点 —— 弹窗没有被超长正文顶出屏幕
+    await tester.tap(find.text('我知道了'));
+    await tester.pumpAndSettle();
+    expect(find.byType(AppConfirmDialog), findsNothing);
   });
 }
