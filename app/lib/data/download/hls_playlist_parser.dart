@@ -17,6 +17,10 @@
 class HlsPlaylistParser {
   const HlsPlaylistParser._();
 
+  /// 行分隔与 `URI="..."` 提取的正则：静态常量，避免每次解析清单都重新编译
+  static final RegExp _lineBreakPattern = RegExp(r'\r?\n');
+  static final RegExp _uriAttributePattern = RegExp(r'URI="([^"]+)"');
+
   /// 解析清单文本
   ///
   /// [baseUri] 用于把清单里的相对地址解析成绝对地址 ——
@@ -26,7 +30,7 @@ class HlsPlaylistParser {
     final uris = <String>[];
     final resources = <String>{};
 
-    for (final raw in text.split(RegExp(r'\r?\n'))) {
+    for (final raw in text.split(_lineBreakPattern)) {
       final line = raw.trim();
       if (line.isEmpty) continue;
 
@@ -62,7 +66,7 @@ class HlsPlaylistParser {
   /// 从 `#EXT-X-...` 属性行中提取所有 `URI="..."`
   static List<String> extractAttributeUris(String attributeLine) {
     final result = <String>[];
-    for (final m in RegExp(r'URI="([^"]+)"').allMatches(attributeLine)) {
+    for (final m in _uriAttributePattern.allMatches(attributeLine)) {
       final value = m.group(1)?.trim() ?? '';
       // 空 URI 或 data: 内联资源无需下载
       if (value.isEmpty || value.startsWith('data:')) continue;
@@ -83,7 +87,7 @@ class HlsPlaylistParser {
     if (remoteToLocal.isEmpty) return text;
 
     final buffer = StringBuffer();
-    for (final raw in text.split(RegExp(r'\r?\n'))) {
+    for (final raw in text.split(_lineBreakPattern)) {
       final line = raw.trim();
       if (line.isEmpty) {
         buffer.writeln();

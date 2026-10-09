@@ -77,6 +77,9 @@ class VideoPreviewsSection extends StatelessWidget {
                   aspectRatio: 16 / 9,
                   child: AppImage(
                     imageUrl: imgUrl,
+                    // 解码降采样：横滑剧照固定高 76，按 16:9 折算出约 135 的展示宽
+                    cacheWidth:
+                        (135 * MediaQuery.devicePixelRatioOf(context)).round(),
                     headers: headers.isNotEmpty ? headers : null,
                     errorWidget: Icon(
                       Ionicons.imageOutline,

@@ -151,7 +151,26 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
     return offset;
   }
 
-  /// 量一遍已构建的项，充实高度缓存（滚动与跳页各调一次，开销为一次 O(n) 读尺寸）
+  /// 滚动期测量节流：距上次测量不足 [_scrollMeasureIntervalMs] 毫秒就跳过。
+  ///
+  /// 逐帧全量测量（`findRenderObject` × 整章张数）是连续滚动掉帧的主因；
+  /// 而测量只是把真实高度收进缓存供跳页估算，少测几次只影响估算精度 ——
+  /// 跳页自身还有「估算 → 跳过去 → 再测」的多轮收敛兜底（见 [_jumpToIndex]）。
+  static const int _scrollMeasureIntervalMs = 120;
+  DateTime? _lastScrollMeasureAt;
+
+  bool _shouldMeasureNow() {
+    final now = DateTime.now();
+    final last = _lastScrollMeasureAt;
+    if (last != null &&
+        now.difference(last).inMilliseconds < _scrollMeasureIntervalMs) {
+      return false;
+    }
+    _lastScrollMeasureAt = now;
+    return true;
+  }
+
+  /// 量一遍已构建的项，充实高度缓存（滚动期按 [_scrollMeasureIntervalMs] 节流，跳页流程必调）
   void _measureBuiltItems() {
     for (int i = 0; i < _itemKeys.length; i++) {
       final box = _itemKeys[i].currentContext?.findRenderObject() as RenderBox?;
@@ -428,9 +447,14 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
     return NotificationListener<ScrollNotification>(
       onNotification: (notification) {
         if (notification is ScrollUpdateNotification) {
-          // 顺手把渲染出来的项量一遍：跳页要靠这些实测高度算偏移
-          _measureBuiltItems();
+          // 滚动期间测量做时间节流（见 [_shouldMeasureNow]）；
+          // 索引回写保持逐帧调用 —— 它只在跨越图片时才 setState，本身已很轻，
+          // 且进度条显示与「看到第几页」上报都挂在它身上，不该被延迟。
+          if (_shouldMeasureNow()) _measureBuiltItems();
           _updateIndexOnScroll();
+        } else if (notification is ScrollEndNotification) {
+          // 停手后补量一次：保证跳页读到的实测高度是最新值
+          _measureBuiltItems();
         }
         return false;
       },
@@ -489,11 +513,21 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
   }) {
     // 统一交给 AppImage.reader：协议校验、请求头、缓存与**本地文件分支**都收在组件里。
     // 阅读器自己拼 ExtendedImage，等于在"图片加载唯一出口"之外又开一套策略。
+    //
+    // 解码降采样：两种阅读模式都是 `BoxFit.fitWidth` 撑满屏宽，
+    // 所以目标像素宽 = 屏宽 × devicePixelRatio。不传则按原图解码，
+    // 一张 2000px 宽的图解码后约 24MB —— 长章连续滚动时这是内存峰值的主要来源。
+    final cacheWidth =
+        (MediaQuery.sizeOf(context).width *
+                MediaQuery.devicePixelRatioOf(context))
+            .round();
+
     return AppImage.reader(
       imageUrl: source,
       headers: headers,
       fit: fit,
       mode: mode,
+      cacheWidth: cacheWidth,
       gestureConfig: initGestureConfigHandler,
       loadStateChanged: loadStateChanged,
     );

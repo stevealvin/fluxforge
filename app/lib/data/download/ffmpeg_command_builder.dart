@@ -104,6 +104,12 @@ class FfmpegCommandBuilder {
     ].join(' ');
   }
 
+  /// FFmpeg 日志里的总时长行正则：静态常量。
+  /// 它挂在日志回调上、**每行日志**都会执行一次，逐行重新编译纯属浪费。
+  static final RegExp _durationLogPattern = RegExp(
+    r'Duration:\s*(\d+):(\d{2}):(\d{2})\.(\d{1,3})',
+  );
+
   /// 从 FFmpeg 日志中解析媒体总时长
   ///
   /// FFmpeg 开始处理时会输出形如 `Duration: 00:12:34.56, start: 0.000000, bitrate: ...`
@@ -111,8 +117,7 @@ class FfmpegCommandBuilder {
   /// **无需额外发起 FFprobe 请求** —— 对需要防盗链头的源，FFprobe 也无法带上请求头，
   /// 走日志解析反而是唯一可行的途径。
   static Duration? parseDurationFromLog(String line) {
-    final match = RegExp(r'Duration:\s*(\d+):(\d{2}):(\d{2})\.(\d{1,3})')
-        .firstMatch(line);
+    final match = _durationLogPattern.firstMatch(line);
     if (match == null) return null;
 
     final hours = int.tryParse(match.group(1)!) ?? 0;

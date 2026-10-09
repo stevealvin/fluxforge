@@ -133,7 +133,13 @@ class ContinueWatchingRow extends StatelessWidget {
                   SizedBox(
                     width: 128,
                     height: 74,
-                    child: AppImage(imageUrl: record.cover, fit: BoxFit.cover),
+                    // 解码降采样：横滑卡片展示位 128×74，按 dpr 取目标像素宽
+                    child: AppImage(
+                      imageUrl: record.cover,
+                      fit: BoxFit.cover,
+                      cacheWidth:
+                          (128 * MediaQuery.devicePixelRatioOf(context)).round(),
+                    ),
                   ),
                   // 底部渐变遮罩，保证进度条与角标在任何封面上都清晰可见
                   Positioned(

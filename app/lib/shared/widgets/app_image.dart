@@ -30,6 +30,7 @@ class AppImage extends StatelessWidget {
     this.height,
     this.cacheWidth,
     this.cacheHeight,
+    this.autoCacheWidth = false,
     this.placeholder,
     this.errorWidget,
     this.onTap,
@@ -56,6 +57,7 @@ class AppImage extends StatelessWidget {
     this.cache = true,
     this.cacheWidth,
     this.cacheHeight,
+    this.autoCacheWidth = false,
     this.gestureConfig,
     this.loadStateChanged,
     this.onTap,
@@ -88,6 +90,12 @@ class AppImage extends StatelessWidget {
   final int? cacheWidth;
   final int? cacheHeight;
 
+  /// 自动解码降采样：未显式指定 [cacheWidth] 时，按组件实际布局宽度 × dpr 取目标像素宽
+  ///
+  /// 网格 / 卡片封面在调用点无法得知自身宽度（由列数与屏宽共同决定），
+  /// 打开这个开关即可让组件自行降采样 —— 这是长列表内存峰值的主要来源。
+  final bool autoCacheWidth;
+
   /// 加载中的自定义占位（缺省不渲染占位，保持透明）
   final Widget? placeholder;
 
@@ -113,6 +121,25 @@ class AppImage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // 自动降采样：目标像素宽取「组件实际布局宽度 × dpr」。
+    // 网格 / 卡片封面在调用点无法得知自身宽度（由列数与屏宽共同决定），
+    // 于是由组件在 layout 阶段读取约束宽度，免去每个调用点各写一遍 LayoutBuilder。
+    if (autoCacheWidth && cacheWidth == null) {
+      return LayoutBuilder(
+        builder: (context, constraints) {
+          final width = constraints.maxWidth;
+          final resolved = width.isFinite && width > 0
+              ? (width * MediaQuery.devicePixelRatioOf(context)).round()
+              : null;
+          return _buildResolved(context, resolved);
+        },
+      );
+    }
+    return _buildResolved(context, cacheWidth);
+  }
+
+  /// 实际构建：解码尺寸由上一步确定，其余策略（协议校验 / 请求头 / 缓存 / 占位兜底）与原先完全一致
+  Widget _buildResolved(BuildContext context, int? effectiveCacheWidth) {
     final trimmedUrl = imageUrl.trim();
 
     // 阅读器模式：本地沙盒文件与网络地址都支持（离线漫画读的就是本地路径）
@@ -127,6 +154,10 @@ class AppImage extends StatelessWidget {
           File(trimmedUrl),
           fit: fit,
           mode: readerMode!,
+          // 本地离线图同样按目标尺寸解码：离线漫画往往就是把整章原图读回内存，
+          // 漏传这一项等于离线路径完全没有降采样收益
+          cacheWidth: effectiveCacheWidth,
+          cacheHeight: cacheHeight,
           initGestureConfigHandler: gestureConfig,
           loadStateChanged: loadStateChanged,
         );
@@ -137,7 +168,7 @@ class AppImage extends StatelessWidget {
         cache: cache,
         headers: effectiveHeaders,
         fit: fit,
-        cacheWidth: cacheWidth,
+        cacheWidth: effectiveCacheWidth,
         cacheHeight: cacheHeight,
         mode: readerMode!,
         initGestureConfigHandler: gestureConfig,
@@ -172,7 +203,7 @@ class AppImage extends StatelessWidget {
       borderRadius: borderRadius,
       width: width,
       height: height,
-      cacheWidth: cacheWidth,
+      cacheWidth: effectiveCacheWidth,
       cacheHeight: cacheHeight,
       loadStateChanged: (state) {
         switch (state.extendedImageLoadState) {

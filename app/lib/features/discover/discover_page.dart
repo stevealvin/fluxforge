@@ -26,7 +26,12 @@ class _DiscoverPageState extends State<DiscoverPage>
   String? _error;
 
   /// 发现页全局多源内存缓存 (Key: rule.id 或 rule.name)
+  ///
+  /// 这是**静态**缓存、跨页面生命周期存活，必须设上限：
+  /// 每切换一个规则分类就会缓存一份完整列表，无上限会随浏览足迹持续膨胀。
+  /// Dart 的 Map 保持插入顺序，因此「删掉第一个 key」就是淘汰最久未用的一项。
   static final Map<String, List<dynamic>> _discoveryCache = {};
+  static const int _discoveryCacheCapacity = 8;
 
   @override
   bool get wantKeepAlive => true;
@@ -54,8 +59,11 @@ class _DiscoverPageState extends State<DiscoverPage>
     if (!forceRefresh &&
         _discoveryCache.containsKey(cacheKey) &&
         _discoveryCache[cacheKey]!.isNotEmpty) {
+      // LRU：命中即挪到队尾，保证容量淘汰时先丢的是最久未用的分类
+      final cached = _discoveryCache.remove(cacheKey)!;
+      _discoveryCache[cacheKey] = cached;
       setState(() {
-        _discoveryData = _discoveryCache[cacheKey]!;
+        _discoveryData = cached;
         _loading = false;
         _error = null;
       });
@@ -75,8 +83,11 @@ class _DiscoverPageState extends State<DiscoverPage>
                 ? result['items'] as List
                 : const []);
 
-      // 写入内存缓存
+      // 写入内存缓存，并淘汰最久未用的一项
       _discoveryCache[cacheKey] = parsed;
+      while (_discoveryCache.length > _discoveryCacheCapacity) {
+        _discoveryCache.remove(_discoveryCache.keys.first);
+      }
 
       if (mounted && _selectedRule?.id == rule.id) {
         setState(() {

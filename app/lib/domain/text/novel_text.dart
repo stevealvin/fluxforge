@@ -4,6 +4,12 @@
 /// 保证「在线阅读」与「离线下载」得到的正文排版完全一致。
 library;
 
+/// HTML 清洗用的正则：提到模块级常量，避免每次清洗都重新编译 ——
+/// [cleanNovelContent] 在阅读器展示与离线落盘两条链路里会被反复调用。
+final RegExp _brTagPattern = RegExp(r'<br\s*/?>', caseSensitive: false);
+final RegExp _paragraphEndPattern = RegExp(r'</p>', caseSensitive: false);
+final RegExp _anyTagPattern = RegExp(r'<[^>]+>');
+
 /// 智能清洗与规范化小说正文排版
 ///
 /// - 去除 HTML 标签（`<br>` 转行、`</p>` 转段落、其余标签直接剥离）；
@@ -13,9 +19,9 @@ String cleanNovelContent(String raw) {
   if (raw.isEmpty) return '';
 
   final String text = raw
-      .replaceAll(RegExp(r'<br\s*/?>', caseSensitive: false), '\n')
-      .replaceAll(RegExp(r'</p>', caseSensitive: false), '\n\n')
-      .replaceAll(RegExp(r'<[^>]+>'), '')
+      .replaceAll(_brTagPattern, '\n')
+      .replaceAll(_paragraphEndPattern, '\n\n')
+      .replaceAll(_anyTagPattern, '')
       .replaceAll('&nbsp;', ' ')
       .replaceAll('&quot;', '"')
       .replaceAll('&lt;', '<')

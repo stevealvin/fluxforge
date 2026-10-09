@@ -31,18 +31,27 @@ Future<List<String>> resolveComicOfflineImages(
       lookup ??
       (String id, String url) => downloadService.localComicImagePath(id, url);
 
-  return Future.wait(
-    urls.map((url) async {
-      if (!url.startsWith('http://') && !url.startsWith('https://')) {
-        return url;
-      }
-      try {
-        final local = await resolve(bookId, url);
-        return local ?? url;
-      } catch (_) {
-        // 索引不可用（如未完成初始化）时退回网络地址，绝不让阅读中断
-        return url;
-      }
-    }),
-  );
+  Future<String> resolveOne(String url) async {
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      return url;
+    }
+    try {
+      final local = await resolve(bookId, url);
+      return local ?? url;
+    } catch (_) {
+      // 索引不可用（如未完成初始化）时退回网络地址，绝不让阅读中断
+      return url;
+    }
+  }
+
+  // 分批并发：一章可能有上百张图，一次性 Future.wait 会产生数百个并发文件 IO，
+  // 在低端机上直接顶满 IO 队列；分批后峰值并发固定为 batchSize。
+  // 返回顺序仍与入参严格一致（逐批 addAll）。
+  const batchSize = 8;
+  final resolved = <String>[];
+  for (var start = 0; start < urls.length; start += batchSize) {
+    final batch = urls.skip(start).take(batchSize);
+    resolved.addAll(await Future.wait(batch.map(resolveOne)));
+  }
+  return resolved;
 }

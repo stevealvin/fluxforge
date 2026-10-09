@@ -67,6 +67,9 @@ class SearchVideoListCard extends StatelessWidget {
                   AppImage(
                     imageUrl: item.cover,
                     fit: BoxFit.cover,
+                    // 解码降采样：展示位固定 140×80，按 dpr 取目标像素宽
+                    cacheWidth:
+                        (140 * MediaQuery.devicePixelRatioOf(context)).round(),
                     headers: item.baseUrl.isNotEmpty ? {'referer': item.baseUrl} : null,
                   ),
                   // 修复关键缺陷：Positioned 必须是 Stack 的直接子组件，严禁被 Builder 等包裹，否则导致 ParentDataWidget 断言崩溃灰屏

@@ -264,7 +264,14 @@ class RuleService {
     try {
       final targetRules = rules.where((r) => r.enabled).toList();
       if (targetRules.isEmpty) return;
-      await Future.wait(targetRules.map((r) => pingRule(r)));
+      // 分批并发：每条规则都会各进一次沙箱再发一次 HTTP，
+      // 一次性 Future.wait 全部唤醒会在规则较多时形成瞬时峰值
+      // （对照下载侧的 maxConcurrentTasks、搜索侧的并发池，这里同样需要封顶）
+      const batchSize = 3;
+      for (var start = 0; start < targetRules.length; start += batchSize) {
+        final batch = targetRules.skip(start).take(batchSize);
+        await Future.wait(batch.map(pingRule));
+      }
     } finally {
       isPingingNotifier.value = false;
     }

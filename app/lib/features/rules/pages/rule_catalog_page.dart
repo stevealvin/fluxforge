@@ -705,6 +705,8 @@ class _RuleCatalogPageState extends State<RuleCatalogPage> {
                   AppImage(
                     imageUrl: item.cover,
                     fit: BoxFit.cover,
+                    // 解码降采样：按卡片实际宽度 × dpr 取目标像素宽
+                    autoCacheWidth: true,
                     headers: widget.rule.baseUrl.isNotEmpty ? {'referer': widget.rule.baseUrl} : null,
                   ),
                   // 底部轻度渐变微遮罩
@@ -803,6 +805,8 @@ class _RuleCatalogPageState extends State<RuleCatalogPage> {
             AppImage(
               imageUrl: item.cover,
               fit: BoxFit.cover,
+              // 解码降采样：按卡片实际宽度 × dpr 取目标像素宽
+              autoCacheWidth: true,
               headers: widget.rule.baseUrl.isNotEmpty ? {'referer': widget.rule.baseUrl} : null,
             ),
             // 底部渐变暗色遮罩
@@ -902,6 +906,8 @@ class _RuleCatalogPageState extends State<RuleCatalogPage> {
                   AppImage(
                     imageUrl: item.cover,
                     fit: BoxFit.cover,
+                    // 解码降采样：按卡片实际宽度 × dpr 取目标像素宽
+                    autoCacheWidth: true,
                     headers: widget.rule.baseUrl.isNotEmpty ? {'referer': widget.rule.baseUrl} : null,
                   ),
                   if (item.badge.isNotEmpty)
@@ -1010,6 +1016,8 @@ class _RuleCatalogPageState extends State<RuleCatalogPage> {
                   child: AppImage(
                     imageUrl: item.cover,
                     fit: BoxFit.cover,
+                    // 解码降采样：按卡片实际宽度 × dpr 取目标像素宽
+                    autoCacheWidth: true,
                     headers: widget.rule.baseUrl.isNotEmpty ? {'referer': widget.rule.baseUrl} : null,
                   ),
                 ),

@@ -65,6 +65,8 @@ class SearchVideoGridCard extends StatelessWidget {
                   AppImage(
                     imageUrl: item.cover,
                     fit: BoxFit.cover,
+                    // 解码降采样：卡片宽度由列数与屏宽共同决定，交给组件按实际约束宽度算
+                    autoCacheWidth: true,
                     headers: item.baseUrl.isNotEmpty ? {'referer': item.baseUrl} : null,
                   ),
                   Positioned(
@@ -194,6 +196,8 @@ class SearchPosterGridCard extends StatelessWidget {
           AppImage(
             imageUrl: item.cover,
             fit: BoxFit.cover,
+            // 解码降采样：按卡片实际宽度 × dpr 取目标像素宽
+            autoCacheWidth: true,
             headers: item.baseUrl.isNotEmpty ? {'referer': item.baseUrl} : null,
           ),
           // 底部暗色渐变遮罩 (保证标题清晰易读)

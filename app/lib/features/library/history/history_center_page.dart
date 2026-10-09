@@ -152,46 +152,64 @@ class _HistoryCenterPageState extends State<HistoryCenterPage> {
                         .where((r) => r.mediaType == _selectedFilter)
                         .toList();
 
-              return ListView(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-                children: [
-                  // 1. 观看与阅读历史
-                  _buildSectionHeader(
-                    isDark: isDark,
-                    title: '观看与阅读历史',
-                    count: records.length,
-                  ),
-                  const SizedBox(height: 10),
-                  if (filtered.isEmpty)
-                    _buildEmptyHint(
-                      isDark: isDark,
-                      icon: Ionicons.timeOutline,
-                      text: records.isEmpty
-                          ? '暂无观看或阅读记录，去发现页开启第一段旅程'
-                          : '当前筛选类型下暂无记录',
-                    )
-                  else
-                    ...filtered.map(
-                      (record) => _buildRecordCard(record, isDark),
+              // 懒构建：历史最多 200 条、每条都含封面，塞进 children 会一次性构造全部卡片；
+              // 而播放中记录每几秒就会发布一次，全量重建的代价会被反复放大。
+              // 下列 SliverPadding 的边距配置与原先 ListView(padding) 完全等价。
+              return CustomScrollView(
+                slivers: [
+                  SliverPadding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                    sliver: SliverList.list(
+                      children: [
+                        // 1. 观看与阅读历史
+                        _buildSectionHeader(
+                          isDark: isDark,
+                          title: '观看与阅读历史',
+                          count: records.length,
+                        ),
+                        const SizedBox(height: 10),
+                        if (filtered.isEmpty)
+                          _buildEmptyHint(
+                            isDark: isDark,
+                            icon: Ionicons.timeOutline,
+                            text: records.isEmpty
+                                ? '暂无观看或阅读记录，去发现页开启第一段旅程'
+                                : '当前筛选类型下暂无记录',
+                          ),
+                      ],
                     ),
-
-                  const SizedBox(height: 24),
-
-                  // 2. 搜索足迹
-                  _buildSectionHeader(
-                    isDark: isDark,
-                    title: '搜索足迹',
-                    count: keywords.length,
                   ),
-                  const SizedBox(height: 10),
-                  if (keywords.isEmpty)
-                    _buildEmptyHint(
-                      isDark: isDark,
-                      icon: Ionicons.searchOutline,
-                      text: '暂无搜索足迹',
-                    )
-                  else
-                    _buildSearchChips(keywords, isDark),
+                  if (filtered.isNotEmpty)
+                    SliverPadding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      sliver: SliverList.builder(
+                        itemCount: filtered.length,
+                        itemBuilder: (context, index) =>
+                            _buildRecordCard(filtered[index], isDark),
+                      ),
+                    ),
+                  SliverPadding(
+                    padding: const EdgeInsets.fromLTRB(16, 24, 16, 24),
+                    sliver: SliverList.list(
+                      children: [
+                        // 2. 搜索足迹
+                        _buildSectionHeader(
+                          isDark: isDark,
+                          title: '搜索足迹',
+                          count: keywords.length,
+                        ),
+                        const SizedBox(height: 10),
+                        if (keywords.isEmpty)
+                          _buildEmptyHint(
+                            isDark: isDark,
+                            icon: Ionicons.searchOutline,
+                            text: '暂无搜索足迹',
+                          )
+                        else
+                          _buildSearchChips(keywords, isDark),
+                      ],
+                    ),
+                  ),
                 ],
               );
             },
@@ -272,7 +290,13 @@ class _HistoryCenterPageState extends State<HistoryCenterPage> {
             child: SizedBox(
               width: 56,
               height: 74,
-              child: AppImage(imageUrl: record.cover, fit: BoxFit.cover),
+              // 解码降采样：展示位仅 56×74，按 dpr 取目标像素宽
+              child: AppImage(
+                imageUrl: record.cover,
+                fit: BoxFit.cover,
+                cacheWidth:
+                    (56 * MediaQuery.devicePixelRatioOf(context)).round(),
+              ),
             ),
           ),
           const SizedBox(width: 12),

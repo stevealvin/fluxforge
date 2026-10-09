@@ -250,7 +250,13 @@ class _DownloadManagerPageState extends State<DownloadManagerPage> {
                 child: SizedBox(
                   width: 52,
                   height: 70,
-                  child: AppImage(imageUrl: task.cover, fit: BoxFit.cover),
+                  // 解码降采样：展示位仅 52×70，按 dpr 取目标像素宽
+                  child: AppImage(
+                    imageUrl: task.cover,
+                    fit: BoxFit.cover,
+                    cacheWidth:
+                        (52 * MediaQuery.devicePixelRatioOf(context)).round(),
+                  ),
                 ),
               ),
               const SizedBox(width: 12),

@@ -41,6 +41,8 @@ class _MarketPageState extends State<MarketPage> {
 
     try {
       final response = await apiClient.get(marketApiUrl);
+      // 请求返回前页面可能已退出：一次守卫覆盖后面所有 setState
+      if (!mounted) return;
       if (response.statusCode == 200) {
         final data = response.data;
         List<dynamic> list = [];
@@ -66,6 +68,7 @@ class _MarketPageState extends State<MarketPage> {
         });
       }
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _errorMessage = '网络请求异常，请检查网络连接: $e';
         _loading = false;

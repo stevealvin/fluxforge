@@ -184,6 +184,38 @@ void main() {
     expect(pageChanges.length, 1, reason: '一次甩动仍只定位一次');
   });
 
+  testWidgets('长图模式：滚动期间页码仍实时回写（测量节流不得牵连索引）', (tester) async {
+    final pageChanges = <int>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ComicReaderPage(
+          imageList: longGallery(),
+          initialIndex: 0,
+          initialContinuousMode: true,
+          onPageChanged: (index, _) => pageChanges.add(index),
+        ),
+      ),
+    );
+    await settleFrames(tester);
+
+    // 逐帧小幅上滑，模拟真实滚动：测量被时间节流，但索引回写必须逐帧照常
+    final gesture = await tester.startGesture(
+      tester.getCenter(find.byType(ListView)),
+    );
+    for (int i = 0; i < 20; i++) {
+      await gesture.moveBy(const Offset(0, -60));
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    await gesture.up();
+    await settleFrames(tester);
+
+    expect(
+      pageChanges,
+      isNotEmpty,
+      reason: '页码显示与「看到第几页」上报都挂在索引回写上，不能被滚动测量节流牵连',
+    );
+  });
+
   testWidgets('长图模式：按 initialIndex 打开时定位到该张（不回到第一张）', (tester) async {
     await tester.pumpWidget(
       MaterialApp(

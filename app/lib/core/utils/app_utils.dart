@@ -1,6 +1,4 @@
-﻿import 'dart:async';
-
-/// FluxForge 全局常用纯函数与工具类集合
+﻿/// FluxForge 全局常用纯函数与工具类集合
 class AppUtils {
   AppUtils._();
 
@@ -42,17 +40,4 @@ class AppUtils {
     return formatDate(dateTime);
   }
 
-  /// 创建通用防抖器 (Debouncer)
-  static void debounce(
-    String tag,
-    Duration duration,
-    void Function() action, {
-    Map<String, Timer>? timerMap,
-  }) {
-    final activeMap = timerMap ?? _defaultDebounceTimers;
-    activeMap[tag]?.cancel();
-    activeMap[tag] = Timer(duration, action);
-  }
-
-  static final Map<String, Timer> _defaultDebounceTimers = {};
 }

@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:fluxforge/shared/widgets/app_image.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:video_player/video_player.dart';
 
@@ -38,10 +39,13 @@ class PlayerVideoSurface extends StatelessWidget {
     if (!isInitialized || ctrl == null) {
       // 未就绪时若有封面则显示海报封面
       if (coverUrl != null && coverUrl!.isNotEmpty) {
-        return Image.network(
-          coverUrl!,
+        // 统一走 AppImage（全仓图片唯一出口）：协议校验、请求头兜底、磁盘缓存、
+        // 解码降采样与失败兜底都收在组件里 —— 裸 Image.network 这些一项都没有
+        return AppImage(
+          imageUrl: coverUrl!,
           fit: BoxFit.cover,
-          errorBuilder: (context, error, stackTrace) => const SizedBox.shrink(),
+          autoCacheWidth: true,
+          errorWidget: const SizedBox.shrink(),
         );
       }
       return const SizedBox.shrink();
