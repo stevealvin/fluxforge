@@ -2,7 +2,7 @@
 /// 
 /// 为 WebView 内置的 HTML5 视频播放提供原生级全功能手势交互：
 /// 1. 严格全屏限定：固定仅在全屏状态下（含 HTML5 原生全屏与移动端 CSS 视口全屏）才激活手势，非全屏完全放行网页原生浏览与滚动；
-/// 2. 水平横向滑动：快进/快退，屏幕中央高颜值毛玻璃 HUD 实时提示【+XXs】或【-XXs】与进度时间；
+/// 2. 水平横向滑动：快进/快退，屏幕中上部无边框半透明 HUD 实时提示【+XXs】或【-XXs】与进度时间；
 /// 3. 左侧纵向滑动：调节视频画面亮度（0% ~ 100%），HUD 极简紧凑显示【亮度 XX%】与金色刻度条（已剔除冗余说明文本）；
 /// 4. 右侧纵向滑动：调节视频播放音量（0% ~ 100%），HUD 极简紧凑显示【音量 XX%】与天蓝刻度条（已剔除冗余说明文本）；
 /// 5. 长按视频区域：瞬时触发加速倍速播放 (倍率可在设置中配置)，松手恢复原速；
@@ -92,12 +92,13 @@ class WebVideoGestureEngine {
         .__ff_video_hud {
           position: fixed;
           left: 50%;
-          top: 50%;
+          /* 位置靠上：从屏幕正中上移到中上部，避开画面视觉中心 */
+          top: 38%;
           transform: translate(-50%, -50%) scale(0.9);
-          background: rgba(15, 23, 42, 0.55);
+          background: rgba(15, 23, 42, 0.30);
           backdrop-filter: blur(28px);
           -webkit-backdrop-filter: blur(28px);
-          border: 1px solid rgba(255, 255, 255, 0.24);
+          /* 已移除描边：提示完全依赖半透明底色与投影融入画面，不再有生硬边框 */
           border-radius: 14px;
           padding: 10px 18px;
           color: #ffffff;

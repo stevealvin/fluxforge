@@ -415,18 +415,11 @@ class _MediaDetailPageState extends State<MediaDetailPage> {
           Expanded(
             child: Text(
               _data.title.isNotEmpty ? _data.title : widget.title,
-              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              // 与头部主标题同字重：同一个作品名在两处出现，不必一处粗一处细
+              style: const TextStyle(fontSize: 16),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
-          ),
-          IconButton(
-            icon: Icon(
-              Ionicons.refreshOutline,
-              color: isDark ? Colors.white70 : AppColors.lightTextSecondary,
-              size: 18,
-            ),
-            onPressed: _loadDetail,
           ),
           // 收藏入口：与「离线下载」并列，图标随收藏状态切换
           if (!_loading && _error == null)
