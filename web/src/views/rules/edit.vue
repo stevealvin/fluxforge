@@ -29,7 +29,8 @@ import {
   Eye,
   History,
   RotateCcw,
-  Wrench
+  Wrench,
+  Trash2
 } from '@lucide/vue'
 import CodeEditor from '@/components/CodeEditor/index.vue'
 import RuleWorkbenchModal from './components/RuleWorkbenchModal.vue'
@@ -325,6 +326,40 @@ const exportRule = () => {
   }
 }
 
+// 删除当前规则
+//
+// 与列表页同一条动作（ruleService.deleteRule），差别只在收尾：这里要先把这个
+// 编辑标签页关掉，否则页面会停在一个指向已删除数据的编辑器上。
+// closeTab 会返回下一个该激活的标签路径；没有则回规则列表。
+const deleteLoading = ref(false)
+
+// 只有「已存在的规则 + 数据确实读到了」才给删除入口：
+// 加载失败时（例如这条规则已被别处删掉）再摆一个删除按钮只会误导
+const canDelete = computed(() => !!route.query.id && !loadError.value)
+
+const onDelete = async () => {
+  const id = route.query.id
+  if (!id) return
+
+  deleteLoading.value = true
+  try {
+    await ruleService.deleteRule(id as string)
+    message.success(`已成功删除规则: ${form.value.name || id}`)
+
+    // 列表页被 keep-alive 缓存着，而它的首屏加载写在 setup 里（只在实例创建时跑一次）：
+    // 换掉缓存 key 让下次显示时重新挂载，否则刚删掉的那条还会留在列表上
+    tabsStore.refreshTab('/rules')
+
+    const nextPath = tabsStore.closeTab(route.fullPath)
+    router.replace(nextPath || '/rules')
+  } catch (error: any) {
+    console.error('Failed to delete rule:', error)
+    message.error('删除规则失败: ' + (error?.message || '请稍后重试'))
+  } finally {
+    deleteLoading.value = false
+  }
+}
+
 // 智能识别站点元数据 (基于站点首页 HTML 与域名提炼站点名称与描述)
 const identifyingSite = ref(false)
 const handleIdentifySite = async () => {
@@ -570,6 +605,30 @@ onUnmounted(() => {
             <Download class="w-3.5 h-3.5" />
           </template>
         </n-button>
+
+        <!-- 删除规则：图标与确认文案与列表页保持一致，只在编辑已有规则时出现。
+             破坏性动作放在最右与保存之间，并用一条分隔线隔开，避免误点。 -->
+        <div
+          v-if="canDelete"
+          class="w-px h-4 bg-zinc-200 dark:bg-white/10 mx-0.5"
+        ></div>
+
+        <n-popconfirm v-if="canDelete" @positive-click="onDelete">
+          <template #trigger>
+            <n-button
+              size="small"
+              secondary
+              class="!rounded-xl !text-zinc-400 hover:!text-rose-500"
+              :loading="deleteLoading"
+              title="删除规则"
+            >
+              <template #icon>
+                <Trash2 class="w-3.5 h-3.5" />
+              </template>
+            </n-button>
+          </template>
+          确定要删除规则「{{ form.name || '未命名规则' }}」吗？该操作不可撤销。
+        </n-popconfirm>
 
         <!-- 保存按钮 (Ctrl+S) -->
         <n-button
