@@ -65,8 +65,9 @@ class _VideoMetaSectionState extends State<VideoMetaSection> {
               child: Text(
                 widget.title,
                 style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w600,
+                  // 与小说 / 图集共用的 MediaMetaHeader 同为「不加粗」口径；
+                  // 字号这里取 16（共用头部是 16.5 / 无封面时 18）
+                  fontSize: 16,
                   letterSpacing: -0.2,
                   height: 1.3,
                 ),

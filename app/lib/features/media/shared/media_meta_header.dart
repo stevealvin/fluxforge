@@ -280,9 +280,9 @@ class _MediaMetaHeaderState extends State<MediaMetaHeader> {
               child: Text(
                 _displayTitle,
                 style: TextStyle(
-                  // 标题不再是唯一的大字：下面紧跟标签与元信息，收小一档更透气
+                  // 标题不再是唯一的大字：下面紧跟标签与元信息，收小一档更透气。
+                  // 字重也不再加粗：层级交给字号与颜色，粗体留给标签一类的小字。
                   fontSize: widget.showCover ? 16.5 : 18,
-                  fontWeight: FontWeight.bold,
                   height: 1.3,
                 ),
                 maxLines: widget.showCover ? 2 : 3,
