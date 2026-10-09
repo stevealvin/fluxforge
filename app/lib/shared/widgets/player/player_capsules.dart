@@ -1,5 +1,3 @@
-import 'dart:ui' show ImageFilter;
-
 import 'package:material_ui/material_ui.dart';
 import 'package:ionicons/ionicons.dart';
 
@@ -39,40 +37,40 @@ class PlayerVerticalIndicatorCapsule extends StatelessWidget {
     final body = Center(
       child: ClipRRect(
         borderRadius: BorderRadius.circular(20),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-          child: Container(
-            width: 38,
-            height: 140,
-            padding: const EdgeInsets.symmetric(vertical: 12),
-            color: Colors.black.withValues(alpha: 0.65),
-            child: Column(
-              children: [
-                Icon(icon, color: Colors.white, size: 18),
-                const Spacer(),
-                Expanded(
-                  flex: 6,
-                  child: RotatedBox(
-                    quarterTurns: -1,
-                    child: LinearProgressIndicator(
-                      value: value,
-                      backgroundColor: Colors.white24,
-                      valueColor: const AlwaysStoppedAnimation<Color>(AppColors.primary),
-                      borderRadius: BorderRadius.circular(4),
+        child: Container(
+          width: 38,
+          height: 140,
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          // 与快进退 / 长按胶囊一致：不用毛玻璃（模糊会把竖条与百分比一起糊掉）
+          color: Colors.black.withValues(alpha: 0.65),
+          child: Column(
+            children: [
+              Icon(icon, color: Colors.white, size: 18),
+              const Spacer(),
+              Expanded(
+                flex: 6,
+                child: RotatedBox(
+                  quarterTurns: -1,
+                  child: LinearProgressIndicator(
+                    value: value,
+                    backgroundColor: Colors.white24,
+                    valueColor: const AlwaysStoppedAnimation<Color>(
+                      AppColors.primary,
                     ),
+                    borderRadius: BorderRadius.circular(4),
                   ),
                 ),
-                const Spacer(),
-                Text(
-                  '${(value * 100).round()}%',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 9,
-                    fontWeight: FontWeight.bold,
-                  ),
+              ),
+              const Spacer(),
+              Text(
+                '${(value * 100).round()}%',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 9,
+                  fontWeight: FontWeight.bold,
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
@@ -102,55 +100,54 @@ class PlayerSeekingCapsule extends StatelessWidget {
   Widget build(BuildContext context) {
     final isForward = deltaSeconds >= 0;
 
-    return Center(
+    // 略高于正中：居中时会正好压在画面主体（人脸）上，中上部也更接近播放器惯例
+    return Align(
+      alignment: const Alignment(0, -0.3),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(16),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 9),
-            decoration: BoxDecoration(
-              // 取消外围边框线，进一步提升半透明通透感
-              color: Colors.black.withValues(alpha: 0.35),
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // 第一行：方向圆角图标 + 快进/快退秒数（统一纯白）
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      isForward
-                          ? Ionicons.playForwardOutline
-                          : Ionicons.playBackOutline,
-                      color: Colors.white,
-                      size: 18,
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      '${isForward ? '+' : ''}${deltaSeconds}s',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 3),
-                // 第二行：目标时间 / 视频总时长
-                Text(
-                  targetLabel,
-                  style: const TextStyle(
-                    color: Colors.white70,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w500,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 9),
+          decoration: BoxDecoration(
+            // 去掉毛玻璃后必须提高不透明度：35% 的黑在运动画面上会让文字发飘
+            color: Colors.black.withValues(alpha: 0.62),
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // 第一行：方向圆角图标 + 快进/快退秒数（统一纯白）
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    isForward
+                        ? Ionicons.playForwardOutline
+                        : Ionicons.playBackOutline,
+                    color: Colors.white,
+                    size: 18,
                   ),
+                  const SizedBox(width: 6),
+                  Text(
+                    '${isForward ? '+' : ''}${deltaSeconds}s',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 3),
+              // 第二行：目标时间 / 视频总时长
+              Text(
+                targetLabel,
+                style: const TextStyle(
+                  color: Colors.white70,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w500,
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
@@ -172,31 +169,28 @@ class PlayerFastForwardCapsule extends StatelessWidget {
       child: Center(
         child: ClipRRect(
           borderRadius: BorderRadius.circular(20),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-            child: Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-              color: Colors.black.withValues(alpha: 0.42),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(
-                    Ionicons.playForwardOutline,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            // 同上：没有毛玻璃兜底后提高不透明度，保住可读性
+            color: Colors.black.withValues(alpha: 0.62),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(
+                  Ionicons.playForwardOutline,
+                  color: Colors.white,
+                  size: 20,
+                ),
+                const SizedBox(width: 5),
+                Text(
+                  '${_formatSpeed(speed)}X',
+                  style: const TextStyle(
                     color: Colors.white,
-                    size: 20,
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
                   ),
-                  const SizedBox(width: 5),
-                  Text(
-                    '${_formatSpeed(speed)}X',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 14,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ),
