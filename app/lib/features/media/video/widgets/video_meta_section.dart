@@ -62,17 +62,21 @@ class _VideoMetaSectionState extends State<VideoMetaSection> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Expanded(
-              child: Text(
-                widget.title,
-                style: const TextStyle(
-                  // 与小说 / 图集共用的 MediaMetaHeader 同为「不加粗」口径；
-                  // 字号这里取 16（共用头部是 16.5 / 无封面时 18）
-                  fontSize: 16,
-                  letterSpacing: -0.2,
-                  height: 1.3,
+              // 与小说 / 图集共用的 MediaMetaHeader 同口径：标题可长按选中复制。
+              // 用 SelectionArea 包纯 Text（而非 SelectableText），理由见该组件处的注释
+              child: SelectionArea(
+                child: Text(
+                  widget.title,
+                  style: const TextStyle(
+                    // 与小说 / 图集共用的 MediaMetaHeader 同为「不加粗」口径；
+                    // 字号这里取 16（共用头部是 16.5 / 无封面时 18）
+                    fontSize: 16,
+                    letterSpacing: -0.2,
+                    height: 1.3,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                 ),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
               ),
             ),
             if (widget.onShareTap != null) ...[

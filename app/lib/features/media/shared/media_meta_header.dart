@@ -277,16 +277,23 @@ class _MediaMetaHeaderState extends State<MediaMetaHeader> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Expanded(
-              child: Text(
-                _displayTitle,
-                style: TextStyle(
-                  // 标题不再是唯一的大字：下面紧跟标签与元信息，收小一档更透气。
-                  // 字重也不再加粗：层级交给字号与颜色，粗体留给标签一类的小字。
-                  fontSize: widget.showCover ? 16.5 : 18,
-                  height: 1.3,
+              // 标题可长按选中复制（作品名常要拿去别处搜索）
+              //
+              // 用 SelectionArea 包住纯 Text，而不是换成 SelectableText：后者每个实例
+              // 都会建立独立的 EditableText 与选择容器，还自带一个 Scrollable，
+              // 在详情页这层滚动里得额外压制手势冲突（同类取舍见阅读器的长卷实现）。
+              child: SelectionArea(
+                child: Text(
+                  _displayTitle,
+                  style: TextStyle(
+                    // 标题不再是唯一的大字：下面紧跟标签与元信息，收小一档更透气。
+                    // 字重也不再加粗：层级交给字号与颜色，粗体留给标签一类的小字。
+                    fontSize: widget.showCover ? 16.5 : 18,
+                    height: 1.3,
+                  ),
+                  maxLines: widget.showCover ? 2 : 3,
+                  overflow: TextOverflow.ellipsis,
                 ),
-                maxLines: widget.showCover ? 2 : 3,
-                overflow: TextOverflow.ellipsis,
               ),
             ),
             if (widget.onShareTap != null)

@@ -124,6 +124,31 @@ void main() {
     expect(title.style?.fontSize, 16.5);
   });
 
+  testWidgets('标题可长按选中：用 SelectionArea 包纯 Text，而非 SelectableText', (
+    WidgetTester tester,
+  ) async {
+    await pumpHeader(tester);
+
+    expect(
+      find.ancestor(
+        of: find.text('测试书名'),
+        matching: find.byType(SelectionArea),
+      ),
+      findsOneWidget,
+    );
+    // 不换成 SelectableText：它每个实例都会建独立的 EditableText 与选择容器，
+    // 还自带一个 Scrollable，在详情页这层滚动里得额外压制手势冲突
+    expect(find.byType(SelectableText), findsNothing);
+
+    // 真正的验收：标题被注册进了选择容器，长按才能划词（仅断言「有 SelectionArea」
+    // 不足以证明这一点 —— 子树里的 Text 没注册就走不到这一步）
+    expect(
+      SelectionContainer.maybeOf(tester.element(find.text('测试书名'))),
+      isNotNull,
+      reason: '标题应处于选择容器内，否则长按选不中',
+    );
+  });
+
   testWidgets('作品简介平铺展示：不再是卡片，且整段可展开/收起', (WidgetTester tester) async {
     await pumpHeader(tester);
 
