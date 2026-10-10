@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:fluxforge/domain/media/media_kind.dart';
 import 'package:fluxforge/domain/rule/rule.dart';
 import 'package:fluxforge/features/search/engines/search_aggregator.dart';
 import 'package:fluxforge/features/search/models/rule_search_status.dart';
@@ -58,6 +59,64 @@ void main() {
       expect(SearchAggregator.isVideoRule(rule(type: 'novel')), isFalse);
       expect(SearchAggregator.isVideoRule(rule(type: 'picture')), isFalse);
       expect(SearchAggregator.isVideoRule(rule(type: '  NOVEL  ')), isFalse);
+    });
+  });
+
+  group('filterRulesByKind / kindOfRule（类型收窄）', () {
+    final rules = [
+      rule(id: 1, name: '影视A', type: 'video'),
+      rule(id: 2, name: '影视B', type: 'tv'),
+      rule(id: 3, name: '小说A', type: 'novel'),
+      rule(id: 4, name: '漫画A', type: 'comic'),
+      rule(id: 5, name: '未标注', type: ''),
+    ];
+
+    test('all 原样返回，不做任何过滤', () {
+      expect(
+        SearchAggregator.filterRulesByKind(rules, MediaKind.all).length,
+        rules.length,
+      );
+    });
+
+    test('按类型只保留匹配的源（未标注类型归入影视）', () {
+      expect(
+        SearchAggregator.filterRulesByKind(rules, MediaKind.video)
+            .map((r) => r.name),
+        ['影视A', '影视B', '未标注'],
+      );
+      expect(
+        SearchAggregator.filterRulesByKind(rules, MediaKind.novel)
+            .map((r) => r.name),
+        ['小说A'],
+      );
+      expect(
+        SearchAggregator.filterRulesByKind(rules, MediaKind.comic)
+            .map((r) => r.name),
+        ['漫画A'],
+      );
+    });
+
+    test('三个分档之和等于全部：源不会被漏掉或重复计入', () {
+      final total = [
+        ...SearchAggregator.filterRulesByKind(rules, MediaKind.video),
+        ...SearchAggregator.filterRulesByKind(rules, MediaKind.novel),
+        ...SearchAggregator.filterRulesByKind(rules, MediaKind.comic),
+      ];
+      expect(
+        total.length,
+        rules.length,
+        reason: '未知类型必须有归属，否则「全部」与各分档的计数对不上',
+      );
+    });
+
+    test('kindOfRule 与 isVideoRule 口径一致', () {
+      for (final r in rules) {
+        expect(
+          SearchAggregator.kindOfRule(r) == MediaKind.video,
+          SearchAggregator.isVideoRule(r),
+          reason: r.name,
+        );
+      }
     });
   });
 

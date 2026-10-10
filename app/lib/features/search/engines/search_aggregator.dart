@@ -1,3 +1,4 @@
+import 'package:fluxforge/domain/media/media_kind.dart';
 import 'package:fluxforge/domain/rule/rule.dart';
 
 import 'package:fluxforge/features/search/models/rule_search_status.dart';
@@ -9,16 +10,6 @@ import 'package:fluxforge/features/search/models/search_result.dart';
 /// 不碰网络、不碰 BuildContext，因此可被单元测试直接覆盖。
 class SearchAggregator {
   const SearchAggregator._();
-
-  /// 视频类规则的媒体类型标识（命中则按 16:9 横版海报排版）
-  static const Set<String> _videoTypes = {
-    'video',
-    'tv',
-    'movie',
-    'anime',
-    'short',
-    '',
-  };
 
   /// 安全获取规则唯一标识 Key
   ///
@@ -43,8 +34,23 @@ class SearchAggregator {
   }
 
   /// 判断规则是否为视频类（含空类型兜底，未标注类型的源默认按视频排版）
-  static bool isVideoRule(Rule rule) {
-    return _videoTypes.contains(rule.type.toLowerCase().trim());
+  ///
+  /// 判定已下沉到 domain 层的 [isVideoRuleType]：规则目录卡片与发现页网格
+  /// 此前各自写了一份同样的类型列表，现在三处共用同一份。
+  static bool isVideoRule(Rule rule) => isVideoRuleType(rule.type);
+
+  /// 规则所属的媒体类型分组，供「按类型搜索」收窄源范围
+  static MediaKind kindOfRule(Rule rule) => mediaKindOfRuleType(rule.type);
+
+  /// 按媒体类型收窄规则集合（[kind] 为 [MediaKind.all] 时原样返回）
+  ///
+  /// 这是「单独选择类型搜索」的关键：类型决定**搜哪些源**（搜索前收窄），
+  /// 而不是搜完再过滤结果 —— 后者照样会唤醒其它类型源的沙箱并发起网络请求。
+  static List<Rule> filterRulesByKind(List<Rule> rules, MediaKind kind) {
+    if (kind == MediaKind.all) return rules;
+    return rules
+        .where((rule) => kindOfRule(rule) == kind)
+        .toList(growable: false);
   }
 
   /// 从沙箱返回值中提取条目列表

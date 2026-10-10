@@ -4,6 +4,7 @@ import 'package:fluxforge/app/router/app_navigator.dart';
 import 'package:ionicons/ionicons.dart';
 
 import 'package:fluxforge/app/theme/app_colors.dart';
+import 'package:fluxforge/domain/media/media_kind.dart';
 import 'package:fluxforge/domain/rule/rule.dart';
 import 'package:fluxforge/app/di/di.dart';
 import 'package:fluxforge/core/sandbox/rule_engine.dart';
@@ -221,15 +222,8 @@ class _DiscoverPageState extends State<DiscoverPage>
     );
   }
 
-  bool _isVideoRule(Rule rule) {
-    final t = rule.type.toLowerCase().trim();
-    return t == 'video' ||
-        t == 'tv' ||
-        t == 'movie' ||
-        t == 'anime' ||
-        t == 'short' ||
-        t.isEmpty;
-  }
+  /// 是否按 16:9 横版海报排版（判定收在 domain 层，与搜索结果、规则目录同源）
+  bool _isVideoRule(Rule rule) => isVideoRuleType(rule.type);
 
   /// 构建单个媒体海报卡片
   Widget _buildMediaCard(Map item, Rule currentRule) {

@@ -3,6 +3,7 @@ import 'package:fluxforge/app/router/app_navigator.dart';
 import 'package:ionicons/ionicons.dart';
 
 import 'package:fluxforge/app/theme/app_colors.dart';
+import 'package:fluxforge/domain/media/media_kind.dart';
 import 'package:fluxforge/domain/rule/rule.dart';
 import 'package:fluxforge/core/sandbox/rule_engine.dart';
 import 'package:fluxforge/shared/widgets/app_card.dart';
@@ -621,10 +622,8 @@ class _RuleCatalogPageState extends State<RuleCatalogPage> {
     );
   }
 
-  bool get _isVideoRule {
-    final t = widget.rule.type.toLowerCase().trim();
-    return t == 'video' || t == 'tv' || t == 'movie' || t == 'anime' || t == 'short' || t.isEmpty;
-  }
+  /// 是否按 16:9 横版海报排版（判定收在 domain 层，与搜索结果、发现页网格同源）
+  bool get _isVideoRule => isVideoRuleType(widget.rule.type);
 
   /// 网格海报视图（采用 CustomScrollView + SliverGrid + SliverToBoxAdapter 通栏 Footer）
   Widget _buildGridView(bool isDark) {
