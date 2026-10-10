@@ -37,7 +37,7 @@ void main() {
   NavigationBar barOf(WidgetTester tester) =>
       tester.widget<NavigationBar>(find.byType(NavigationBar));
 
-  testWidgets('底部栏顺序为 发现 / 收藏 / 规则 / 站点 / 我的', (WidgetTester tester) async {
+  testWidgets('底部栏顺序为 发现 / 规则 / 收藏 / 站点 / 我的', (WidgetTester tester) async {
     await pumpShell(tester);
 
     expect(

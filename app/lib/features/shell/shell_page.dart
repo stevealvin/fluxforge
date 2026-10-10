@@ -14,7 +14,7 @@ import 'package:fluxforge/features/sites/sites_page.dart';
 /// 底部导航各 Tab 的下标
 ///
 /// 顺序即 [PageView] 与 `NavigationBar.destinations` 的下标顺序：
-/// 发现 0 / 收藏 1 / 规则 2 / 站点 3 / 我的 4。
+/// 发现 0 / 规则 1 / 收藏 2 / 站点 3 / 我的 4。
 ///
 /// 只把需要**按名字引用**的下标抽成常量，其余下标只在本文件内按顺序使用：
 /// 写死数字在中间插入 Tab 时会静默跳错页（此前"在发现之后插入收藏、
@@ -84,7 +84,7 @@ class ShellPage extends HookWidget {
                 const RulesPage(),
                 const FavoritesPage(),
                 const SitesPage(),
-                // 「我的」页需注入切页回调，以支持资产卡「我的规则」直达规则 Tab
+                // 「我的」页无需切页回调：资产入口已改走 go_router（规则市场 / 历史 / 下载）
                 const ProfilePage(),
               ],
             ),
