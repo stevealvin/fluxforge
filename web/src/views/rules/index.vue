@@ -461,10 +461,13 @@ loadData()
 
       <!-- 3. 真实规则卡片网格 (一行4列) -->
       <div v-else class="grid gap-3.5 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-        <div
+        <n-card
           v-for="rule in list"
           :key="rule.id"
-          class="glass-panel glass-panel-hover rounded-2xl p-4 flex flex-col justify-between h-full group relative border border-emerald-100/60 dark:border-white/5"
+          hoverable
+          size="small"
+          class="group flex flex-col h-full"
+          content-style="flex: 1"
         >
           <!-- 上半部：图标、名称、开关、类型标签、域名胶囊、描述 -->
           <div class="space-y-2.5">
@@ -509,8 +512,11 @@ loadData()
             </p>
           </div>
 
-          <!-- 下半部：动作栏 (左侧完整源站链接，右侧快捷按钮组与编辑配置) -->
-          <div class="pt-2.5 mt-2.5 border-t border-emerald-100/50 dark:border-white/5 flex items-center justify-between gap-2 text-xs">
+          <!-- 下半部：动作栏 (左侧完整源站链接，右侧快捷按钮组与编辑配置)
+               改用 n-card 原生 action 插槽呈现 —— 分隔线与内边距交给组件，
+               与首页数据源卡片保持同一套卡片语言 -->
+          <template #action>
+            <div class="flex items-center justify-between gap-2 text-xs">
             <!-- 左侧：源站链接 (带 Globe 图标与文本) -->
             <a
               v-if="rule.baseUrl"
@@ -585,8 +591,9 @@ loadData()
                 <span>编辑</span>
               </n-button>
             </div>
-          </div>
-        </div>
+            </div>
+          </template>
+        </n-card>
       </div>
     </div>
 

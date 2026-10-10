@@ -299,10 +299,13 @@ onMounted(() => {
       </div>
 
       <div v-else class="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
-        <div
+        <n-card
           v-for="site in filteredSites"
           :key="site.id"
-          class="glass-panel glass-panel-hover rounded-2xl p-5 flex flex-col justify-between h-full group relative border border-emerald-100/60 dark:border-white/5"
+          hoverable
+          size="small"
+          class="group flex flex-col h-full"
+          content-style="flex: 1"
         >
           <!-- 上半部：站点头部与描述 -->
           <div class="space-y-3">
@@ -354,8 +357,10 @@ onMounted(() => {
             </div>
           </div>
 
-          <!-- 下半部：动作栏 (直达访问 & 复制链接 & 删除) -->
-          <div class="pt-4 mt-4 border-t border-emerald-100/50 dark:border-white/5 flex items-center justify-between text-xs">
+          <!-- 下半部：动作栏 (直达访问 & 复制链接 & 删除)
+               改用 n-card 原生 action 插槽，与首页数据源卡片同一套卡片语言 -->
+          <template #action>
+            <div class="flex items-center justify-between text-xs">
             <div class="flex items-center gap-1.5">
               <n-button
                 size="tiny"
@@ -397,8 +402,9 @@ onMounted(() => {
                 <ExternalLink class="w-3.5 h-3.5" />
               </template>
             </n-button>
-          </div>
-        </div>
+            </div>
+          </template>
+        </n-card>
       </div>
     </div>
 
