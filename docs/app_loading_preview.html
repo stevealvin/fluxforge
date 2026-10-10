@@ -433,6 +433,40 @@ function drawCometRing(ctx, size, t, C) {
   strokeCometCore(ctx, cx, cy, R, stroke, head, C.primary);
 }
 
+/** 淡底轨：极淡整圆（深 0.10 / 浅 0.06），仅大尺寸绘制。A6 / A7 共用 */
+function strokeBaseRing(ctx, cx, cy, R, stroke, C) {
+  ctx.lineWidth = stroke * 0.75;
+  ctx.lineCap = 'butt';
+  ctx.strokeStyle = rgba(C.primary, C.dark ? 0.1 : 0.06);
+  ctx.beginPath();
+  ctx.arc(cx, cy, R, 0, Math.PI * 2);
+  ctx.stroke();
+}
+
+/** A6 · 底轨 + 呼吸：补回整环的形体感，节奏交给弧长呼吸（匀速旋转，不再叠转速调制） */
+function drawCometRingBreath(ctx, size, t, C) {
+  const { small, stroke, R, cx, cy } = cometMetrics(size, 0.075, 2.8);
+  const u = (t / 1.4) % 1;
+  const head = -Math.PI / 2 + u * Math.PI * 2;
+  const breath = (Math.sin((t / 1.9) * Math.PI * 2 - Math.PI / 2) + 1) / 2;
+  const sweep = ((small ? 112 + 40 * breath : 88 + 62 * breath) * Math.PI) / 180;
+  if (small) return strokePlainArc(ctx, cx, cy, R, stroke, head, sweep, C.primary);
+  strokeBaseRing(ctx, cx, cy, R, stroke, C);
+  strokeCometTail(ctx, cx, cy, R, stroke, head, sweep, C);
+  strokeCometCore(ctx, cx, cy, R, stroke, head, C.primary);
+}
+
+/** A7 · 底轨 + 滑行：保留 A0 原有的正弦调速「滑行感」，只补一条淡底轨补齐形体 */
+function drawCometRingPhase(ctx, size, t, C) {
+  const { small, stroke, R, cx, cy } = cometMetrics(size, 0.075, 2.8);
+  const head = -Math.PI / 2 + cometPhase(t);
+  const sweep = ((small ? 130 : 112) * Math.PI) / 180;
+  if (small) return strokePlainArc(ctx, cx, cy, R, stroke, head, sweep, C.primary);
+  strokeBaseRing(ctx, cx, cy, R, stroke, C);
+  strokeCometTail(ctx, cx, cy, R, stroke, head, sweep, C);
+  strokeCometCore(ctx, cx, cy, R, stroke, head, C.primary);
+}
+
 /** A5 · 双尾对置：主尾（绿 112°）与对置短尾（蓝 54°）同步旋转，对称张力最强 */
 function drawCometTwin(ctx, size, t, C) {
   const { small, stroke, R, cx, cy } = cometMetrics(size, 0.072, 2.6);
@@ -575,6 +609,18 @@ function drawRibbon(ctx, size, t, C) {
    8. 方案清单与分组
    ============================================================ */
 const VARIANTS = {
+  cometRingBreath: {
+    name: 'A6 · 底轨 + 呼吸',
+    tag: '本轮新增 · 推荐',
+    desc: '在 A4 的淡底轨之上，把节奏交给弧长呼吸（匀速旋转，不再叠转速调制）：形体完整又有生命感，且不会因为转速忽快忽慢被误读成卡顿。',
+    draw: drawCometRingBreath,
+  },
+  cometRingPhase: {
+    name: 'A7 · 底轨 + 滑行',
+    tag: '本轮新增 · 改动最小',
+    desc: 'A0 的直系升级：完整保留原有的正弦调速「滑行感」，只补一条极淡底轨补齐形体。气质与现在真机上看到的 A0 最接近。',
+    draw: drawCometRingPhase,
+  },
   cometBase: {
     name: 'A0 · 基准版',
     tag: '上一轮看过的 A',
@@ -634,12 +680,17 @@ const VARIANTS = {
 /** 页面分组：A 系列为本轮重点，B / C 与现状留作备选对照 */
 const GROUPS = [
   {
-    title: '方案 A 系列 · 极光彗星环（本轮重点，共 6 版）',
+    title: '本轮新增 · A6 / A7（A0 落地后的两个升级方向）',
+    note: '两者都补了一条极淡底轨来补齐「环」的形体，差别只在节奏来源：A6 靠弧长呼吸，A7 保留原来的转速滑行。请对比两者的动态气质。',
+    keys: ['cometRingBreath', 'cometRingPhase'],
+  },
+  {
+    title: '方案 A 系列（上一轮，共 6 版）',
     note: '同一基底，差异只在线宽 / 弧长 / 彗核 / 底轨 / 颗粒 / 节奏 / 单双尾。请重点比较 14px 与 20px 两档。',
     keys: ['cometBase', 'cometSlim', 'cometBreath', 'cometDust', 'cometRing', 'cometTwin'],
   },
   {
-    title: '其它方向（已看过，保留备选）',
+    title: '其它方向（备选）',
     note: '若 A 系列都不合意，可回头考虑这两条路线，或维持现状。',
     keys: ['orbit', 'ribbon', 'legacy'],
   },

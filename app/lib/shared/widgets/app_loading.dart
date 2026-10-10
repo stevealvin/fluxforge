@@ -2,19 +2,28 @@ import 'dart:math' as math;
 import 'package:material_ui/material_ui.dart';
 import 'package:fluxforge/app/theme/app_colors.dart';
 
-/// 全局统一加载指示器组件（极光彗星环 · A0 基准版）
+/// 全局统一加载指示器组件（极光彗星环 · A1 轻量细尾）
 ///
 /// 零外部依赖，基于原生 Canvas CustomPainter + 单 Ticker 逐帧绘制。
-/// 视觉只剩三件东西：一段渐隐彗尾、一颗彗核亮点，以及随尺寸自适应的线宽 ——
-/// 相比此前「外环流光 + 反向差速内环 + 双层底轨 + 呼吸核心 + 中心光晕」的五层叠加大幅减负，
-/// 换来的是 14~20px 小尺寸下依然锐利可辨（此时自动降级为实色纯弧，不做渐变也不画彗核）。
+/// 视觉只有**一段渐隐彗尾**：尾部完全透明 → 头部实色，圆头收笔，
+/// 没有任何底轨、内环、光晕或彗核 —— 是全系列里最素净的一版。
+///
+/// 之所以敢「只留一段弧」，靠的是三处刻意的取舍：
+/// 1. **渐变拉长**（stops 0.44 / 0.80）：尾巴前半程几乎全透明，
+///    让弧看起来是"从无到有"地流动，而不是一根硬邦邦的短线；
+/// 2. **线更细**（大尺寸 0.055 比例、上限 2.1）：细弧本身更"轻"，
+///    不会在卡片与按钮里抢注意力；
+/// 3. **弧更短**（94°，小尺寸 112°）：留白更多，与"加载中"这种临时状态相称。
+///
+/// 旋转沿用正弦调制（1.4s 一圈，转速在 1x 上下浮动），避免匀速的机械感。
+/// 小尺寸（<20px）降级为实色纯弧：14px 下渐变会糊掉，纯色才够锐利。
 /// 配色随「曜夜极光翡翠 / 纯净星暮白」双主题自动切换。
 class AppLoading extends StatefulWidget {
   const AppLoading({
     super.key,
     this.message,
     this.size = 42.0,
-    this.strokeWidth = 2.8,
+    this.strokeWidth = 2.1,
     this.color,
   }) : isCompact = false;
 
@@ -97,7 +106,8 @@ class _AppLoadingState extends State<AppLoading>
 
     // 线宽自适应：小尺寸给更大的相对线宽（否则 14px 下几乎看不见），
     // 再用 clamp 收敛到 [1.2, strokeWidth]，保证调用方传入的细线意图不被突破。
-    final double adaptiveWidth = widget.size * (widget.size < 20 ? 0.115 : 0.075);
+    // A1 的大尺寸比例取 0.055（比 A0 的 0.075 更细）—— 这是「轻量」观感的一半来源。
+    final double adaptiveWidth = widget.size * (widget.size < 20 ? 0.115 : 0.055);
     final double maxWidth = math.max(1.2, widget.strokeWidth).toDouble();
     final double strokeWidth = adaptiveWidth.clamp(1.2, maxWidth).toDouble();
 
@@ -153,11 +163,10 @@ class _AppLoadingState extends State<AppLoading>
   }
 }
 
-/// 极光彗星环绘制器（A0 基准版）
+/// 极光彗星环绘制器（A1 · 轻量细尾）
 ///
-/// 绘制顺序只有两步：
-/// 1. 一段 112°（小尺寸 130°）的渐隐彗尾：尾部完全透明 → 头部实色，圆头收笔；
-/// 2. 头部一颗彗核亮点，让流动方向一眼可辨。
+/// 只画一段渐隐彗尾：尾部完全透明 → 头部实色，圆头收笔 ——
+/// 无底轨、无内环、无彗核，是全系列里元素最少的一版。
 /// 旋转相位 = 匀速角 + 一层正弦浮动，转速在 1x 上下呼吸，长时间盯着看也不机械。
 class _CometLoadingPainter extends CustomPainter {
   _CometLoadingPainter({
@@ -167,7 +176,7 @@ class _CometLoadingPainter extends CustomPainter {
     required this.strokeWidth,
   });
 
-  /// 0.0 ~ 1.0 的单圈进度（由 Ticker 驱动）
+  /// 0.0 ~ 1.0 的单圈进度（由 Ticker 驱动，1.4s 一圈）
   final double progress;
   final Color primaryColor;
   final Color secondaryColor;
@@ -183,19 +192,21 @@ class _CometLoadingPainter extends CustomPainter {
     if (radius <= 0) return;
 
     final center = Offset(size.width / 2, size.height / 2);
+    final isSmall = shortSide < 20;
 
     // 旋转相位：整体匀速 + 正弦调制 → 头部自 12 点方向起步并带轻微加减速
     final cycle = progress * 2 * math.pi;
-    final phase = cycle + math.sin(cycle) * 0.34;
+    final headAngle = cycle + math.sin(cycle) * 0.34 - math.pi / 2;
 
-    final sweepAngle = (shortSide < 20 ? 130 : 112) * math.pi / 180;
-    final headAngle = phase - math.pi / 2;
+    // 弧长：大尺寸 94°、小尺寸 112°（小圆上再短就只剩一个点了）
+    final sweepAngle = (isSmall ? 112 : 94) * math.pi / 180;
     final tailAngle = headAngle - sweepAngle;
+    final arcRect = Rect.fromCircle(center: center, radius: radius);
 
-    // 小尺寸降级：实色纯弧，零渐变，边缘最锐利
-    if (shortSide < 20) {
+    // 小尺寸降级：实色纯弧 —— 14px 下渐变会糊掉，纯色才够锐利
+    if (isSmall) {
       canvas.drawArc(
-        Rect.fromCircle(center: center, radius: radius),
+        arcRect,
         tailAngle,
         sweepAngle,
         false,
@@ -208,8 +219,9 @@ class _CometLoadingPainter extends CustomPainter {
       return;
     }
 
-    // 大尺寸：沿弧扫掠渐变（尾部透明 → 头部实色），圆头收笔
-    final arcRect = Rect.fromCircle(center: center, radius: radius);
+    // 大尺寸：沿弧扫掠渐变，圆头收笔。
+    // stops 0.44 / 0.80 比其它版更靠后 —— 尾巴前半程几乎全透明，
+    // 弧看起来是「从无到有」地流动，这是「轻量」观感的另一半来源。
     canvas.drawArc(
       arcRect,
       tailAngle,
@@ -228,20 +240,8 @@ class _CometLoadingPainter extends CustomPainter {
             secondaryColor,
             primaryColor,
           ],
-          stops: const [0.0, 0.3, 0.72, 1.0],
+          stops: const [0.0, 0.44, 0.80, 1.0],
         ).createShader(arcRect),
-    );
-
-    // 彗核：头部一颗实色亮点
-    canvas.drawCircle(
-      Offset(
-        center.dx + math.cos(headAngle) * radius,
-        center.dy + math.sin(headAngle) * radius,
-      ),
-      strokeWidth * 0.62,
-      Paint()
-        ..style = PaintingStyle.fill
-        ..color = primaryColor,
     );
   }
 
