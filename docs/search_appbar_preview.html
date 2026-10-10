@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>FluxForge · 搜索顶部栏布局方案</title>
+<!--
+  一次性设计预览稿：对比「筛选按钮放哪」对顶部栏空间的影响。
+  三个手机框按 375dp 真实宽度等比绘制，并标出输入框实际可用宽度。
+-->
+<style>
+  :root {
+    --page-bg: #EEF1F6; --page-fg: #0F172A; --page-sub: #64748B;
+    --card: #FFFFFF; --line: #E2E8F0; --brand: #059669;
+    --phone-body: #0B0F17; --shadow: 0 18px 44px rgba(15, 23, 42, 0.16);
+  }
+  body.dark {
+    --page-bg: #070A10; --page-fg: #F8FAFC; --page-sub: #94A3B8;
+    --card: #151C2C; --line: #1E293B; --brand: #34D399;
+    --phone-body: #000; --shadow: 0 18px 44px rgba(0,0,0,.6);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 26px 20px 60px; background: var(--page-bg); color: var(--page-fg);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased; transition: background .25s ease, color .25s ease;
+  }
+  header { max-width: 1240px; margin: 0 auto 22px; display: flex; gap: 14px; align-items: flex-end; justify-content: space-between; flex-wrap: wrap; }
+  h1 { font-size: 20px; margin: 0 0 8px; letter-spacing: -.3px; }
+  .hint { font-size: 12.5px; color: var(--page-sub); line-height: 1.75; margin: 0; max-width: 820px; }
+  .hint b { color: var(--brand); }
+  .hint code { background: var(--card); color: var(--brand); padding: 1px 5px; border-radius: 5px; font-size: 11.5px; }
+  .theme-btn { appearance: none; border: 1px solid var(--line); background: var(--card); color: var(--page-fg); font-size: 12.5px; padding: 9px 16px; border-radius: 10px; cursor: pointer; white-space: nowrap; }
+  .theme-btn:hover { border-color: var(--brand); }
+
+  .stage { max-width: 1240px; margin: 0 auto; display: flex; flex-wrap: wrap; gap: 26px; align-items: flex-start; }
+  .col { width: 375px; }
+  .col-title { font-size: 14px; font-weight: 700; margin: 0 0 4px; }
+  .col-title .tag { font-size: 10px; font-weight: 500; color: var(--brand); border: 1px solid var(--brand); border-radius: 6px; padding: 1px 6px; margin-left: 6px; vertical-align: 1px; }
+  .col-note { font-size: 11.5px; color: var(--page-sub); line-height: 1.65; margin: 0 0 10px; min-height: 96px; }
+  .col-note b { color: var(--brand); font-weight: 600; }
+  .col-note .w { display: inline-block; background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 0 5px; font-variant-numeric: tabular-nums; }
+
+  /* 375dp 宽的等比手机屏（只画顶部区域 + 一点结果上下文） */
+  .phone { width: 375px; border-radius: 26px; padding: 7px; background: var(--phone-body); box-shadow: var(--shadow); }
+  .screen {
+    border-radius: 20px; overflow: hidden; background: #F8FAFC; position: relative;
+    --fg: #0F172A; --sub: #64748B; --weak: #94A3B8;
+    --surface: #FFFFFF; --bg: #F8FAFC; --border: #E2E8F0; --chip: #F1F5F9;
+  }
+  .phone.dark-mode .screen {
+    background: #0A0D14;
+    --fg: #F8FAFC; --sub: #94A3B8; --weak: #64748B;
+    --surface: #151C2C; --bg: #0A0D14; --border: #1E293B; --chip: #1B2436;
+  }
+  .statusbar { height: 34px; display: flex; align-items: center; justify-content: space-between; padding: 0 20px; font-size: 11px; font-weight: 600; color: var(--fg); }
+
+  /* 顶部栏（AppBar 高 56dp，左右 padding 12） */
+  .appbar { height: 56px; display: flex; align-items: center; gap: 8px; padding: 0 12px; }
+  .back { width: 36px; flex: 0 0 36px; display: grid; place-items: center; color: var(--fg); font-size: 16px; }
+  .input {
+    flex: 1; height: 38px; border-radius: 10px; background: var(--surface);
+    border: 1px solid var(--border); display: flex; align-items: center; gap: 7px; padding: 0 10px;
+    font-size: 13px; color: var(--weak); overflow: hidden; white-space: nowrap;
+  }
+  .input.focus { border-color: var(--brand); border-width: 1.2px; }
+  .input .mag { color: var(--brand); font-size: 13px; flex: 0 0 auto; }
+  .input .ph { overflow: hidden; text-overflow: ellipsis; }
+  .input .clr { margin-left: auto; color: var(--weak); font-size: 12px; flex: 0 0 auto; }
+
+  /* 图标按钮（30×30，圆角 10） */
+  .ibtn {
+    width: 30px; height: 30px; flex: 0 0 30px; border-radius: 10px;
+    display: grid; place-items: center; font-size: 14px;
+    background: var(--chip); border: 1px solid var(--border); color: var(--sub);
+  }
+  .ibtn.on { background: var(--brand); border-color: var(--brand); color: #fff; }
+  .ibtn.stop { background: rgba(239,68,68,.12); border-color: rgba(239,68,68,.35); color: #EF4444; }
+
+  /* 文字按钮（搜索 / 停止，高 30，compact padding 10/4，字号 12） */
+  .tbtn {
+    height: 30px; flex: 0 0 auto; border-radius: 8px; padding: 0 10px;
+    display: flex; align-items: center; font-size: 12px; font-weight: 600;
+    background: var(--brand); color: #fff;
+  }
+  .tbtn.stop { background: rgba(239,68,68,.85); }
+  .tbtn.ghost { background: transparent; color: var(--brand); border: 1px solid rgba(5,150,105,.35); }
+
+  /* 第二行：检索范围栏 */
+  .row2 {
+    display: flex; align-items: center; gap: 8px; padding: 10px 12px 10px 16px;
+    border-bottom: .5px solid var(--border); background: var(--bg);
+  }
+  .scope { flex: 1; display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--weak); overflow: hidden; white-space: nowrap; }
+  .scope.on { color: var(--brand); font-weight: 600; }
+  .row2 .chips { flex: 1; display: flex; gap: 7px; overflow: hidden; }
+  .chip { font-size: 11.5px; padding: 4.5px 11px; border-radius: 14px; border: .8px solid var(--border); color: var(--sub); white-space: nowrap; }
+  .chip.on { background: var(--brand); border-color: var(--brand); color: #fff; font-weight: 700; }
+
+  .statusrow { display: flex; align-items: center; justify-content: space-between; padding: 8px 14px 6px; font-size: 11px; color: var(--weak); }
+  .statusrow .vt { color: var(--brand); }
+
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 2px 14px 14px; }
+  .poster { border-radius: 11px; aspect-ratio: 16/10; position: relative; overflow: hidden; }
+  .poster .cap { position: absolute; left: 0; right: 0; bottom: 0; padding: 16px 7px 5px; background: linear-gradient(to top, rgba(0,0,0,.7), transparent); color: #fff; font-size: 9.5px; font-weight: 600; }
+  .poster .bd { position: absolute; top: 6px; left: 6px; font-size: 8.5px; font-weight: 700; color: #fff; background: rgba(0,0,0,.55); padding: 2px 6px; border-radius: 5px; }
+  .carditem .nm { font-size: 11.5px; font-weight: 600; color: var(--fg); margin-top: 5px; }
+  .g1 { background: linear-gradient(150deg, #667eea, #764ba2); }
+  .g3 { background: linear-gradient(150deg, #4facfe, #00f2fe); }
+  .g5 { background: linear-gradient(150deg, #fa709a, #fee140); }
+  .g6 { background: linear-gradient(150deg, #30cfd0, #330867); }
+
+  /* 宽度标注 */
+  .measure { margin-top: 9px; font-size: 11px; color: var(--page-sub); display: flex; align-items: center; gap: 7px; }
+  .measure .bar { flex: 1; height: 5px; border-radius: 3px; background: var(--line); overflow: hidden; }
+  .measure .bar i { display: block; height: 100%; background: var(--brand); }
+  .measure .num { font-variant-numeric: tabular-nums; font-weight: 700; color: var(--page-fg); }
+
+  .legend { max-width: 1240px; margin: 26px auto 0; display: flex; flex-wrap: wrap; gap: 12px; }
+  .legend .lg { flex: 1 1 320px; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; }
+  .legend .lg h3 { font-size: 13px; margin: 0 0 7px; }
+  .legend .lg ul { margin: 0; padding-left: 17px; font-size: 11.5px; color: var(--page-sub); line-height: 1.85; }
+  .legend .lg b { color: var(--page-fg); }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>搜索顶部栏布局：筛选按钮放哪？</h1>
+    <p class="hint">
+      三个方案按 <b>375dp 真实屏宽</b>等比绘制，下方标尺是<b>输入框实得的可用宽度</b>。
+      关键事实：顶部栏现有「返回 + 输入框 + 搜索键」三项，再塞一个筛选按钮就会挤压输入框 ——
+      而占位文案「搜索海量影视、番剧、小说…」约需 200dp 才不被截断。
+    </p>
+  </div>
+  <button class="theme-btn" id="themeBtn">切换到深色主题</button>
+</header>
+
+<main class="stage" id="stage"></main>
+<section class="legend" id="legend"></section>
+
+<script>
+const mag = '⌕', gear = '⚙', play = '▶', stop = '■';
+const RESULTS = [
+  { g: 'g1', n: '星海拾遗', t: '电视剧' },
+  { g: 'g3', n: '星海漫游指南', t: '小说' },
+  { g: 'g5', n: '星海之下', t: '漫画' },
+  { g: 'g6', n: '星海纪元', t: '小说' },
+];
+
+const grid = () => `<div class="grid">${RESULTS.map((r) => `
+  <div class="carditem">
+    <div class="poster ${r.g}"><span class="bd">${r.t}</span><div class="cap">${r.n}</div></div>
+    <div class="nm">${r.n}</div>
+  </div>`).join('')}</div>`;
+
+const statusRow = () => `<div class="statusrow"><span>已汇聚 6 条检索结果</span><span class="vt">☰ 列表排版</span></div>`;
+
+/** 方案 A：筛选按钮留在第二行行尾（现状） */
+const PLAN_A = {
+  key: 'a',
+  title: '方案 A · 保持现状',
+  tag: '输入框最宽',
+  note: '筛选按钮仍在第二行行尾（与来源胶囊同一行）。顶部栏三件套不变，输入框实得 <span class="w">240dp</span>，占位文案完整显示。<b>代价</b>：筛选入口位置偏低，与「搜索条件」的心智关联弱一些。',
+  width: 240,
+  dark: false,
+  html: `
+    <div class="appbar">
+      <div class="back">‹</div>
+      <div class="input"><span class="mag">${mag}</span><span class="ph">搜索海量影视、番剧、小说...</span></div>
+      <div class="tbtn">搜索</div>
+    </div>
+    <div class="row2">
+      <span class="scope">⛃ 搜索全部类型的规则源</span>
+      <div class="ibtn">${gear}</div>
+    </div>
+    ${statusRow()}
+    ${grid()}`,
+};
+
+/** 方案 B：筛选进顶部栏 + 搜索键图标化 */
+const PLAN_B = {
+  key: 'b',
+  title: '方案 B · 筛选进顶栏 + 搜索键图标化',
+  tag: '两者都在',
+  note: '顶部栏变成「返回 + 输入框 + 筛选 + 搜索」，把文字「搜索」压成图标腾出空间。输入框实得 <span class="w">196dp</span> —— <b>占位文案会被截断</b>，且首屏出现两个不带文字的图标，辨识度略降。',
+  width: 196,
+  dark: false,
+  html: `
+    <div class="appbar">
+      <div class="back">‹</div>
+      <div class="input"><span class="mag">${mag}</span><span class="ph">搜索海量影视、番剧…</span></div>
+      <div class="ibtn">${gear}</div>
+      <div class="ibtn on">${play}</div>
+    </div>
+    <div class="row2">
+      <span class="scope">⛃ 搜索全部类型的规则源</span>
+    </div>
+    ${statusRow()}
+    ${grid()}`,
+};
+
+/** 方案 C：筛选进顶部栏 + 按状态互斥的单按钮位（推荐） */
+const PLAN_C = {
+  key: 'c',
+  title: '方案 C · 筛选进顶栏 + 单按钮位三态',
+  tag: '推荐',
+  note: '右侧只留<b>一个按钮位</b>，按状态换内容：输入框为空时是筛选 ⚙︎、有输入时是搜索、检索中是停止 ■。三者在时机上天然互斥，所以永不拥挤。输入框实得 <span class="w">240dp</span>，与现状一致 —— 等于「白拿」一个顶栏筛选入口。',
+  width: 240,
+  dark: false,
+  states: true,
+};
+
+const LEGEND = [
+  {
+    h: '方案 A · 保持现状（筛选在第二行行尾）',
+    lis: [
+      '输入框最宽（<b>240dp</b>），首屏文案完整，无任何拥挤风险',
+      '筛选按钮与来源胶囊同属「检索范围」，语义其实是自洽的',
+      '不足：位置偏低、视觉权重弱，容易被忽略',
+    ],
+  },
+  {
+    h: '方案 B · 顶栏放筛选 + 搜索键压成图标',
+    lis: [
+      '两个按钮都在，功能最直白',
+      '但输入框降到 <b>196dp</b>，占位文案必然截断；而且顶栏出现两个无文字图标，用户要猜',
+      '「搜索」是高频动作，压成图标（▶）语义弱，不够稳',
+    ],
+  },
+  {
+    h: '方案 C · 顶栏单按钮位按状态切换（推荐）',
+    lis: [
+      '空输入 → <b>⚙︎ 筛选</b>；有输入 → <b>搜索</b>；检索中 → <b>■ 停止</b>',
+      '三者时机天然互斥：不会同时需要「搜索」和「筛选」，所以一个位置就够',
+      '输入框保持 <b>240dp</b>，等于零成本得到一个顶栏筛选入口',
+      '注意：这意味着「输入框为空时没有搜索按钮」—— 搜索靠键盘回车键触发，这也是主流搜索页的做法',
+    ],
+  },
+];
+
+let darkMode = false;
+
+function render() {
+  const stage = document.getElementById('stage');
+  const cols = [];
+
+  for (const v of [PLAN_A, PLAN_B]) {
+    cols.push(`
+      <div class="col">
+        <h2 class="col-title">${v.title}<span class="tag">${v.tag}</span></h2>
+        <p class="col-note">${v.note}</p>
+        <div class="phone ${darkMode ? 'dark-mode' : ''}">
+          <div class="screen"><div class="statusbar"><span>9:41</span><span>▮▮▮ ⌁ 100%</span></div>${v.html}</div>
+        </div>
+        <div class="measure"><span>输入框可用宽度</span><span class="bar"><i style="width:${(v.width / 375 * 100).toFixed(1)}%"></i></span><span class="num">${v.width}dp</span></div>
+      </div>`);
+  }
+
+  // 方案 C：三个状态并排在一个框里（纵向堆叠三段顶栏）
+  cols.push(`
+    <div class="col">
+      <h2 class="col-title">${PLAN_C.title}<span class="tag">${PLAN_C.tag}</span></h2>
+      <p class="col-note">${PLAN_C.note}</p>
+      <div class="phone ${darkMode ? 'dark-mode' : ''}">
+        <div class="screen">
+          <div class="statusbar"><span>9:41</span><span>▮▮▮ ⌁ 100%</span></div>
+
+          <div class="appbar">
+            <div class="back">‹</div>
+            <div class="input"><span class="mag">${mag}</span><span class="ph">搜索海量影视、番剧、小说...</span></div>
+            <div class="ibtn">${gear}</div>
+          </div>
+          <div class="row2"><span class="scope">⛃ 搜索全部类型的规则源</span></div>
+          <div class="measure" style="padding:0 14px 8px;margin:0"><span>① 空输入 → 筛选</span><span class="bar"><i style="width:64%"></i></span><span class="num">240dp</span></div>
+
+          <div class="appbar" style="border-top:.5px solid var(--border)">
+            <div class="back">‹</div>
+            <div class="input focus"><span class="mag">${mag}</span><span class="ph" style="color:var(--fg)">星海</span><span class="clr">✕</span></div>
+            <div class="tbtn">搜索</div>
+          </div>
+          <div class="measure" style="padding:0 14px 10px;margin:0"><span>② 有输入 → 搜索</span><span class="bar"><i style="width:64%"></i></span><span class="num">240dp</span></div>
+
+          <div class="appbar" style="border-top:.5px solid var(--border)">
+            <div class="back">‹</div>
+            <div class="input"><span class="mag">${mag}</span><span class="ph" style="color:var(--fg)">星海</span></div>
+            <div class="ibtn stop">${stop}</div>
+          </div>
+          <div class="measure" style="padding:0 14px 12px;margin:0"><span>③ 检索中 → 停止</span><span class="bar"><i style="width:64%"></i></span><span class="num">240dp</span></div>
+
+          ${statusRow()}
+          ${grid()}
+        </div>
+      </div>
+      <div class="measure"><span>输入框可用宽度</span><span class="bar"><i style="width:64%"></i></span><span class="num">240dp</span></div>
+    </div>`);
+
+  stage.innerHTML = cols.join('');
+
+  document.getElementById('legend').innerHTML = LEGEND.map((l) => `
+    <div class="lg"><h3>${l.h}</h3><ul>${l.lis.map((x) => `<li>${x}</li>`).join('')}</ul></div>`).join('');
+}
+render();
+
+const themeBtn = document.getElementById('themeBtn');
+themeBtn.addEventListener('click', () => {
+  darkMode = !darkMode;
+  document.body.classList.toggle('dark', darkMode);
+  render();
+  themeBtn.textContent = darkMode ? '切换到浅色主题' : '切换到深色主题';
+});
+</script>
+</body>
+</html>

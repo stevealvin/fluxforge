@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>FluxForge · 搜索页筛选区重设计方案</title>
+<!--
+  说明：一次性的设计预览稿。四个手机框并排：现状对照 + 三套替代方案，
+  全部 CSS 手绘（不依赖网络图片），用于在改动 Flutter 代码前先定形态。
+-->
+<style>
+  :root {
+    --page-bg: #EEF1F6;
+    --page-fg: #0F172A;
+    --page-sub: #64748B;
+    --card: #FFFFFF;
+    --line: #E2E8F0;
+    --brand: #059669;
+    --phone-body: #0B0F17;
+    --shadow: 0 18px 44px rgba(15, 23, 42, 0.16);
+  }
+  body.dark {
+    --page-bg: #070A10;
+    --page-fg: #F8FAFC;
+    --page-sub: #94A3B8;
+    --card: #151C2C;
+    --line: #1E293B;
+    --brand: #34D399;
+    --phone-body: #000000;
+    --shadow: 0 18px 44px rgba(0, 0, 0, 0.6);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 26px 20px 60px;
+    background: var(--page-bg); color: var(--page-fg);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    transition: background .25s ease, color .25s ease;
+  }
+  header { max-width: 1560px; margin: 0 auto 22px; display: flex; gap: 14px; align-items: flex-end; justify-content: space-between; flex-wrap: wrap; }
+  h1 { font-size: 20px; margin: 0 0 8px; letter-spacing: -.3px; }
+  .hint { font-size: 12.5px; color: var(--page-sub); line-height: 1.75; margin: 0; max-width: 900px; }
+  .hint b { color: var(--brand); }
+  .hint code { background: var(--card); color: var(--brand); padding: 1px 5px; border-radius: 5px; font-size: 11.5px; }
+  .theme-btn {
+    appearance: none; border: 1px solid var(--line); background: var(--card); color: var(--page-fg);
+    font-size: 12.5px; padding: 9px 16px; border-radius: 10px; cursor: pointer; white-space: nowrap;
+  }
+  .theme-btn:hover { border-color: var(--brand); }
+
+  .stage { max-width: 1560px; margin: 0 auto; display: flex; flex-wrap: wrap; gap: 26px; align-items: flex-start; }
+  .col { width: 322px; }
+  .col-title { font-size: 14px; font-weight: 700; margin: 0 0 4px; }
+  .col-title .tag { font-size: 10px; font-weight: 500; color: var(--brand); border: 1px solid var(--brand); border-radius: 6px; padding: 1px 6px; margin-left: 6px; vertical-align: 1px; }
+  .col-note { font-size: 11.5px; color: var(--page-sub); line-height: 1.65; margin: 0 0 12px; min-height: 74px; }
+  .col-note b { color: var(--brand); font-weight: 600; }
+
+  .phone { width: 322px; height: 622px; border-radius: 38px; padding: 8px; background: var(--phone-body); box-shadow: var(--shadow); position: relative; }
+  .screen {
+    width: 100%; height: 100%; border-radius: 30px; overflow: hidden; background: #F8FAFC;
+    position: relative; display: flex; flex-direction: column;
+    --fg: #0F172A; --sub: #64748B; --weak: #94A3B8;
+    --surface: #FFFFFF; --bg: #F8FAFC; --border: #E2E8F0; --chip: #F1F5F9;
+  }
+  .phone.dark-mode .screen {
+    background: #0A0D14;
+    --fg: #F8FAFC; --sub: #94A3B8; --weak: #64748B;
+    --surface: #151C2C; --bg: #0A0D14; --border: #1E293B; --chip: #1B2436;
+  }
+  .notch { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); width: 96px; height: 20px; border-radius: 12px; background: #0B0F17; z-index: 30; }
+  .phone.dark-mode .notch { background: #000; }
+  .statusbar { height: 40px; flex: 0 0 40px; display: flex; align-items: center; justify-content: space-between; padding: 0 22px; font-size: 11px; font-weight: 600; color: var(--fg); position: relative; z-index: 20; }
+  .statusbar .icons { font-size: 10px; opacity: .85; }
+  .body-scroll { flex: 1; overflow: hidden; position: relative; display: flex; flex-direction: column; }
+
+  /* 顶栏与搜索框 */
+  .appbar { display: flex; align-items: center; gap: 9px; padding: 2px 14px 8px; }
+  .back { width: 22px; height: 22px; display: grid; place-items: center; color: var(--fg); font-size: 15px; }
+  .srch {
+    flex: 1; height: 34px; border-radius: 11px; background: var(--chip); border: 1px solid var(--border);
+    display: flex; align-items: center; gap: 7px; padding: 0 10px; font-size: 12.5px; color: var(--fg);
+  }
+  .srch .ph { color: var(--weak); }
+  .srch .clr { margin-left: auto; color: var(--weak); font-size: 12px; }
+  .cancel { font-size: 12.5px; color: var(--sub); white-space: nowrap; }
+  .filterbtn {
+    width: 30px; height: 30px; border-radius: 10px; display: grid; place-items: center;
+    background: var(--chip); border: 1px solid var(--border); color: var(--sub); font-size: 13px; position: relative;
+  }
+  .filterbtn.on { background: var(--brand); border-color: var(--brand); color: #fff; }
+  .filterbtn .dot { position: absolute; top: -2px; right: -2px; width: 7px; height: 7px; border-radius: 50%; background: #F97316; border: 1.5px solid var(--bg); }
+
+  /* 进度条 */
+  .progress { height: 2.5px; background: rgba(5,150,105,.14); }
+  .progress i { display: block; height: 100%; width: 62%; background: var(--brand); }
+
+  /* 分段控制器 */
+  .segwrap { padding: 10px 14px 0; }
+  .seg { display: flex; gap: 2px; padding: 3px; border-radius: 12px; background: var(--chip); border: 1px solid var(--border); }
+  .seg .item {
+    flex: 1; text-align: center; font-size: 11.5px; padding: 6px 2px; border-radius: 9px;
+    color: var(--sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .seg .item.on { background: var(--surface); color: var(--brand); font-weight: 700; box-shadow: 0 1px 3px rgba(15,23,42,.10); }
+  .phone.dark-mode .seg .item.on { background: var(--brand); color: #06120E; box-shadow: none; }
+  .seg .item.off { color: var(--weak); opacity: .55; }
+
+  /* 现状那两行胶囊 */
+  .chiprow { display: flex; gap: 7px; padding: 9px 14px 0; overflow: hidden; }
+  .chip { font-size: 11.5px; padding: 4.5px 11px; border-radius: 14px; border: .8px solid var(--border); color: var(--sub); background: transparent; white-space: nowrap; }
+  .chip.on { color: #fff; background: var(--brand); border-color: var(--brand); font-weight: 700; }
+  .phone.dark-mode .chip.on { color: #06120E; }
+  .phone.light-ver .chip.on { color: #fff; }
+
+  /* 弱化版源胶囊 */
+  .chiprow.soft .chip { border: 0; background: var(--chip); font-size: 11px; padding: 4px 10px; }
+  .chiprow.soft .chip.on { background: var(--brand); color: #fff; }
+
+  /* 状态行 */
+  .statusrow { display: flex; align-items: center; justify-content: space-between; padding: 9px 14px 7px; font-size: 11px; color: var(--weak); }
+  .srcinlinelink { color: var(--brand); font-weight: 600; }
+  .viewtoggle { display: flex; align-items: center; gap: 4px; color: var(--brand); }
+
+  /* 筛选摘要（方案 C） */
+  .summary { display: flex; align-items: center; gap: 6px; padding: 8px 14px 0; font-size: 11px; color: var(--sub); }
+  .summary .pill { background: rgba(5,150,105,.12); color: var(--brand); border-radius: 7px; padding: 2px 7px; font-weight: 600; }
+
+  /* 结果网格 */
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 4px 14px 0; overflow: hidden; }
+  .carditem .poster { border-radius: 11px; aspect-ratio: 16/10; position: relative; overflow: hidden; }
+  .carditem .poster .cap {
+    position: absolute; left: 0; right: 0; bottom: 0; padding: 16px 7px 5px;
+    background: linear-gradient(to top, rgba(0,0,0,.72), transparent);
+    color: #fff; font-size: 9.5px; font-weight: 600;
+  }
+  .carditem .nm { font-size: 11.5px; font-weight: 600; color: var(--fg); margin-top: 5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .carditem .sb { font-size: 10px; color: var(--weak); margin-top: 2px; }
+  .badge { position: absolute; top: 6px; left: 6px; font-size: 8.5px; font-weight: 700; color: #fff; background: rgba(0,0,0,.55); backdrop-filter: blur(6px); padding: 2px 6px; border-radius: 5px; }
+
+  .g1 { background: linear-gradient(150deg, #667eea, #764ba2); }
+  .g2 { background: linear-gradient(150deg, #f093fb, #f5576c); }
+  .g3 { background: linear-gradient(150deg, #4facfe, #00f2fe); }
+  .g4 { background: linear-gradient(150deg, #43e97b, #38f9d7); }
+  .g5 { background: linear-gradient(150deg, #fa709a, #fee140); }
+  .g6 { background: linear-gradient(150deg, #30cfd0, #330867); }
+
+  /* 底部弹层（方案 C 展开态） */
+  .scrim { position: absolute; inset: 0; background: rgba(3,7,18,.42); backdrop-filter: blur(1.5px); z-index: 40; }
+  .sheet {
+    position: absolute; left: 0; right: 0; bottom: 0; z-index: 41;
+    background: var(--surface); border-radius: 20px 20px 0 0; padding: 10px 16px 16px;
+    box-shadow: 0 -12px 34px rgba(0,0,0,.28);
+  }
+  .sheet .grab { width: 34px; height: 4px; border-radius: 3px; background: var(--border); margin: 0 auto 12px; }
+  .sheet h3 { font-size: 13px; margin: 0 0 9px; color: var(--fg); }
+  .sheet .sec { margin-bottom: 14px; }
+  .srcrow { display: flex; align-items: center; gap: 9px; padding: 7px 0; font-size: 12px; color: var(--fg); }
+  .srcrow .box { width: 15px; height: 15px; border-radius: 5px; border: 1.5px solid var(--border); display: grid; place-items: center; font-size: 9px; color: #fff; }
+  .srcrow.on .box { background: var(--brand); border-color: var(--brand); }
+  .srcrow .cnt { margin-left: auto; font-size: 10.5px; color: var(--weak); }
+  .sheet .acts { display: flex; gap: 10px; margin-top: 4px; }
+  .sheet .acts .b { flex: 1; height: 36px; border-radius: 12px; display: grid; place-items: center; font-size: 12.5px; font-weight: 700; }
+  .sheet .acts .b.ghost { background: var(--chip); color: var(--sub); font-weight: 500; }
+  .sheet .acts .b.primary { background: var(--brand); color: #fff; }
+
+  .legend { max-width: 1560px; margin: 26px auto 0; display: flex; flex-wrap: wrap; gap: 12px; }
+  .legend .lg { flex: 1 1 320px; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; }
+  .legend .lg h3 { font-size: 13px; margin: 0 0 7px; }
+  .legend .lg ul { margin: 0; padding-left: 17px; font-size: 11.5px; color: var(--page-sub); line-height: 1.85; }
+  .legend .lg b { color: var(--page-fg); }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>FluxForge · 搜索页筛选区重设计（三套方案）</h1>
+    <p class="hint">
+      最左是<b>现状</b>：类型与来源各占一行横向胶囊，形式一样、语义却不同（类型是搜索<b>前</b>决定搜哪些源，来源是搜索<b>后</b>决定看哪个源的结果），
+      加上搜索框 / 进度条 / 状态条，头部共 5 层，把结果区挤掉了近 1/5 屏。右侧三套方案都在解决这件事。
+    </p>
+  </div>
+  <button class="theme-btn" id="themeBtn">切换到深色主题</button>
+</header>
+
+<main class="stage" id="stage"></main>
+<section class="legend" id="legend"></section>
+
+<script>
+const mag = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.5-3.5"></path></svg>';
+
+/** 结果卡片（搜索「星海」的假数据，类型与来源分布自洽：影视 3 / 小说 2 / 漫画 1） */
+const RESULTS = [
+  { g: 'g1', n: '星海拾遗', s: '更新至 12 集 · 科幻', t: '电视剧' },
+  { g: 'g3', n: '星海拾遗 第二季', s: '2026 · 科幻', t: '电视剧' },
+  { g: 'g6', n: '星海漫游指南', s: '已完结 328 章', t: '小说' },
+  { g: 'g5', n: '星海之下', s: '全 24 话', t: '漫画' },
+  { g: 'g2', n: '深海回声', s: '更新至 8 集', t: '电视剧' },
+  { g: 'g4', n: '星海纪元', s: '连载中 112 章', t: '小说' },
+];
+
+function grid(limit = 4) {
+  return `<div class="grid">${RESULTS.slice(0, limit).map((r) => `
+    <div class="carditem">
+      <div class="poster ${r.g}"><span class="badge">${r.t}</span><div class="cap">${r.n}</div></div>
+      <div class="nm">${r.n}</div>
+      <div class="sb">${r.s}</div>
+    </div>`).join('')}</div>`;
+}
+
+const appbar = (extra = '') => `
+  <div class="appbar">
+    <div class="back">‹</div>
+    <div class="srch">${mag}<span>星海</span><span class="clr">✕</span></div>
+    ${extra || '<div class="cancel">取消</div>'}
+  </div>
+  <div class="progress"><i></i></div>`;
+
+const statusRow = (left, right) => `
+  <div class="statusrow"><span>${left}</span><span class="viewtoggle">☰ 列表排版</span></div>`;
+
+const seg = (items, activeIdx) => `
+  <div class="segwrap"><div class="seg">
+    ${items.map((it, i) => `<div class="item ${i === activeIdx ? 'on' : ''}${it.off ? ' off' : ''}">${it.label ?? it}</div>`).join('')}
+  </div></div>`;
+
+const VARIANTS = [
+  {
+    key: 'current',
+    title: '现状（对照）',
+    tag: '两行胶囊',
+    note: '类型与来源都是横向滚动胶囊，<b>形式重复、语义不同</b>，用户很难一眼分清。头部共 5 层（搜索框 / 进度 / 类型 / 来源 / 状态），结果区被挤掉约 1/5 屏。',
+    dark: false,
+    html: `
+      ${appbar()}
+      <div class="chiprow">
+        <span class="chip on">全部 6</span><span class="chip">影视 3</span>
+        <span class="chip">小说 2</span><span class="chip">漫画·图集 1</span>
+      </div>
+      <div class="chiprow">
+        <span class="chip on">全部 (6)</span><span class="chip">极光影视 (3)</span>
+        <span class="chip">星辰书库 (2)</span><span class="chip">漫野 (1)</span>
+      </div>
+      ${statusRow('已汇聚 6 条检索结果')}
+      ${grid()}`,
+  },
+  {
+    key: 'planA',
+    title: '方案 A · 分段控制器 + 源下拉',
+    tag: '推荐',
+    note: '类型只有 4 个固定项，正适合<b>等分分段控制器</b>：一个整体容器、选中段带滑块，不再横滑。来源降级为状态行里的一行小字下拉（「3 个源 ▾」），不再独占一行。头部 <b>5 层 → 3 层</b>。',
+    dark: false,
+    html: `
+      ${appbar()}
+      ${seg(['全部', '影视', '小说', { label: '漫画·图集', off: true }], 1)}
+      ${statusRow('已汇聚 6 条 · <span class="srcinlinelink">3 个源 ▾</span>')}
+      ${grid()}`,
+  },
+  {
+    key: 'planB',
+    title: '方案 B · 分段 + 源胶囊弱化',
+    tag: '保留源计数',
+    note: '类型同样用分段控制器；来源仍是胶囊，但<b>去掉描边、缩小尺寸</b>，视觉重量降一档。适合「经常要在多源之间比对结果数量」的用法 —— 源计数一眼可见。',
+    dark: false,
+    html: `
+      ${appbar()}
+      ${seg(['全部', '影视', '小说', { label: '漫画·图集', off: true }], 1)}
+      <div class="chiprow soft">
+        <span class="chip on">全部 6</span><span class="chip">极光影视 3</span>
+        <span class="chip">星辰书库 2</span><span class="chip">漫野 1</span>
+      </div>
+      ${statusRow('已汇聚 6 条')}
+      ${grid()}`,
+  },
+  {
+    key: 'planC',
+    title: '方案 C · 筛选入口收敛',
+    tag: '头部最干净',
+    note: '筛选全部收进右上角按钮 + 底部弹层，头部只剩搜索框与状态行。代价是<b>筛选状态不可见</b>，只能靠摘要文字（「影视 · 3 个源」）与按钮激活态提示。适合筛选维度还会继续增加的情况。',
+    dark: false,
+    sheetOpen: true,
+    html: `
+      ${appbar('<div class="filterbtn on">⚙<span class="dot"></span></div>')}
+      <div class="summary"><span class="pill">影视</span><span class="pill">3 个源</span></div>
+      ${statusRow('已汇聚 6 条')}
+      ${grid(2)}`,
+    overlay: `
+      <div class="scrim"></div>
+      <div class="sheet">
+        <div class="grab"></div>
+        <div class="sec">
+          <h3>类型</h3>
+          ${seg(['全部', '影视', '小说', { label: '漫画·图集', off: true }], 1)}
+        </div>
+        <div class="sec">
+          <h3>来源</h3>
+          <div class="srcrow on"><span class="box">✓</span>极光影视<span class="cnt">3 条</span></div>
+          <div class="srcrow on"><span class="box">✓</span>星辰书库<span class="cnt">2 条</span></div>
+          <div class="srcrow"><span class="box"></span>漫野漫画<span class="cnt">1 条</span></div>
+        </div>
+        <div class="acts">
+          <div class="b ghost">重置</div>
+          <div class="b primary">应用</div>
+        </div>
+      </div>`,
+  },
+];
+
+const LEGEND = [
+  {
+    h: '方案 A · 分段控制器 + 源下拉（推荐）',
+    lis: [
+      '<b>类型用分段控制器</b>：4 个固定项等分，一个整体容器、选中段带滑块，不需要横滑',
+      '<b>来源降级为「3 个源 ▾」</b>：不再独占一行，点开才展开完整列表',
+      '头部 5 层 → 3 层，结果区多出约 80px 可视高度',
+      '代价：源计数默认收起，需点开下拉才能看到各源条数',
+    ],
+  },
+  {
+    h: '方案 B · 分段 + 源胶囊弱化',
+    lis: [
+      '类型同样改为分段控制器，解决「两行同形」的核心问题',
+      '来源保留胶囊（拆掉描边、缩小一号），<b>保留各源计数</b>',
+      '头部 5 层 → 4 层，压缩幅度小于 A 但仍明显',
+      '适合「多源结果数量差异大、经常要横向比对」的用法',
+    ],
+  },
+  {
+    h: '方案 C · 筛选入口收敛',
+    lis: [
+      '头部只剩搜索框 + 状态行，<b>最干净</b>，结果区空间最大',
+      '筛选收进底部弹层：类型分段 + 来源多选（带条数）+ 重置/应用',
+      '代价：筛选状态不可见，靠摘要文字与按钮激活态提示；每次改筛选多一次开合',
+      '若以后还要加「排序」「更新时间」等维度，这条路线扩展性最好',
+    ],
+  },
+];
+
+function render() {
+  document.getElementById('stage').innerHTML = VARIANTS.map((v) => `
+    <div class="col">
+      <h2 class="col-title">${v.title}<span class="tag">${v.tag}</span></h2>
+      <p class="col-note">${v.note}</p>
+      <div class="phone ${v.dark ? 'dark-mode' : ''}">
+        <div class="notch"></div>
+        <div class="screen">
+          <div class="statusbar"><span>9:41</span><span class="icons">▮▮▮ ⌁ 100%</span></div>
+          <div class="body-scroll">
+            ${v.html}
+            <div class="blurbar"></div>
+            ${v.overlay || ''}
+          </div>
+        </div>
+      </div>
+    </div>`).join('');
+
+  document.getElementById('legend').innerHTML = LEGEND.map((l) => `
+    <div class="lg"><h3>${l.h}</h3><ul>${l.lis.map((x) => `<li>${x}</li>`).join('')}</ul></div>`).join('');
+}
+render();
+
+const themeBtn = document.getElementById('themeBtn');
+themeBtn.addEventListener('click', () => {
+  const dark = !document.body.classList.contains('dark');
+  document.body.classList.toggle('dark', dark);
+  document.querySelectorAll('.phone').forEach((p, i) => {
+    if (VARIANTS[i].dark) return;
+    p.classList.toggle('dark-mode', dark);
+  });
+  themeBtn.textContent = dark ? '切换到浅色主题' : '切换到深色主题';
+});
+</script>
+</body>
+</html>
