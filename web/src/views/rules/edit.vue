@@ -11,7 +11,6 @@ import {
   Save,
   ArrowLeft,
   Copy,
-  Download,
   Play,
   Code,
   Sparkles,
@@ -255,18 +254,6 @@ watch(
   }
 )
 
-const onReset = () => {
-  form.value = {
-    name: '',
-    description: '',
-    type: 'video',
-    author: '系统管理员',
-    version: '1.0.0',
-    baseUrl: '',
-    code: ''
-  }
-}
-
 const onSubmit = async () => {
   let { warnings } = await formRef.value?.validate()
   if (warnings) return
@@ -290,10 +277,6 @@ const onSubmit = async () => {
   }
 }
 
-const openWorkbench = () => {
-  showWorkbench.value = true
-}
-
 const copyRule = async () => {
   try {
     const { id, created_at, updated_at, ...rest } = form.value
@@ -304,25 +287,6 @@ const copyRule = async () => {
     }
   } catch (error: any) {
     message.error('复制失败: ' + error.message)
-  }
-}
-
-const exportRule = () => {
-  try {
-    const { id, created_at, updated_at, ...rest } = form.value
-    const jsonStr = JSON.stringify(rest, null, 2)
-    const blob = new Blob([jsonStr], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `${form.value.name || 'rule'}.json`
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    URL.revokeObjectURL(url)
-    message.success('已导出规则文件')
-  } catch (error: any) {
-    message.error('导出失败: ' + error.message)
   }
 }
 
@@ -579,7 +543,9 @@ onUnmounted(() => {
           <span>{{ showWorkbench ? '收起工作台' : 'AI 智能工作台' }}</span>
         </n-button>
 
-        <!-- 辅助按键 -->
+        <!-- 工作台控制与规则数据操作的分隔线 -->
+        <div class="w-px h-4 bg-zinc-200 dark:bg-white/10 mx-0.5"></div>
+
         <n-button
           v-if="route.query.id"
           size="small"
@@ -593,26 +559,7 @@ onUnmounted(() => {
           </template>
         </n-button>
 
-        <n-button
-          v-if="route.query.id"
-          size="small"
-          secondary
-          class="!rounded-xl"
-          @click="exportRule"
-          title="导出规则文件"
-        >
-          <template #icon>
-            <Download class="w-3.5 h-3.5" />
-          </template>
-        </n-button>
-
-        <!-- 删除规则：图标与确认文案与列表页保持一致，只在编辑已有规则时出现。
-             破坏性动作放在最右与保存之间，并用一条分隔线隔开，避免误点。 -->
-        <div
-          v-if="canDelete"
-          class="w-px h-4 bg-zinc-200 dark:bg-white/10 mx-0.5"
-        ></div>
-
+        <!-- 删除规则 -->
         <n-popconfirm v-if="canDelete" @positive-click="onDelete">
           <template #trigger>
             <n-button

@@ -136,11 +136,6 @@ const exportRules = (rulesToExport: RuleSchema[], filename: string) => {
   }
 }
 
-const exportSingleRule = (row: RuleSchema) => {
-  const filename = `${row.name || 'rule'}_backup.json`
-  exportRules([row], filename)
-}
-
 const copySingleRule = async (row: RuleSchema) => {
   try {
     const { id, created_at, updated_at, ...rest } = row
@@ -532,7 +527,7 @@ loadData()
             </a>
             <span v-else class="text-[11px] text-zinc-400/40 select-none">无源站</span>
 
-            <!-- 右侧：动作按钮组 (复制、导出、删除、编辑配置) -->
+            <!-- 右侧：动作按钮组 (复制、删除、编辑配置) -->
             <div class="flex items-center gap-0.5 shrink-0">
               <n-button
                 quaternary
@@ -544,19 +539,6 @@ loadData()
               >
                 <template #icon>
                   <Copy class="w-3.5 h-3.5" />
-                </template>
-              </n-button>
-
-              <n-button
-                quaternary
-                circle
-                size="small"
-                class="text-zinc-400 hover:text-emerald-600"
-                @click="exportSingleRule(rule)"
-                title="导出规则文件"
-              >
-                <template #icon>
-                  <Download class="w-3.5 h-3.5" />
                 </template>
               </n-button>
 
