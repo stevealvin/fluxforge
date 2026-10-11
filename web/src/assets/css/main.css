@@ -40,6 +40,9 @@
   --gradient-flux: linear-gradient(135deg, #059669 0%, #0d9488 50%, #10b981 100%);
   --scrollbar-thumb: rgba(5, 150, 105, 0.2);
   --scrollbar-thumb-hover: rgba(5, 150, 105, 0.45);
+
+  /* Card action 区上下边距（全局统一） */
+  --card-action-padding-y: 12px;
 }
 
 .dark {
@@ -89,6 +92,12 @@
 .n-card.n-card--hoverable:hover {
   transform: translateY(-2px);
   box-shadow: var(--shadow-card-hover) !important;
+}
+
+/* 覆写 Naive UI Card 的 action 区上下边距 */
+.n-card .n-card__action {
+  padding-top: var(--card-action-padding-y);
+  padding-bottom: var(--card-action-padding-y);
 }
 .glass-panel {
   backdrop-filter: blur(16px);
