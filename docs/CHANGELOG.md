@@ -4,6 +4,30 @@
 
 ## [2026-10-10]
 
+### 🗑️ Web 规则管理：移除单条规则的「下载」按钮（列表页与编辑页）
+
+**列表页**（`rules/index.vue`）卡片 action 区原有 4 个按钮（复制 / 下载 / 删除 / 编辑）。
+其中「下载」与「复制」产出的 JSON **完全一致**（同为 `JSON.stringify(rest, null, 2)`，
+同样剔除 `id` / `created_at` / `updated_at`），仅去向不同（文件 vs 剪贴板）；
+而顶部工具栏的「备份导出」已覆盖全量归档。故移除该按钮与 `exportSingleRule`。
+
+**编辑页**（`rules/edit.vue`）工具栏有同一个按钮（`exportRule` / 「导出规则文件」），
+一并移除 —— 与相邻的「复制当前规则 JSON」产物一致。该文件内 `Download` 图标随之失去
+唯一使用者，import 同步删除。
+
+**保留**：复制（规则作者的分享链路：复制 JSON → 发给别人）、备份导出（全量归档）、
+编辑页的「复制模板」与「复制已保存代码」（与单条规则的数据无关）。
+
+**未动**：`BatchImportModal.vue` 里的 `Download` 图标 —— 它是「拉取并解析」与
+「导入已成功项」两个按钮的图标，属图标复用而非导出功能。
+
+**同时调整编辑页工具栏分组**：分隔线原先把「复制」划在工作台控制一侧（配置 / 调试面板 /
+运行测试 / AI 工作台），现移到分隔线右侧，与「删除」「保存」同组 —— 左侧是工作台控制，
+右侧是当前规则的数据操作。
+
+`vue-tsc -b` 通过（exit 0）；已扫过 `web/src/views/rules/` 全目录（含 `components/`），
+`exportSingleRule` / `exportRule` 均无残留引用。
+
 ### ⏳ 加载指示器定稿：极光彗星环 · A1（轻量细尾）
 
 > A0 落地后又比了 A6（底轨 + 呼吸），最终选定 A1 —— 全系列最素净的一版。
@@ -180,6 +204,34 @@
   - `flutter test`：**530 项自动化测试全量通过 (530/530 All tests passed!)**。
 
 ## [2026-10-09]
+
+### 🃏 n-card 的 action 区上下边距改为全局统一（新增 `--card-action-padding-y`）
+
+规则发现 / 搜索 / 站点市场三处卡片都用 `n-card` 的 `#action` 插槽承载底部操作栏，
+其上下留白此前跟着「整个卡片的 padding」走。
+
+**为什么不用 `themeOverrides.Card`**：Naive UI 的 action 区样式是
+`padding: var(--n-padding-bottom) var(--n-padding-left)` —— `--n-padding-bottom` 是
+**整个卡片共用**的 padding（header / content / footer 都用它），而 `CardThemeVars` 里
+**没有** action 专属的 padding 变量（逐项核对过 `es/card/src/styles/index.cssr.mjs` 与
+`Card.d.ts` 的 cssVars 列表）。从主题改会连带卡片主体一起变，达不到"只改 action"。
+
+**做法**：`web/src/assets/css/main.css` 新增一条覆写 + 一个变量：
+
+```css
+.n-card .n-card__action {
+  padding-top: var(--card-action-padding-y);
+  padding-bottom: var(--card-action-padding-y);
+}
+```
+
+- 两段类名特异性 `(0,2,0)` 压过组件自身的 `.n-card__action` `(0,1,0)`，**无需 `!important`**
+  —— 于是也不受 Naive UI 运行时注入样式先后顺序的影响；
+- 数值收在 `--card-action-padding-y`（定义于 `:root`，两个主题共用），默认 **12px**
+  （此前等效 16px，来自 `Card.paddingSmall: '16px'`）。再调只改这一个变量。
+
+**验证**：`vue-tsc -b` 通过；`vite build` 后在产物 `dist/assets/index-*.css` 中确认包含
+`--card-action-padding-y` —— 即构建确实生效，而不是只改了源码。
 
 ### 🔀 底部导航：规则与收藏交换位置
 
