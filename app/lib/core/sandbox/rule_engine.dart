@@ -462,6 +462,32 @@ class RuleEngine {
                 finalUrl = b + '/' + u;
               }
 
+              // 追加 config.params：标准 axios 由内置 adapter 负责序列化，
+              // adapter 被接管后这里必须自己补，否则参数静默丢失
+              if (config.params && typeof config.params === 'object') {
+                var pairs = [];
+                var pushParam = function(key, value) {
+                  if (value === null || value === undefined) return;
+                  if (Array.isArray(value)) {
+                    for (var i = 0; i < value.length; i++) pushParam(key + '[]', value[i]);
+                    return;
+                  }
+                  if (typeof value === 'object') {
+                    Object.keys(value).forEach(function(sub) {
+                      pushParam(key + '[' + sub + ']', value[sub]);
+                    });
+                    return;
+                  }
+                  pairs.push(encodeURIComponent(key) + '=' + encodeURIComponent(value));
+                };
+                Object.keys(config.params).forEach(function(k) {
+                  pushParam(k, config.params[k]);
+                });
+                if (pairs.length > 0) {
+                  finalUrl += (finalUrl.indexOf('?') === -1 ? '?' : '&') + pairs.join('&');
+                }
+              }
+
               var payload = {
                 reqId: reqId,
                 method: (config.method || 'get').toUpperCase(),
