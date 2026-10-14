@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>FluxForge · 规则测试页布局方案</title>
+<!--
+  一次性设计预览稿：规则调试页如何承载「请求明细 / 数据体检 / 契约检查」这些新数据。
+  三个手机框按 375dp 绘制，假数据为一次影视规则测试（4 阶段全过 + 1 项警告）。
+-->
+<style>
+  :root {
+    --page-bg: #EEF1F6; --page-fg: #0F172A; --page-sub: #64748B;
+    --card: #FFFFFF; --line: #E2E8F0; --brand: #059669;
+    --phone-body: #0B0F17; --shadow: 0 18px 44px rgba(15,23,42,.16);
+  }
+  body.dark {
+    --page-bg: #070A10; --page-fg: #F8FAFC; --page-sub: #94A3B8;
+    --card: #151C2C; --line: #1E293B; --brand: #34D399;
+    --phone-body: #000; --shadow: 0 18px 44px rgba(0,0,0,.6);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 26px 20px 60px; background: var(--page-bg); color: var(--page-fg);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased; transition: background .25s ease, color .25s ease;
+  }
+  header { max-width: 1360px; margin: 0 auto 22px; display: flex; gap: 14px; align-items: flex-end; justify-content: space-between; flex-wrap: wrap; }
+  h1 { font-size: 20px; margin: 0 0 8px; letter-spacing: -.3px; }
+  .hint { font-size: 12.5px; color: var(--page-sub); line-height: 1.75; margin: 0; max-width: 900px; }
+  .hint b { color: var(--brand); }
+  .hint code { background: var(--card); color: var(--brand); padding: 1px 5px; border-radius: 5px; font-size: 11.5px; }
+  .theme-btn { appearance: none; border: 1px solid var(--line); background: var(--card); color: var(--page-fg); font-size: 12.5px; padding: 9px 16px; border-radius: 10px; cursor: pointer; }
+  .theme-btn:hover { border-color: var(--brand); }
+
+  .stage { max-width: 1360px; margin: 0 auto; display: flex; flex-wrap: wrap; gap: 26px; align-items: flex-start; }
+  .col { width: 375px; }
+  .col-title { font-size: 14px; font-weight: 700; margin: 0 0 4px; }
+  .col-title .tag { font-size: 10px; font-weight: 500; color: var(--brand); border: 1px solid var(--brand); border-radius: 6px; padding: 1px 6px; margin-left: 6px; vertical-align: 1px; }
+  .col-note { font-size: 11.5px; color: var(--page-sub); line-height: 1.65; margin: 0 0 10px; min-height: 104px; }
+  .col-note b { color: var(--brand); font-weight: 600; }
+
+  .phone { width: 375px; border-radius: 26px; padding: 7px; background: var(--phone-body); box-shadow: var(--shadow); }
+  .screen {
+    border-radius: 20px; overflow: hidden; background: #F8FAFC; position: relative;
+    --fg: #0F172A; --sub: #64748B; --weak: #94A3B8;
+    --surface: #FFFFFF; --bg: #F8FAFC; --border: #E2E8F0; --chip: #F1F5F9; --divider: #EEF2F6;
+  }
+  .phone.dark-mode .screen {
+    background: #0A0D14;
+    --fg: #F8FAFC; --sub: #94A3B8; --weak: #64748B;
+    --surface: #151C2C; --bg: #0A0D14; --border: #1E293B; --chip: #1B2436; --divider: #1B2436;
+  }
+  .statusbar { height: 34px; display: flex; align-items: center; justify-content: space-between; padding: 0 20px; font-size: 11px; font-weight: 600; color: var(--fg); }
+
+  /* AppBar */
+  .appbar { display: flex; align-items: center; gap: 8px; padding: 4px 12px 8px; }
+  .appbar .back { width: 26px; display: grid; place-items: center; color: var(--fg); font-size: 16px; }
+  .appbar .ttl { min-width: 0; flex: 1; }
+  .appbar .nm { font-size: 14px; font-weight: 700; color: var(--fg); display: flex; align-items: center; gap: 6px; }
+  .appbar .nm .badge { font-size: 9px; font-weight: 700; padding: 1px 5px; border-radius: 5px; background: rgba(5,150,105,.12); color: var(--brand); border: 1px solid rgba(5,150,105,.2); }
+  .appbar .url { font-size: 10px; color: var(--weak); font-family: ui-monospace, monospace; margin-top: 1px; }
+  .ibtn { width: 28px; height: 28px; border-radius: 9px; display: grid; place-items: center; font-size: 12px; background: var(--chip); border: 1px solid var(--border); color: var(--sub); }
+
+  /* 控制条 */
+  .control { display: flex; gap: 8px; padding: 0 12px 10px; }
+  .control .field { flex: 1; height: 34px; border-radius: 10px; background: var(--surface); border: 1px solid var(--border); display: flex; align-items: center; gap: 7px; padding: 0 10px; font-size: 13px; color: var(--fg); }
+  .control .field .kw { color: var(--fg); }
+  .control .go { height: 34px; padding: 0 14px; border-radius: 10px; background: var(--brand); color: #fff; font-size: 12.5px; font-weight: 700; display: grid; place-items: center; }
+  .control .go.stop { background: rgba(239,68,68,.88); }
+
+  .divider { height: 1px; background: var(--divider); }
+
+  /* 总览条 */
+  .overview { display: flex; align-items: center; gap: 10px; padding: 9px 14px; background: rgba(16,185,129,.07); border-bottom: 1px solid var(--divider); }
+  .overview .ok { font-size: 11.5px; font-weight: 800; color: var(--brand); }
+  .overview .m { font-size: 11px; color: var(--sub); }
+  .overview .warn { font-size: 11px; color: #F59E0B; font-weight: 600; margin-left: auto; }
+
+  .scroll { padding: 10px 12px 16px; display: flex; flex-direction: column; gap: 9px; }
+
+  /* 阶段行（收起 / 展开） */
+  .step { border-radius: 13px; background: var(--surface); border: 1px solid var(--border); overflow: hidden; }
+  .step .head { display: flex; align-items: center; gap: 9px; padding: 10px 12px; }
+  .step .dot { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 11px; flex: 0 0 22px; }
+  .step .dot.ok { background: rgba(16,185,129,.12); color: #10B981; }
+  .step .dot.warn { background: rgba(245,158,11,.14); color: #F59E0B; }
+  .step .dot.run { background: rgba(5,150,105,.12); color: var(--brand); }
+  .step .mid { flex: 1; min-width: 0; }
+  .step .t { font-size: 13px; font-weight: 700; color: var(--fg); }
+  .step .s { font-size: 10.5px; color: var(--sub); margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .step .ms { font-size: 10px; font-weight: 700; color: var(--sub); background: var(--chip); border-radius: 6px; padding: 2px 6px; flex: 0 0 auto; }
+  .step .caret { font-size: 9px; color: var(--weak); flex: 0 0 auto; }
+  .step .body { padding: 0 12px 11px; border-top: 1px solid var(--divider); margin-top: 0; }
+  .step .body .row { display: flex; gap: 8px; padding: 5px 0; font-size: 11px; }
+  .step .body .row .k { flex: 0 0 96px; color: var(--sub); }
+  .step .body .row .v { flex: 1; color: var(--fg); font-family: ui-monospace, monospace; word-break: break-all; }
+  .step .body .json { margin-top: 6px; font-size: 10px; font-family: ui-monospace, monospace; color: var(--sub); background: var(--chip); border-radius: 8px; padding: 7px 9px; line-height: 1.55; }
+
+  /* 请求时间线 */
+  .reqline { display: flex; align-items: baseline; gap: 7px; padding: 5px 0; font-size: 10.5px; font-family: ui-monospace, monospace; border-bottom: 1px dashed var(--divider); }
+  .reqline:last-child { border-bottom: 0; }
+  .reqline .mth { font-weight: 800; color: var(--brand); flex: 0 0 30px; }
+  .reqline .u { flex: 1; color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .reqline .st { color: #10B981; font-weight: 700; }
+  .reqline .st.warn { color: #F59E0B; }
+  .reqline .mt { color: var(--weak); flex: 0 0 auto; }
+  .reqline .sz { color: var(--weak); flex: 0 0 auto; }
+  .reqline .rd { color: #F59E0B; flex: 0 0 auto; }
+
+  /* 数据体检 */
+  .checkrow { display: flex; align-items: center; gap: 7px; padding: 4.5px 0; font-size: 11px; }
+  .checkrow .lb { flex: 0 0 92px; color: var(--sub); }
+  .checkrow .bars { flex: 1; display: flex; align-items: center; gap: 5px; }
+  .pill { font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 6px; }
+  .pill.ok { background: rgba(16,185,129,.12); color: #10B981; }
+  .pill.warn { background: rgba(245,158,11,.14); color: #F59E0B; }
+  .pill.bad { background: rgba(239,68,68,.12); color: #EF4444; }
+
+  /* 区块标题 */
+  .sec { display: flex; align-items: center; gap: 7px; padding: 9px 13px; border-radius: 13px; background: var(--surface); border: 1px solid var(--border); }
+  .sec .icon { font-size: 12px; }
+  .sec .st { font-size: 12.5px; font-weight: 700; color: var(--fg); }
+  .sec .cnt { font-size: 10.5px; color: var(--sub); }
+  .sec .sp { flex: 1; }
+  .sec .caret { font-size: 9px; color: var(--weak); }
+  .sec.open { border-bottom-left-radius: 0; border-bottom-right-radius: 0; border-bottom: 0; }
+  .sec-body { border: 1px solid var(--border); border-top: 0; border-radius: 0 0 13px 13px; background: var(--surface); padding: 8px 12px 10px; }
+
+  /* 控制台 */
+  .log { font-size: 10px; font-family: ui-monospace, monospace; line-height: 1.6; padding: 1px 0; }
+  .log .lv { font-weight: 700; }
+  .log .lv.i { color: #0EA5E9; }
+  .log .lv.d { color: var(--weak); }
+  .log .lv.e { color: #EF4444; }
+  .log .tx { color: var(--sub); }
+
+  /* 分段控制器 */
+  .segwrap { padding: 0 12px 9px; }
+  .seg { display: flex; gap: 2px; padding: 3px; border-radius: 11px; background: var(--chip); border: 1px solid var(--border); }
+  .seg .it { flex: 1; text-align: center; font-size: 11.5px; padding: 6px 2px; border-radius: 8px; color: var(--sub); }
+  .seg .it.on { background: var(--surface); color: var(--brand); font-weight: 700; box-shadow: 0 1px 3px rgba(15,23,42,.1); }
+  .phone.dark-mode .seg .it.on { background: var(--brand); color: #06120E; box-shadow: none; }
+
+  /* 时间轴（方案 C） */
+  .tl { position: relative; padding-left: 52px; }
+  .tl .rail { position: absolute; left: 44px; top: 6px; bottom: 6px; width: 1.5px; background: var(--divider); }
+  .tl .node { position: relative; margin-bottom: 10px; }
+  .tl .node .clock { position: absolute; left: -52px; top: 1px; font-size: 9.5px; font-family: ui-monospace, monospace; color: var(--weak); width: 38px; text-align: right; }
+  .tl .node .mark { position: absolute; left: -10px; top: 3px; width: 7px; height: 7px; border-radius: 50%; background: var(--brand); border: 1.5px solid var(--bg); }
+  .tl .node .mark.warn { background: #F59E0B; }
+  .tl .node .st { font-size: 12.5px; font-weight: 700; color: var(--fg); display: flex; align-items: center; gap: 7px; }
+  .tl .node .st .ms { font-size: 9.5px; font-weight: 700; color: var(--sub); background: var(--chip); border-radius: 5px; padding: 1px 5px; }
+  .tl .node .sub { font-size: 10.5px; color: var(--sub); margin-top: 2px; }
+  .tl .node .inner { margin-top: 5px; border-left: 2px solid var(--divider); padding-left: 9px; }
+  .tl .node .inner .rq { font-size: 10px; font-family: ui-monospace, monospace; color: var(--sub); display: flex; gap: 6px; padding: 2.5px 0; }
+  .tl .node .inner .rq b { color: var(--brand); font-weight: 800; }
+
+  .legend { max-width: 1360px; margin: 26px auto 0; display: flex; flex-wrap: wrap; gap: 12px; }
+  .legend .lg { flex: 1 1 330px; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; }
+  .legend .lg h3 { font-size: 13px; margin: 0 0 7px; }
+  .legend .lg ul { margin: 0; padding-left: 17px; font-size: 11.5px; color: var(--page-sub); line-height: 1.85; }
+  .legend .lg b { color: var(--page-fg); }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>规则测试页 · 布局方案（承载请求明细 / 数据体检 / 契约检查）</h1>
+    <p class="hint">
+      新数据的量不小，直接塞进现有的 4 张卡片会变成一坨。三套方案都在解决同一件事：
+      <b>让「跑得对不对、哪里不对」在首屏就能看出来</b>，而不是靠翻日志。<br />
+      假数据为一次影视规则测试：4 阶段全过，但有 1 项警告（封面缺失 3/18）与 1 次重定向。
+    </p>
+  </div>
+  <button class="theme-btn" id="themeBtn">切换到深色主题</button>
+</header>
+
+<main class="stage" id="stage"></main>
+<section class="legend" id="legend"></section>
+
+<script>
+/* ───────── 公共片段 ───────── */
+const appbar = () => `
+  <div class="appbar">
+    <div class="back">‹</div>
+    <div class="ttl">
+      <div class="nm">极光影视 <span class="badge">影视</span></div>
+      <div class="url">https://www.jiguang.example</div>
+    </div>
+    <div class="ibtn">⧉</div>
+    <div class="ibtn">🗑</div>
+  </div>`;
+
+const control = (running = false) => `
+  <div class="control">
+    <div class="field">🔍<span class="kw">斗罗大陆</span></div>
+    <div class="go ${running ? 'stop' : ''}">${running ? '停止' : '开始'}</div>
+  </div>`;
+
+const overview = () => `
+  <div class="overview">
+    <span class="ok">✅ 4/4 通过</span>
+    <span class="m">820ms</span>
+    <span class="m">3 次请求</span>
+    <span class="warn">⚠️ 1 项警告</span>
+  </div>`;
+
+const KV = (k, v) => `<div class="row"><span class="k">${k}</span><span class="v">${v}</span></div>`;
+
+const REQS = [
+  { m: 'GET', u: '/api/list', st: '200', mt: '28ms', sz: '12KB' },
+  { m: 'GET', u: '/search?wd=斗罗大陆', st: '200', mt: '240ms', sz: '24KB' },
+  { m: 'GET', u: '/detail/12345', st: '200', mt: '210ms', sz: '8KB', rd: '⤸1' },
+];
+const reqLines = () => REQS.map((r) => `
+  <div class="reqline">
+    <span class="mth">${r.m}</span><span class="u">${r.u}</span>
+    <span class="st">${r.st}</span><span class="mt">${r.mt}</span>
+    <span class="sz">${r.sz}</span>${r.rd ? `<span class="rd">${r.rd}</span>` : ''}
+  </div>`).join('');
+
+const CHECKS = [
+  { lb: 'items 共 20', pills: [['标题 20/20', 'ok'], ['链接 20/20', 'ok'], ['封面 17/20', 'warn'], ['描述 12/20', 'warn']] },
+  { lb: 'tabs 共 3', pills: [['title 3/3', 'ok'], ['url 3/3', 'ok']] },
+  { lb: '契约检查', pills: [['tab 回传对称', 'ok'], ['url 绝对地址', 'ok'], ['hasMore 自洽', 'warn']] },
+];
+const checkLines = () => CHECKS.map((c) => `
+  <div class="checkrow"><span class="lb">${c.lb}</span><span class="bars">
+    ${c.pills.map(([t, k]) => `<span class="pill ${k}">${t}</span>`).join('')}
+  </span></div>`).join('');
+
+const LOGS = `
+  <div class="log"><span class="lv d">[DEBUG]</span> <span class="tx">沙箱启动动作 [search] → 参数: {"keyword":"斗罗大陆","page":1}</span></div>
+  <div class="log"><span class="lv i">[INFO]</span> <span class="tx">[search] 执行成功 (返回 18 项数据) 耗时 236ms</span></div>
+  <div class="log"><span class="lv d">[DEBUG]</span> <span class="tx">[NativeHttp] 重定向 (302) → https://x.com/detail/12345</span></div>`;
+
+/* ───────── 方案 A：单列流 + 分层折叠（推荐） ───────── */
+const PLAN_A = `
+  ${appbar()}
+  ${control()}
+  <div class="divider"></div>
+  ${overview()}
+  <div class="scroll">
+
+    <div class="step">
+      <div class="head">
+        <span class="dot ok">✓</span>
+        <span class="mid"><span class="t">① 发现</span><div class="s">3 个分类 · 20 个条目</div></span>
+        <span class="ms">68ms</span><span class="caret">▸</span>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="head">
+        <span class="dot ok">✓</span>
+        <span class="mid"><span class="t">② 搜索</span><div class="s">命中 18 条 · 首条《斗罗大陆》</div></span>
+        <span class="ms">240ms</span><span class="caret">▸</span>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="head">
+        <span class="dot warn">!</span>
+        <span class="mid"><span class="t">③ 详情</span><div class="s">12 个资源条目 · 封面缺失 3 条</div></span>
+        <span class="ms">210ms</span><span class="caret">▾</span>
+      </div>
+      <div class="body">
+        ${KV('详情标题', '斗罗大陆')}
+        ${KV('简介字数', '248 字')}
+        ${KV('资源条目', '12 项')}
+        ${KV('首项链接', 'https://x.com/play/1-1')}
+        <div class="json">{ "title": "斗罗大陆", "items": [ … 12 项 ] }</div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="head">
+        <span class="dot ok">✓</span>
+        <span class="mid"><span class="t">④ 解析</span><div class="s">直链提取成功 · m3u8</div></span>
+        <span class="ms">110ms</span><span class="caret">▸</span>
+      </div>
+    </div>
+
+    <div class="sec open">
+      <span class="icon">🌐</span><span class="st">请求时间线</span><span class="cnt">3 次</span>
+      <span class="sp"></span><span class="caret">▾</span>
+    </div>
+    <div class="sec-body">${reqLines()}</div>
+
+    <div class="sec open">
+      <span class="icon">🩺</span><span class="st">数据体检</span><span class="cnt">1 项警告</span>
+      <span class="sp"></span><span class="caret">▾</span>
+    </div>
+    <div class="sec-body">${checkLines()}</div>
+
+    <div class="sec open">
+      <span class="icon">▤</span><span class="st">控制台</span><span class="cnt">12 条</span>
+      <span class="sp"></span><span class="caret">▾</span>
+    </div>
+    <div class="sec-body">${LOGS}</div>
+  </div>`;
+
+/* ───────── 方案 B：顶部 Tab 分段 ───────── */
+const PLAN_B = `
+  ${appbar()}
+  ${control()}
+  <div class="segwrap"><div class="seg">
+    <div class="it">阶段</div><div class="it on">网络</div>
+    <div class="it">体检</div><div class="it">日志</div>
+  </div></div>
+  ${overview()}
+  <div class="scroll">
+    ${REQS.map((r) => `
+      <div class="step">
+        <div class="head">
+          <span class="dot ${r.rd ? 'warn' : 'ok'}">${r.rd ? '!' : '✓'}</span>
+          <span class="mid">
+            <span class="t" style="font-size:12px">${r.m} ${r.u}</span>
+            <div class="s">${r.st} · ${r.mt} · ${r.sz}${r.rd ? ' · 1 次重定向' : ''}</div>
+          </span>
+          <span class="caret">▸</span>
+        </div>
+      </div>`).join('')}
+
+    <div class="sec open">
+      <span class="icon">🧾</span><span class="st">请求头与响应</span>
+      <span class="sp"></span><span class="caret">▾</span>
+    </div>
+    <div class="sec-body">
+      ${KV('Referer', 'https://www.jiguang.example/')}
+      ${KV('User-Agent', 'Mozilla/5.0 (Linux; Android 14)')}
+      ${KV('Content-Type', 'application/json; charset=utf-8')}
+      ${KV('响应体大小', '24.1 KB (gzip 6.8 KB)')}
+    </div>
+  </div>`;
+
+/* ───────── 方案 C：时间轴为主轴 ───────── */
+const PLAN_C = `
+  ${appbar()}
+  ${control()}
+  <div class="divider"></div>
+  ${overview()}
+  <div class="scroll">
+    <div class="tl">
+      <div class="rail"></div>
+
+      <div class="node">
+        <span class="clock">0ms</span><span class="mark"></span>
+        <div class="st">① 发现 <span class="ms">68ms</span></div>
+        <div class="inner"><div class="rq"><b>GET</b> /api/list → 200 · 28ms · 12KB</div></div>
+        <div class="sub">3 个分类 · 20 个条目</div>
+      </div>
+
+      <div class="node">
+        <span class="clock">70ms</span><span class="mark"></span>
+        <div class="st">② 搜索 <span class="ms">240ms</span></div>
+        <div class="inner"><div class="rq"><b>GET</b> /search?wd=斗罗大陆 → 200 · 240ms · 24KB</div></div>
+        <div class="sub">命中 18 条 · 首条《斗罗大陆》</div>
+      </div>
+
+      <div class="node">
+        <span class="clock">312ms</span><span class="mark warn"></span>
+        <div class="st">③ 详情 <span class="ms">210ms</span></div>
+        <div class="inner">
+          <div class="rq"><b>GET</b> /detail/12345 → 302 · 18ms</div>
+          <div class="rq"><b>GET</b> /detail/12345 → 200 · 192ms · 8KB</div>
+        </div>
+        <div class="sub">12 个资源条目 · ⚠️ 封面缺失 3 条</div>
+      </div>
+
+      <div class="node">
+        <span class="clock">524ms</span><span class="mark"></span>
+        <div class="st">④ 解析 <span class="ms">110ms</span></div>
+        <div class="inner"><div class="rq"><b>GET</b> /play/1-1 → 200 · 110ms</div></div>
+        <div class="sub">直链提取成功 · m3u8</div>
+      </div>
+    </div>
+  </div>`;
+
+/* ───────── 方案清单 ───────── */
+const VARIANTS = [
+  {
+    title: '方案 A · 单列流 + 分层折叠',
+    tag: '推荐',
+    note: '沿用现有单列骨架，但把<b>阶段卡默认收起</b>（只留状态 + 耗时 + 一句摘要），四个阶段一屏看全；新数据拆成三个独立可折叠区块（<b>请求时间线 / 数据体检 / 控制台</b>）。顶部新增总览条给「一眼结论」。改动最小、层次最清晰。',
+    html: PLAN_A,
+  },
+  {
+    title: '方案 B · 顶部 Tab 分段',
+    tag: '信息分区',
+    note: '把「阶段 / 网络 / 体检 / 日志」分成四个 Tab，每屏只专注一类信息，不用长滚动。代价是<b>上下文断裂</b> —— 看到「详情阶段慢」要切到网络 Tab 才找得到对应请求。适合数据量继续增长（比如以后再看重定向历史）。',
+    html: PLAN_B,
+  },
+  {
+    title: '方案 C · 时间轴为主轴',
+    tag: '最贴近调试心智',
+    note: '放弃卡片形态，全按时间轴排：每条时间线里嵌它发起的请求，<b>因果与耗时直接可见</b>（③ 详情那条一眼看出是 302 跳转吃掉了 210ms）。代价是竖向空间消耗大、实现最复杂；数据一多就要长滚。',
+    html: PLAN_C,
+  },
+];
+
+const LEGEND = [
+  {
+    h: '方案 A · 单列流 + 分层折叠（推荐）',
+    lis: [
+      '<b>阶段卡默认收起</b>：这是最关键的一处 —— 现在每张卡都摊开摘要 + 指标，4 张卡就占满一屏，得滚才能看全',
+      '<b>总览条</b>给结论（4/4 通过 · 820ms · 3 请求 · 1 警告），不用自己数',
+      '请求时间线 / 数据体检 / 控制台各占一个可折叠区块，需要时才展开',
+      '与现有代码结构最贴近，改动集中在「加区块 + 改折叠默认值」',
+    ],
+  },
+  {
+    h: '方案 B · 顶部 Tab 分段',
+    lis: [
+      '每屏只专注一类信息，不用长滚动；数据量再涨也不怕',
+      '<b>代价是上下文断裂</b>：阶段与请求的对应关系看不到了',
+      '适合「数据维度还会继续增加」的场景（重定向历史、缓存命中、多次测试对比…）',
+      '与方案 A 不冲突 —— 可先做 A，等区块多到一屏放不下再升级成 B',
+    ],
+  },
+  {
+    h: '方案 C · 时间轴为主轴',
+    lis: [
+      '<b>最贴近调试心智</b>：请求嵌在它所属的阶段里，谁拖慢了谁一清二楚',
+      '上图 ③ 详情那条就是例子：302 + 200 两次请求，一眼看出跳转成本',
+      '代价：竖向空间消耗大、实现最复杂；阶段多、请求多时会很长',
+      '可折中：保留方案 A 的卡片，只在卡片内部把请求按时间排（局部时间轴）',
+    ],
+  },
+];
+
+function render() {
+  document.getElementById('stage').innerHTML = VARIANTS.map((v) => `
+    <div class="col">
+      <h2 class="col-title">${v.title}<span class="tag">${v.tag}</span></h2>
+      <p class="col-note">${v.note}</p>
+      <div class="phone ${document.body.classList.contains('dark') ? 'dark-mode' : ''}">
+        <div class="screen">
+          <div class="statusbar"><span>9:41</span><span>▮▮▮ ⌁ 100%</span></div>
+          ${v.html}
+        </div>
+      </div>
+    </div>`).join('');
+
+  document.getElementById('legend').innerHTML = LEGEND.map((l) => `
+    <div class="lg"><h3>${l.h}</h3><ul>${l.lis.map((x) => `<li>${x}</li>`).join('')}</ul></div>`).join('');
+}
+render();
+
+const themeBtn = document.getElementById('themeBtn');
+themeBtn.addEventListener('click', () => {
+  const dark = !document.body.classList.contains('dark');
+  document.body.classList.toggle('dark', dark);
+  render();
+  themeBtn.textContent = dark ? '切换到浅色主题' : '切换到深色主题';
+});
+</script>
+</body>
+</html>
