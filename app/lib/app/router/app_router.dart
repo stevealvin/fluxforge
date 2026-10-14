@@ -12,6 +12,7 @@ import 'package:fluxforge/features/library/history/history_center_page.dart';
 import 'package:fluxforge/features/media/shared/media_detail_page.dart';
 import 'package:fluxforge/features/rules/pages/market_page.dart';
 import 'package:fluxforge/features/rules/pages/rule_catalog_page.dart';
+import 'package:fluxforge/features/rules/pages/rule_management_page.dart';
 import 'package:fluxforge/features/rules/pages/rule_tester_page.dart';
 import 'package:fluxforge/features/search/search_page.dart';
 import 'package:fluxforge/features/settings/logs_page.dart';
@@ -80,6 +81,13 @@ final GoRouter router = GoRouter(
             }
             return RuleCatalogPage(rule: rule);
           },
+        ),
+
+        // 规则管理（管理侧聚合入口）
+        GoRoute(
+          path: AppRoutes.ruleManagementSegment,
+          builder: (BuildContext context, GoRouterState state) =>
+              const RuleManagementPage(),
         ),
 
         // 规则多阶段调试与测试 (类开源阅读调试器)

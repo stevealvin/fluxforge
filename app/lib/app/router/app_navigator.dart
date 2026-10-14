@@ -80,6 +80,11 @@ extension AppNavigator on BuildContext {
     push(AppRoutes.ruleTest, extra: RuleArgs(rule));
   }
 
+  /// 规则管理（管理侧聚合入口）
+  void pushRuleManagement() {
+    push(AppRoutes.ruleManagement);
+  }
+
   /// 规则详情（媒体详情页 + 绑定规则）
   void pushRuleDetail(RuleDetailArgs args) {
     push(AppRoutes.ruleDetail, extra: args);

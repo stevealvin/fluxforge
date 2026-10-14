@@ -33,6 +33,9 @@ class AppRoutes {
   /// 规则多阶段调试与测试
   static const String ruleTest = '/rule_test';
 
+  /// 规则管理（管理侧聚合入口）
+  static const String ruleManagement = '/rule_management';
+
   /// 规则内容详情（媒体详情页 + 绑定规则）
   static const String ruleDetail = '/rule_detail';
 
@@ -66,6 +69,7 @@ class AppRoutes {
   static const String searchSegment = 'search';
   static const String ruleDiscoverySegment = 'rule_discovery';
   static const String ruleTestSegment = 'rule_test';
+  static const String ruleManagementSegment = 'rule_management';
   static const String ruleDetailSegment = 'rule_detail';
   static const String mediaDetailSegment = 'detail';
   static const String settingsSegment = 'settings';

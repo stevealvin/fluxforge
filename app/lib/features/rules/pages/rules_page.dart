@@ -8,12 +8,12 @@ import 'package:fluxforge/domain/rule/rule.dart';
 import 'package:fluxforge/app/di/di.dart';
 import 'package:fluxforge/data/rule/rule_service.dart';
 import 'package:fluxforge/shared/widgets/app_card.dart';
-import 'package:fluxforge/shared/widgets/app_confirm_dialog.dart';
-import 'package:fluxforge/shared/widgets/app_delete_snack_bar.dart';
 import 'package:fluxforge/shared/widgets/app_loading.dart';
 
-/// 客户端本地规则管理页面
-/// 支持响应式规则列表、状态启停、网络/JSON多源导入、快速跳转市场与发现测试
+/// 规则 Tab（使用侧）
+///
+/// 只承担「用规则」：点击卡片进分类发现、搜索、导入与市场入口。
+/// 启用与禁用、删除、调试测试等管理动作在 [RuleManagementPage]。
 class RulesPage extends StatefulWidget {
   const RulesPage({super.key});
 
@@ -335,22 +335,7 @@ class _RulesPageState extends State<RulesPage> {
     );
   }
 
-  /// 删除规则确认（弹窗只采集结论，删除动作由本方法在确认后执行）
-  Future<void> _confirmDeleteRule(BuildContext context, Rule rule) async {
-    final confirmed = await showAppConfirmDialog(
-      context,
-      title: '删除规则',
-      message: '将删除规则「${rule.name}」，该操作不可撤销。',
-      confirmText: '删除',
-    );
-    if (!confirmed || !context.mounted) return;
-
-    await _ruleService.removeRule(rule.id);
-    if (!context.mounted) return;
-    showDeleteSnackBar(context, message: '已删除规则「${rule.name}」');
-  }
-
-  /// 长按规则卡片弹出快捷操作面板 (支持规则调试/发现/复制/删除)
+  /// 长按规则卡片弹出快捷操作面板（分类发现浏览 / 复制源站地址）
   void _showRuleActionSheet(BuildContext context, Rule rule) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final typeColor = _getTypeColor(rule.type);
@@ -421,28 +406,7 @@ class _RulesPageState extends State<RulesPage> {
                 ),
                 const Divider(height: 16),
 
-                // 选项 1: 规则流式测试与调试 (对齐开源阅读)
-                ListTile(
-                  leading: const Icon(
-                    Ionicons.flaskOutline,
-                    color: AppColors.primary,
-                    size: 20,
-                  ),
-                  title: const Text(
-                    '规则调试与测试 (Debug & Test)',
-                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-                  ),
-                  subtitle: const Text(
-                    '多阶段流水线自动化测试 (发现/搜索/详情/直链解析)',
-                    style: TextStyle(fontSize: 11),
-                  ),
-                  onTap: () {
-                    Navigator.pop(sheetCtx);
-                    context.pushRuleTest(rule);
-                  },
-                ),
-
-                // 选项 2: 进入分类发现浏览
+                // 进入分类发现浏览
                 ListTile(
                   leading: const Icon(Ionicons.compassOutline, size: 20),
                   title: const Text('分类发现浏览', style: TextStyle(fontSize: 14)),
@@ -452,7 +416,7 @@ class _RulesPageState extends State<RulesPage> {
                   },
                 ),
 
-                // 选项 3: 复制源站基址
+                // 复制源站基址
                 if (rule.baseUrl.isNotEmpty)
                   ListTile(
                     leading: const Icon(Ionicons.copyOutline, size: 20),
@@ -474,68 +438,11 @@ class _RulesPageState extends State<RulesPage> {
                       );
                     },
                   ),
-
-                // 选项 4: 删除规则
-                ListTile(
-                  leading: const Icon(
-                    Ionicons.trashOutline,
-                    color: Colors.redAccent,
-                    size: 20,
-                  ),
-                  title: const Text(
-                    '删除此规则',
-                    style: TextStyle(fontSize: 14, color: Colors.redAccent),
-                  ),
-                  onTap: () {
-                    Navigator.pop(sheetCtx);
-                    _confirmDeleteRule(context, rule);
-                  },
-                ),
               ],
             ),
           ),
         );
       },
-    );
-  }
-
-  /// 构建测速延迟三色微胶囊指示器
-  Widget _buildLatencyBadge(int? latency, bool isDark) {
-    if (latency == null) return const SizedBox.shrink();
-    final bool isTimeout = latency < 0 || latency > 2500;
-    final bool isFast = latency >= 0 && latency < 500;
-
-    final Color color = isTimeout
-        ? Colors.redAccent
-        : (isFast ? const Color(0xFF10B981) : const Color(0xFFF59E0B));
-    final String label = isTimeout ? '超时' : '${latency}ms';
-
-    return Container(
-      margin: const EdgeInsets.only(left: 5),
-      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(4),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 5,
-            height: 5,
-            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-          ),
-          const SizedBox(width: 3),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 9,
-              fontWeight: FontWeight.w700,
-              color: color,
-            ),
-          ),
-        ],
-      ),
     );
   }
 
@@ -676,32 +583,9 @@ class _RulesPageState extends State<RulesPage> {
                             ],
                           ),
                         ),
-                        ValueListenableBuilder<Map<String, int>>(
-                          valueListenable: _ruleService.latenciesNotifier,
-                          builder: (context, latencies, _) {
-                            final latency =
-                                latencies[_ruleService.getRuleKey(rule)];
-                            return _buildLatencyBadge(latency, isDark);
-                          },
-                        ),
                       ],
                     ),
                   ],
-                ),
-              ),
-
-              const SizedBox(width: 8),
-
-              // 启停 Switch (无水波外扩)
-              Transform.scale(
-                scale: 0.8,
-                child: Switch(
-                  value: rule.enabled,
-                  activeThumbColor: const Color(0xFF10B981),
-                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  onChanged: (val) {
-                    _ruleService.toggleRule(rule.id, val);
-                  },
                 ),
               ),
             ],
@@ -909,32 +793,10 @@ class _RulesPageState extends State<RulesPage> {
           style: TextStyle(fontWeight: FontWeight.bold),
         ),
         actions: [
-          ValueListenableBuilder<bool>(
-            valueListenable: _ruleService.isPingingNotifier,
-            builder: (context, isPinging, _) {
-              if (isPinging) {
-                return const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 12),
-                  child: Center(
-                    child: SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        valueColor: AlwaysStoppedAnimation<Color>(
-                          AppColors.primary,
-                        ),
-                      ),
-                    ),
-                  ),
-                );
-              }
-              return IconButton(
-                tooltip: '一键测速巡检',
-                icon: const Icon(Ionicons.speedometerOutline),
-                onPressed: () => _ruleService.pingAllRules(),
-              );
-            },
+          IconButton(
+            tooltip: '规则管理',
+            icon: const Icon(Ionicons.optionsOutline),
+            onPressed: () => context.pushRuleManagement(),
           ),
           IconButton(
             tooltip: '规则市场',
@@ -955,8 +817,12 @@ class _RulesPageState extends State<RulesPage> {
             return _buildEmptyState(context);
           }
 
+          // 使用侧只列已启用规则；未启用的去管理页处理，此处给一条可解释的提示
+          final hiddenCount = rules.where((r) => !r.enabled).length;
+
           // 根据输入框即时过滤
           final filteredRules = rules.where((r) {
+            if (!r.enabled) return false;
             if (_searchQuery.isEmpty) return true;
             final q = _searchQuery.toLowerCase();
             final nameMatch = r.name.toLowerCase().contains(q);
@@ -971,6 +837,60 @@ class _RulesPageState extends State<RulesPage> {
               parent: BouncingScrollPhysics(),
             ),
             slivers: [
+              // 未启用规则的提示：让「看不见的规则」永远可解释
+              if (hiddenCount > 0)
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        color: isDark
+                            ? AppColors.darkCard
+                            : AppColors.lightSurface,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Ionicons.eyeOffOutline,
+                            size: 15,
+                            color: isDark
+                                ? AppColors.darkTextMuted
+                                : AppColors.lightTextMuted,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              '已隐藏 $hiddenCount 条未启用规则',
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                color: isDark
+                                    ? AppColors.darkTextMuted
+                                    : AppColors.lightTextMuted,
+                              ),
+                            ),
+                          ),
+                          GestureDetector(
+                            onTap: () => context.pushRuleManagement(),
+                            child: const Text(
+                              '去管理',
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.primary,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+
               // 1. 顶部即时搜索栏
               SliverToBoxAdapter(
                 child: Padding(
@@ -1098,104 +1018,7 @@ class _RulesPageState extends State<RulesPage> {
                 ),
               ),
 
-              // 2. 失效规则治理轻提示横幅
-              ValueListenableBuilder<Map<String, int>>(
-                valueListenable: _ruleService.latenciesNotifier,
-                builder: (context, latencies, _) {
-                  final failedCount = latencies.values
-                      .where((v) => v < 0 || v > 2500)
-                      .length;
-                  if (failedCount == 0) {
-                    return const SliverToBoxAdapter(child: SizedBox.shrink());
-                  }
-
-                  return SliverToBoxAdapter(
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 8,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.redAccent.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(
-                            color: Colors.redAccent.withValues(alpha: 0.2),
-                          ),
-                        ),
-                        child: Row(
-                          children: [
-                            const Icon(
-                              Ionicons.alertCircleOutline,
-                              size: 16,
-                              color: Colors.redAccent,
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                '检测到 $failedCount 个失效或超时规则',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: isDark
-                                      ? Colors.white70
-                                      : Colors.black87,
-                                ),
-                              ),
-                            ),
-                            TextButton(
-                              style: TextButton.styleFrom(
-                                visualDensity: VisualDensity.compact,
-                                foregroundColor: Colors.amber,
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 6,
-                                ),
-                              ),
-                              onPressed: () async {
-                                final count = await _ruleService
-                                    .disableFailedRules();
-                                if (context.mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(content: Text('已禁用 $count 个失效规则')),
-                                  );
-                                }
-                              },
-                              child: const Text(
-                                '一键禁用',
-                                style: TextStyle(fontSize: 12),
-                              ),
-                            ),
-                            TextButton(
-                              style: TextButton.styleFrom(
-                                visualDensity: VisualDensity.compact,
-                                foregroundColor: Colors.redAccent,
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 6,
-                                ),
-                              ),
-                              onPressed: () async {
-                                final count = await _ruleService
-                                    .removeFailedRules();
-                                if (context.mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(content: Text('已清理 $count 个失效规则')),
-                                  );
-                                }
-                              },
-                              child: const Text(
-                                '一键清理',
-                                style: TextStyle(fontSize: 12),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  );
-                },
-              ),
-
-              // 3. 规则列表
+              // 2. 规则列表
               if (filteredRules.isEmpty)
                 SliverFillRemaining(
                   hasScrollBody: false,
