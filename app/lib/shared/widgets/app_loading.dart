@@ -92,9 +92,11 @@ class _AppLoadingState extends State<AppLoading>
       c2 = hsl.withHue((hsl.hue + 120.0) % 360.0).toColor();
       c3 = hsl.withHue((hsl.hue + 200.0) % 360.0).toColor();
     } else {
-      c1 = const Color(0xFF6366F1); // 靛蓝
-      c2 = const Color(0xFFEC4899); // 品红
-      c3 = const Color(0xFF06B6D4); // 青蓝
+      // 外层换成品绿系（与「极光翠影」主题同族），内层配青蓝 —— 整体是
+      // 绿 → 青的和谐过渡；原配色（靛蓝 → 品红 → 青蓝）里绿与品红会撞色
+      c1 = const Color(0xFF10B981); // 翡翠绿
+      c2 = const Color(0xFF34D399); // 薄荷绿
+      c3 = const Color(0xFF0EA5E9); // 天蓝
     }
 
     final indicator = SizedBox(
@@ -190,11 +192,11 @@ class _FerrofluidPainter extends CustomPainter {
 
   /// 主波波数（鼓包个数）与幅度
   static const double _waveNumber = 3.0;
-  static const double _waveAmplitude = 0.11;
+  static const double _waveAmplitude = 0.08;
 
   /// 次谐波：叠加少量高频起伏，让轮廓不那么"规则"，幅度须远小于主波
   static const double _rippleNumber = 5.0;
-  static const double _rippleAmplitude = 0.04;
+  static const double _rippleAmplitude = 0.025;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -210,17 +212,20 @@ class _FerrofluidPainter extends CustomPainter {
     _paintWave(
       canvas: canvas,
       center: center,
-      radius: 30.0 * k,
+      radius: 30.5 * k,
       t: progress % 1.0,
       from: c1,
       to: c2,
-      opacity: 0.85,
+      opacity: 0.88,
     );
 
     _paintBlob(
       canvas: canvas,
       center: center,
-      side: 54.0 * k,
+      // 内圈收小：原来 54 时它的最大半径（28.6k）会超过外圈波谷（25.5k），
+      // 于是外圈凹下去的地方被顶穿。收到 46 后最大半径 24.4k，与外圈波谷
+      // （30.5 × 0.895 ≈ 27.3k）留出约 2.9k 间隙。
+      side: 46.0 * k,
       t: 1.0 - ((progress * (_secondsOuter / _secondsInner)) % 1.0),
       from: c2,
       to: c3,
