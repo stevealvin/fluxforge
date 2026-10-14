@@ -7,6 +7,7 @@ import 'package:fluxforge/app/router/app_navigator.dart';
 import 'package:fluxforge/app/theme/app_colors.dart';
 import 'package:fluxforge/data/sites/site_store.dart';
 import 'package:fluxforge/features/sites/widgets/site_sheets.dart';
+import 'package:fluxforge/shared/widgets/app_image.dart';
 import 'package:fluxforge/shared/widgets/app_card.dart';
 
 /// 站点页：管理用户自建的网站入口，点击即用内置浏览器打开
@@ -22,6 +23,13 @@ class SitesPage extends StatefulWidget {
 
 class _SitesPageState extends State<SitesPage> {
   final SiteStore _store = siteStore;
+
+  /// 站点图标的常规位置；取不到时由 [AppImage] 的 errorWidget 回退通用图标
+  String _faviconUrl(String url) {
+    final uri = Uri.tryParse(url);
+    if (uri == null || uri.host.isEmpty) return '';
+    return '${uri.scheme}://${uri.host}/favicon.ico';
+  }
 
   void _openSite(SiteEntry entry) {
     HapticFeedback.lightImpact();
@@ -65,6 +73,7 @@ class _SitesPageState extends State<SitesPage> {
             itemBuilder: (context, index) {
               final entry = sites[index];
               final host = Uri.tryParse(entry.url)?.host ?? entry.url;
+              final favicon = _faviconUrl(entry.url);
 
               return AppCard(
                 padding: const EdgeInsets.symmetric(
@@ -88,11 +97,26 @@ class _SitesPageState extends State<SitesPage> {
                         color: AppColors.primary.withValues(alpha: 0.12),
                         borderRadius: BorderRadius.circular(14),
                       ),
-                      child: const Icon(
-                        Ionicons.globeOutline,
-                        size: 24,
-                        color: AppColors.primary,
-                      ),
+                      // 让 favicon 跟着卡片一起圆角
+                      clipBehavior: Clip.antiAlias,
+                      child: favicon.isEmpty
+                          ? const Icon(
+                              Ionicons.globeOutline,
+                              size: 24,
+                              color: AppColors.primary,
+                            )
+                          : AppImage(
+                              imageUrl: favicon,
+                              fit: BoxFit.cover,
+                              // 46dp 按 3x 屏取 138，避免按原图解码
+                              cacheWidth: 138,
+                              // 多数站点的 /favicon.ico 取不到，回退通用图标
+                              errorWidget: const Icon(
+                                Ionicons.globeOutline,
+                                size: 24,
+                                color: AppColors.primary,
+                              ),
+                            ),
                     ),
                     const SizedBox(height: 8),
                     Text(
