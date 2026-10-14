@@ -7,6 +7,7 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:fluxforge/app/theme/app_colors.dart';
 import 'package:fluxforge/core/utils/media_utils.dart';
+import 'package:fluxforge/shared/widgets/app_loading.dart';
 
 /// 统一的网络图片组件 —— 全仓图片加载的**唯一出口**
 ///
@@ -96,7 +97,12 @@ class AppImage extends StatelessWidget {
   /// 打开这个开关即可让组件自行降采样 —— 这是长列表内存峰值的主要来源。
   final bool autoCacheWidth;
 
-  /// 加载中的自定义占位（缺省不渲染占位，保持透明）
+  /// 加载中的自定义占位；缺省按可用尺寸渲染一枚克制的 [AppLoading.compact]
+  ///
+  /// **必须给默认值**：`extended_image` 在 `loadStateChanged` 返回 `null` 时会回落到
+  /// 它自带的默认指示器（一个主题色 `CircularProgressIndicator`）—— 那既不是本仓的
+  /// 视觉语言，还会在 46px 的图标槽里顶满。此前注释写「缺省不渲染占位，保持透明」
+  /// 与事实不符，已更正。
   final Widget? placeholder;
 
   /// 加载失败的自定义占位（缺省为居中 `Ionicons.imageOutline`）
@@ -208,7 +214,7 @@ class AppImage extends StatelessWidget {
       loadStateChanged: (state) {
         switch (state.extendedImageLoadState) {
           case LoadState.loading:
-            return placeholder;
+            return placeholder ?? const _DefaultImageLoading();
           case LoadState.failed:
             _logImageFailure(trimmedUrl, effectiveHeaders);
             return errorWidget ?? const _ImageLoadFallback();
@@ -241,6 +247,28 @@ void _logImageFailure(String url, Map<String, String>? headers) {
       ? '（无）'
       : headers.keys.join(', ');
   debugPrint('[AppImage] 图片加载失败: $url | 请求头: $names');
+}
+
+/// 加载中的默认占位：按可用尺寸给一枚 `AppLoading.compact`
+///
+/// 尺寸取**短边的 40%**，并夹在 14 ~ 40 之间 —— 与「容器边长的 40%~50%」这条口径
+/// 一致；下限保证 20px 的缩略图里仍看得出在转，上限避免大图中央出现突兀的指示器。
+class _DefaultImageLoading extends StatelessWidget {
+  const _DefaultImageLoading();
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final w = constraints.maxWidth.isFinite ? constraints.maxWidth : 40.0;
+        final h = constraints.maxHeight.isFinite
+            ? constraints.maxHeight
+            : 40.0;
+        final size = (min(w, h) * 0.4).clamp(14.0, 40.0);
+        return Center(child: AppLoading.compact(size: size));
+      },
+    );
+  }
 }
 
 /// 加载失败的默认占位

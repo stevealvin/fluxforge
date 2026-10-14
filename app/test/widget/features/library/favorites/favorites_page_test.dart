@@ -313,13 +313,17 @@ void main() {
     final cardFinder = find.byType(AppCard).first;
 
     // 底：模糊补边（竖封面两侧的空缺靠它填）
+    //
+    // 卡片内可能不止一个 ImageFiltered：AppImage 的加载占位（AppLoading 的 gooey
+    // 效果）同样用它，而测试环境的网络图会一直停在加载态。补边层在 Stack 最底，
+    // 按 widget 树遍历顺序取第一个即它。
     final blurLayer = find.descendant(
       of: cardFinder,
       matching: find.byType(ImageFiltered),
     );
-    expect(blurLayer, findsOneWidget, reason: '竖封面在宽幅封面区里的留白要靠同一张封面的模糊版补');
+    expect(blurLayer, findsWidgets, reason: '竖封面在宽幅封面区里的留白要靠同一张封面的模糊版补');
     expect(
-      tester.widget<ImageFiltered>(blurLayer).imageFilter,
+      tester.widget<ImageFiltered>(blurLayer.first).imageFilter,
       isA<ui.ImageFilter>(),
     );
 
