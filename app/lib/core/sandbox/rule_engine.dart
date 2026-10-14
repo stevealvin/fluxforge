@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:quickjs_engine/quickjs_engine.dart';
 import 'package:fluxforge/core/logging/app_logger.dart';
+import 'package:fluxforge/core/sandbox/http_request_record.dart';
 import 'package:fluxforge/domain/rule/rule.dart';
 import 'package:fluxforge/data/settings/app_service.dart';
 import 'package:fluxforge/app/di/di.dart';
@@ -35,6 +36,16 @@ class RuleEngine {
 
   /// 规则沙箱网络持久化 Cookie 容器 (自动维护 Set-Cookie 与请求头携带)
   static CookieJar? _cookieJar;
+
+  /// 原生 HTTP 请求观察者：规则调试页注册它来收集请求明细
+  /// （URL / 状态码 / 耗时 / 响应大小 / 重定向链）。
+  ///
+  /// **生产运行时保持为 null** —— 引擎因此不产生任何额外状态，也不需要知道
+  /// 「自己正被调试」这件事（与 `RuleTestActions` 选择注入入口、而非改造引擎
+  /// 全局契约是同一思路）。
+  ///
+  /// 注册方必须在调试结束时置回 null，否则记录会跨会话累积。
+  static void Function(HttpRequestRecord record)? httpObserver;
 
   /// 获取当前 CookieJar 实例 (若未进行磁盘初始化，降级使用内存 CookieJar 保证零异常)
   static CookieJar get cookieJar {
@@ -475,8 +486,40 @@ class RuleEngine {
   }
 
   /// 统一处理来自 JS 沙箱中 axios 发起的原生网络请求
+  ///
+  /// 请求明细经 [httpObserver] 抛出（未注册观察者时只多一个 Stopwatch 的开销）。
   static void _handleHttpRequest(dynamic args) async {
     String? reqId;
+
+    // 请求明细采集：变量在下面的关键节点回填，统一在 finally 里抛出 ——
+    // 这样「正常返回 / 业务异常 / 网络异常」三条路径都能被观察到。
+    final stopwatch = Stopwatch()..start();
+    var observedMethod = 'GET';
+    var observedUrl = '';
+    var observedFinalUrl = '';
+    var observedStatus = 0;
+    var observedRedirects = 0;
+    int? observedSize;
+    String? observedError;
+
+    void emitRecord() {
+      final observer = httpObserver;
+      if (observer == null || observedUrl.isEmpty) return;
+      stopwatch.stop();
+      observer(
+        HttpRequestRecord(
+          method: observedMethod,
+          url: observedUrl,
+          finalUrl: observedFinalUrl.isEmpty ? observedUrl : observedFinalUrl,
+          statusCode: observedStatus,
+          elapsedMs: stopwatch.elapsedMilliseconds,
+          sizeBytes: observedSize,
+          redirectCount: observedRedirects,
+          error: observedError,
+        ),
+      );
+    }
+
     try {
       Map<String, dynamic> req;
       if (args is Map) {
@@ -495,6 +538,8 @@ class RuleEngine {
       if (urlStr.isEmpty) {
         throw Exception('HTTP 请求 URL 不能为空');
       }
+      observedMethod = method;
+      observedUrl = urlStr;
 
       final headers = <String, dynamic>{};
       if (req['headers'] is Map) {
@@ -542,6 +587,7 @@ class RuleEngine {
         );
 
         final statusCode = response.statusCode ?? 200;
+        observedStatus = statusCode;
         final location = response.headers.value('location');
 
         // 针对 POST/GET 遇到 301/302/303/307/308 重定向，自动根据 HTTP 标准进行跟随
@@ -567,6 +613,7 @@ class RuleEngine {
               return lk == 'content-type' || lk == 'content-length';
             });
           }
+          observedRedirects = redirectCount;
           debugPrint('[RuleEngine/NativeHttp] 重定向 ($statusCode) -> $currentUrl (第 $redirectCount 次)');
           continue;
         }
@@ -574,8 +621,14 @@ class RuleEngine {
         break;
       }
 
+      observedFinalUrl = currentUrl;
+
       final rawData = response.data ?? '';
       dynamic finalData = rawData;
+
+      // 响应体大小：优先取 content-length 响应头（真实字节数），缺失时回退为文本长度近似
+      final contentLength = response.headers.value('content-length');
+      observedSize = int.tryParse(contentLength ?? '') ?? rawData.length;
 
       // 智能自适应处理：
       // 1. 若规则明确声明了 responseType 为 'text' 或 'stream'，保持原样纯字符串；
@@ -616,6 +669,7 @@ class RuleEngine {
 
       _jsRuntime.evaluate('globalThis._fluxHttpResolve($resPayload);');
     } catch (e) {
+      observedError = e.toString();
       if (reqId != null) {
         final errPayload = jsonEncode({
           'reqId': reqId,
@@ -625,6 +679,8 @@ class RuleEngine {
           _jsRuntime.evaluate('globalThis._fluxHttpReject($errPayload);');
         } catch (_) {}
       }
+    } finally {
+      emitRecord();
     }
   }
 

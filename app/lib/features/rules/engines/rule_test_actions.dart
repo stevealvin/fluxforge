@@ -1,3 +1,4 @@
+import 'package:fluxforge/core/sandbox/http_request_record.dart';
 import 'package:fluxforge/core/sandbox/rule_engine.dart';
 import 'package:fluxforge/domain/rule/rule.dart';
 
@@ -25,4 +26,13 @@ class RuleTestActions {
 
   /// 阶段 4：直链 / 正文解析
   Future<dynamic> parse(Rule rule, String url) => RuleEngine.parse(rule, url);
+
+  /// 注册 / 注销原生 HTTP 请求观察者（传 null 注销）
+  ///
+  /// 转发到 `RuleEngine.httpObserver`：让流水线能收集请求明细，同时**不必知道**
+  /// 引擎里的这个钩子叫什么。单测的假实现可覆写为空操作，从而在无沙箱环境下
+  /// 也能跑通整条流水线。
+  void setHttpObserver(void Function(HttpRequestRecord record)? observer) {
+    RuleEngine.httpObserver = observer;
+  }
 }
