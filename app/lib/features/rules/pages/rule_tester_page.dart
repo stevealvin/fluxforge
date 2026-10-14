@@ -8,10 +8,13 @@ import 'package:fluxforge/domain/rule/rule.dart';
 import 'package:fluxforge/features/rules/controllers/rule_test_pipeline.dart';
 import 'package:fluxforge/features/rules/engines/rule_test_log_filter.dart';
 import 'package:fluxforge/features/rules/engines/rule_test_report.dart';
+import 'package:fluxforge/features/rules/models/rule_data_audit.dart';
 import 'package:fluxforge/features/rules/models/rule_test_step.dart';
 import 'package:fluxforge/features/rules/widgets/rule_test_app_bar.dart';
+import 'package:fluxforge/features/rules/widgets/rule_test_audit_panel.dart';
 import 'package:fluxforge/features/rules/widgets/rule_test_console.dart';
 import 'package:fluxforge/features/rules/widgets/rule_test_control_header.dart';
+import 'package:fluxforge/features/rules/widgets/rule_test_request_list.dart';
 import 'package:fluxforge/features/rules/widgets/rule_test_step_card.dart';
 
 /// 跨媒体规则流式测试与调试页面 (对齐开源阅读 Legado 书源调试体验)
@@ -48,8 +51,13 @@ class _RuleTesterPageState extends State<RuleTesterPage> {
   late final RuleTestPipeline _pipeline;
 
   bool _isTesting = false;
-  bool _isConsoleExpanded = true;
   DateTime? _testStartTime;
+
+  /// 当前分页下标：阶段 / 网络 / 体检 / 日志
+  ///
+  /// 数据维度变多后，把「阶段流程」与「请求明细 / 数据体检 / 原始日志」分成四页：
+  /// 每页只专注一类信息，不必在一根越来越长的滚动条里翻找。
+  int _tabIndex = 0;
 
   /// 四大生命周期测试阶段列表
   late final List<RuleTestStep> _steps;
@@ -99,6 +107,8 @@ class _RuleTesterPageState extends State<RuleTesterPage> {
   void dispose() {
     // 页面销毁时中止仍在跑的流水线，避免回调打到已卸载的 State
     _pipeline.cancel();
+    // 引擎是长生命周期单例：解绑请求观察者，否则记录会一直写进一个再没人看的列表
+    _pipeline.detachHttpObserver();
     _keywordFocusNode.removeListener(_onFocusChanged);
     AppLogger.logsNotifier.removeListener(_onLogsUpdated);
     _keywordController.dispose();
@@ -224,6 +234,217 @@ class _RuleTesterPageState extends State<RuleTesterPage> {
     return filtered;
   }
 
+  /// 是否已有阶段跑过（总览条与分页在「一次都没测」时没有意义）
+  bool get _hasAnyResult =>
+      _steps.any((s) => s.status != RuleTestStepStatus.idle);
+
+  /// 各阶段体检结论里最坏的一档（用于分页上的提示点与总览条配色）
+  AuditLevel _auditWorstLevel() => auditWorstOf([
+    ..._steps.expand((s) => s.coverages.map((c) => c.level)),
+    ..._steps.expand((s) => s.checks.map((c) => c.level)),
+  ]);
+
+  /// 总览条：一行给出本轮测试的结论，省得自己去四个阶段里数
+  Widget _buildOverviewBar(bool isDark) {
+    final passed = _steps
+        .where((s) => s.status == RuleTestStepStatus.success)
+        .length;
+    final failed = _steps
+        .where((s) => s.status == RuleTestStepStatus.failed)
+        .length;
+    final totalMs = _steps.fold<int>(0, (sum, s) => sum + s.elapsedMs);
+    final requestCount = _pipeline.httpRecords.length;
+    final auditLevel = _auditWorstLevel();
+
+    final auditIssueCount = [
+      ..._steps.expand((s) => s.coverages.map((c) => c.level)),
+      ..._steps.expand((s) => s.checks.map((c) => c.level)),
+    ].where((l) => l != AuditLevel.ok).length;
+
+    final bool ok = failed == 0 && auditLevel == AuditLevel.ok;
+    final accent = failed > 0
+        ? Colors.redAccent
+        : (auditLevel == AuditLevel.ok
+              ? const Color(0xFF10B981)
+              : const Color(0xFFF59E0B));
+
+    final mutedColor = isDark
+        ? AppColors.darkTextMuted
+        : AppColors.lightTextMuted;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(18, 9, 18, 9),
+      color: accent.withValues(alpha: isDark ? 0.10 : 0.06),
+      child: Row(
+        children: [
+          Text(
+            ok
+                ? '✅ $passed/${_steps.length} 通过'
+                : (failed > 0
+                      ? '❌ $passed/${_steps.length} 通过'
+                      : '⚠️ $passed/${_steps.length} 通过'),
+            style: TextStyle(
+              fontSize: 11.5,
+              fontWeight: FontWeight.bold,
+              color: accent,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Text('${totalMs}ms', style: TextStyle(fontSize: 11, color: mutedColor)),
+          const SizedBox(width: 10),
+          Text(
+            '$requestCount 次请求',
+            style: TextStyle(fontSize: 11, color: mutedColor),
+          ),
+          const Spacer(),
+          if (auditIssueCount > 0)
+            Text(
+              '⚠️ $auditIssueCount 项体检提示',
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFFF59E0B),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// 四页切换栏（阶段 / 网络 / 体检 / 日志）
+  Widget _buildTabBar(bool isDark) {
+    final auditLevel = _auditWorstLevel();
+    const labels = ['阶段', '网络', '体检', '日志'];
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
+      child: Container(
+        padding: const EdgeInsets.all(3),
+        decoration: BoxDecoration(
+          color: isDark ? AppColors.darkCard : AppColors.lightSurfaceVariant,
+          borderRadius: BorderRadius.circular(11),
+          border: Border.all(
+            color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
+            width: 0.8,
+          ),
+        ),
+        child: Row(
+          children: [
+            for (var i = 0; i < labels.length; i++)
+              Expanded(
+                child: _buildTabItem(
+                  index: i,
+                  label: labels[i],
+                  isDark: isDark,
+                  // 只在「体检」页有异常时点一颗提示点：让用户不必切过去就知道
+                  showAlertDot: i == 2 && auditLevel != AuditLevel.ok,
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTabItem({
+    required int index,
+    required String label,
+    required bool isDark,
+    bool showAlertDot = false,
+  }) {
+    final selected = _tabIndex == index;
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(8),
+      onTap: () => setState(() => _tabIndex = index),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        decoration: BoxDecoration(
+          color: selected
+              ? (isDark ? AppColors.primary : Colors.white)
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(8),
+          boxShadow: selected && !isDark
+              ? [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.06),
+                    blurRadius: 4,
+                    offset: const Offset(0, 1),
+                  ),
+                ]
+              : null,
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12.5,
+                fontWeight: selected ? FontWeight.bold : FontWeight.normal,
+                color: selected
+                    ? (isDark ? Colors.white : AppColors.primary)
+                    : (isDark
+                          ? AppColors.darkTextSecondary
+                          : AppColors.lightTextSecondary),
+              ),
+            ),
+            if (showAlertDot) ...[
+              const SizedBox(width: 4),
+              Container(
+                width: 5,
+                height: 5,
+                decoration: const BoxDecoration(
+                  color: Color(0xFFF59E0B),
+                  shape: BoxShape.circle,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 阶段页：四张流水线卡片
+  Widget _buildStagesTab(bool isDark) {
+    return ListView(
+      controller: _scrollController,
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+      children: [
+        ..._steps.map(
+          (step) => RuleTestStepCard(
+            step: step,
+            isDark: isDark,
+            onToggleExpanded: () {
+              setState(() {
+                step.isExpanded = !step.isExpanded;
+              });
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// 日志页：沙箱控制台
+  ///
+  /// 面板内的折叠在这里没有意义（分页本身就是显示开关），故固定展开。
+  Widget _buildConsoleTab(bool isDark) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+      child: RuleTestConsolePanel(
+        isDark: isDark,
+        logs: _getFilteredLogs(),
+        expanded: true,
+        isTesting: _isTesting,
+        scrollController: _logScrollController,
+        onToggleExpanded: () {},
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -254,37 +475,24 @@ class _RuleTesterPageState extends State<RuleTesterPage> {
             onStop: _stopPipeline,
           ),
 
-          // 主体内容区：四阶段流水线卡片 + 底部沙箱控制台
-          Expanded(
-            child: ListView(
-              controller: _scrollController,
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-              children: [
-                // 阶段卡片列表
-                ..._steps.map((step) => RuleTestStepCard(
-                      step: step,
-                      isDark: isDark,
-                      onToggleExpanded: () {
-                        setState(() {
-                          step.isExpanded = !step.isExpanded;
-                        });
-                      },
-                    )),
-                const SizedBox(height: 12),
+          // 总览条：跑过之后给出「一眼结论」（通过数 / 总耗时 / 请求数 / 体检警告）
+          if (_hasAnyResult) _buildOverviewBar(isDark),
 
-                // 底部沙箱控制台 (Console Logcat)
-                RuleTestConsolePanel(
+          // 分页切换：阶段 / 网络 / 体检 / 日志
+          _buildTabBar(isDark),
+
+          // 当前分页内容（IndexedStack 保留各页滚动位置，切回来不丢上下文）
+          Expanded(
+            child: IndexedStack(
+              index: _tabIndex,
+              children: [
+                _buildStagesTab(isDark),
+                RuleTestRequestList(
                   isDark: isDark,
-                  logs: _getFilteredLogs(),
-                  expanded: _isConsoleExpanded,
-                  isTesting: _isTesting,
-                  scrollController: _logScrollController,
-                  onToggleExpanded: () {
-                    setState(() {
-                      _isConsoleExpanded = !_isConsoleExpanded;
-                    });
-                  },
+                  records: _pipeline.httpRecords,
                 ),
+                RuleTestAuditPanel(isDark: isDark, steps: _steps),
+                _buildConsoleTab(isDark),
               ],
             ),
           ),

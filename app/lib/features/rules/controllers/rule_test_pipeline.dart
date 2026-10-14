@@ -1,5 +1,7 @@
 import 'package:fluxforge/core/logging/app_logger.dart';
+import 'package:fluxforge/core/sandbox/http_request_record.dart';
 import 'package:fluxforge/domain/rule/rule.dart';
+import 'package:fluxforge/features/rules/engines/rule_data_auditor.dart';
 import 'package:fluxforge/features/rules/engines/rule_test_actions.dart';
 import 'package:fluxforge/features/rules/engines/rule_test_report.dart';
 import 'package:fluxforge/features/rules/models/rule_test_step.dart';
@@ -41,10 +43,20 @@ class RuleTestPipeline {
   /// 本轮测试是否已被用户中止
   bool get isCancelled => _isCancelled;
 
+  /// 本轮测试期间发生的原生 HTTP 请求明细（按发生顺序，供「网络」页展示）
+  final List<HttpRequestRecord> httpRecords = [];
+
   /// 中止本轮测试（在途阶段的结果随之作废，后续阶段不再执行）
   void cancel() {
     _isCancelled = true;
     _generation++;
+  }
+
+  /// 解绑请求观察者（页面销毁时调用）
+  ///
+  /// 引擎是长生命周期单例，观察者若一直挂着，等于把请求记录写进一个再没人看的列表。
+  void detachHttpObserver() {
+    actions.setHttpObserver(null);
   }
 
   /// 执行完整四阶段接力测试
@@ -53,6 +65,14 @@ class RuleTestPipeline {
     // 本轮的唯一标识：一旦被中止或被新一轮顶替，本轮所有在途结果一律作废
     final generation = ++_generation;
     bool isStale() => _isCancelled || generation != _generation;
+
+    // 请求明细采集：清空上一轮痕迹后注册观察者。
+    // 用 isStale 守卫 —— 上一轮被中止后在途的请求不应混进本轮列表。
+    httpRecords.clear();
+    actions.setHttpObserver((record) {
+      if (isStale()) return;
+      httpRecords.add(record);
+    });
 
     AppLogger.addLog(
       level: 'INFO',
@@ -95,6 +115,15 @@ class RuleTestPipeline {
           step.keyFields['分类标签 (tabs)'] = '${tabs.length} 个分类';
           step.keyFields['推荐条目 (items)'] = '${items.length} 个条目';
 
+          // 数据体检：对**全量**条目统计字段覆盖，并做可自动判定的契约检查。
+          // 此前只检查首项，因此「20 条里有 3 条缺封面」这类问题在页面上看不出来。
+          step.coverages = RuleDataAuditor.coverageOf(items);
+          step.checks = RuleDataAuditor.contractChecks(
+            items: items,
+            tabs: tabs,
+            hasMore: res['hasMore'] is bool ? res['hasMore'] as bool : null,
+          );
+
           if (items.isNotEmpty && items.first is Map) {
             final first = items.first as Map<String, dynamic>;
             candidateItemFromDiscovery = first;
@@ -106,6 +135,8 @@ class RuleTestPipeline {
           step.status = RuleTestStepStatus.success;
         } else if (res is List) {
           step.keyFields['返回条目'] = '${res.length} 个条目';
+          step.coverages = RuleDataAuditor.coverageOf(res);
+          step.checks = RuleDataAuditor.contractChecks(items: res);
           if (res.isNotEmpty && res.first is Map) {
             final first = res.first as Map<String, dynamic>;
             candidateItemFromDiscovery = first;
@@ -159,6 +190,13 @@ class RuleTestPipeline {
         }
 
         step.keyFields['命中条目数'] = '${searchList.length} 条';
+        step.coverages = RuleDataAuditor.coverageOf(searchList);
+        step.checks = RuleDataAuditor.contractChecks(
+          items: searchList,
+          hasMore: res is Map && res['hasMore'] is bool
+              ? res['hasMore'] as bool
+              : null,
+        );
         if (searchList.isNotEmpty) {
           final first = searchList.first;
           if (first is Map) {
@@ -233,6 +271,7 @@ class RuleTestPipeline {
 
             step.keyFields['详情标题'] = title;
             step.keyFields['简介字数'] = '${desc.length} 字';
+            step.coverages = RuleDataAuditor.coverageOf(items);
 
             if (items.isNotEmpty) {
               step.keyFields['资源条目 (items)'] = '${items.length} 项';

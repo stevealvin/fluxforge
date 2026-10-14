@@ -91,8 +91,19 @@ void main() {
       expect(find.text('3. 详情与选集测试 (Detail)'), findsOneWidget);
       expect(find.text('4. 直链/正文解析测试 (Parse)'), findsOneWidget);
 
-      // 4. 验证操作按钮与沙箱控制台
+      // 4. 验证操作按钮
       expect(find.text('开始测试'), findsOneWidget);
+
+      // 5. 四个分页齐备（阶段 / 网络 / 体检 / 日志）
+      expect(find.text('阶段'), findsOneWidget);
+      expect(find.text('网络'), findsOneWidget);
+      expect(find.text('体检'), findsOneWidget);
+      expect(find.text('日志'), findsOneWidget);
+
+      // 6. 控制台已移入独立的「日志」页：切过去才可见
+      //    （分页用 IndexedStack，非当前页处于 offstage，finder 默认会跳过）
+      await tester.tap(find.text('日志'));
+      await tester.pumpAndSettle();
       expect(find.text('沙箱实时控制台 (Console)'), findsOneWidget);
     });
 
