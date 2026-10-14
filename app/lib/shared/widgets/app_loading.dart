@@ -2,22 +2,14 @@ import 'dart:math' as math;
 import 'package:material_ui/material_ui.dart';
 import 'package:fluxforge/app/theme/app_colors.dart';
 
-/// 全局统一加载指示器组件（极光彗星环 · A1 轻量细尾）
+/// 全局统一加载指示器组件（磁流体有机核 · Ferrofluid Morph Core）
 ///
-/// 零外部依赖，基于原生 Canvas CustomPainter + 单 Ticker 逐帧绘制。
-/// 视觉只有**一段渐隐彗尾**：尾部完全透明 → 头部实色，圆头收笔，
-/// 没有任何底轨、内环、光晕或彗核 —— 是全系列里最素净的一版。
+/// 两层不规则磁流体形彼此叠加（上层以 `screen` 混合），边缘互相啃噬、旋转与缩放，
+/// 中心一点柔光随之明灭。三条周期互不整除（2.6s / 2.1s 反向 / 1.3s 交替），图案不会
+/// 精确重复。
 ///
-/// 之所以敢「只留一段弧」，靠的是三处刻意的取舍：
-/// 1. **渐变拉长**（stops 0.44 / 0.80）：尾巴前半程几乎全透明，
-///    让弧看起来是"从无到有"地流动，而不是一根硬邦邦的短线；
-/// 2. **线更细**（大尺寸 0.055 比例、上限 2.1）：细弧本身更"轻"，
-///    不会在卡片与按钮里抢注意力；
-/// 3. **弧更短**（94°，小尺寸 112°）：留白更多，与"加载中"这种临时状态相称。
-///
-/// 旋转沿用正弦调制（1.4s 一圈，转速在 1x 上下浮动），避免匀速的机械感。
-/// 小尺寸（<20px）降级为实色纯弧：14px 下渐变会糊掉，纯色才够锐利。
-/// 配色随「曜夜极光翡翠 / 纯净星暮白」双主题自动切换。
+/// 轮廓由 CSS 的关键帧直接描述（每角独立的水平 / 垂直半径），外层起伏幅度比参考实现
+/// 更大，见 [_FerrofluidPainter._outerScale]。
 class AppLoading extends StatefulWidget {
   const AppLoading({
     super.key,
@@ -42,12 +34,10 @@ class AppLoading extends StatefulWidget {
   /// 指示器尺寸
   final double size;
 
-  /// 线宽上限：实际线宽按尺寸自适应（见 `_AppLoadingState.build` 内的 strokeWidth 计算），
-  /// 传入值只在「自适应结果比它更粗」时起收敛作用 —— 小尺寸不会被拉成糊团，
-  /// 大尺寸也不会出现一根过分纤细的蓝丝。
+  /// 兼容线宽参数（按尺寸自适应缩放）
   final double strokeWidth;
 
-  /// 主流光色彩（缺省自动感应深/浅色主题极光绿）
+  /// 主色（缺省采用靛蓝 → 品红 / 品红 → 青蓝的双层渐变）
   final Color? color;
 
   /// 是否为极简紧凑态（只影响是否渲染文案，图形与主态完全一致）
@@ -59,28 +49,25 @@ class AppLoading extends StatefulWidget {
 
 class _AppLoadingState extends State<AppLoading>
     with SingleTickerProviderStateMixin {
+  static const Duration _period = Duration(milliseconds: 2600);
+
   late final AnimationController _controller;
 
   @override
   void initState() {
     super.initState();
-    // 单圈 1.4s；配合绘制器内的正弦调制构成「不匀速」的彗星滑行节奏
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1400),
-    )..repeat();
+    _controller = AnimationController(vsync: this, duration: _period)..repeat();
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // 无障碍：系统开启「减少动画」时不再持续跑帧，停在固定相位上展示静态弧。
-    // （组件不可见时 Ticker 已被 TickerMode 自动静音，这里只处理用户显式开关。）
+    // 无障碍：系统开启「减少动画」时停在形变最饱满的相位
     final reduceMotion =
         MediaQuery.maybeOf(context)?.disableAnimations ?? false;
     if (reduceMotion) {
       if (_controller.isAnimating) _controller.stop();
-      _controller.value = 0.25;
+      _controller.value = 1.0 / 3.0;
     } else if (!_controller.isAnimating) {
       _controller.repeat();
     }
@@ -96,42 +83,39 @@ class _AppLoadingState extends State<AppLoading>
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    // 主题配色：主色深色取极光荧光绿、浅色取品牌幽绿；
-    // 副色（彗尾中段色）在调用方自定义主色时由主色推导，否则走主题辅助色
-    final primaryColor =
-        widget.color ?? (isDark ? AppColors.primaryGlow : AppColors.primary);
-    final secondaryColor = widget.color != null
-        ? widget.color!.withValues(alpha: 0.7)
-        : (isDark ? AppColors.accentBlue : AppColors.accentTeal);
-
-    // 线宽自适应：小尺寸给更大的相对线宽（否则 14px 下几乎看不见），
-    // 再用 clamp 收敛到 [1.2, strokeWidth]，保证调用方传入的细线意图不被突破。
-    // A1 的大尺寸比例取 0.055（比 A0 的 0.075 更细）—— 这是「轻量」观感的一半来源。
-    final double adaptiveWidth = widget.size * (widget.size < 20 ? 0.115 : 0.055);
-    final double maxWidth = math.max(1.2, widget.strokeWidth).toDouble();
-    final double strokeWidth = adaptiveWidth.clamp(1.2, maxWidth).toDouble();
+    final Color c1;
+    final Color c2;
+    final Color c3;
+    if (widget.color != null) {
+      final hsl = HSLColor.fromColor(widget.color!);
+      c1 = widget.color!;
+      c2 = hsl.withHue((hsl.hue + 120.0) % 360.0).toColor();
+      c3 = hsl.withHue((hsl.hue + 200.0) % 360.0).toColor();
+    } else {
+      c1 = const Color(0xFF6366F1); // 靛蓝
+      c2 = const Color(0xFFEC4899); // 品红
+      c3 = const Color(0xFF06B6D4); // 青蓝
+    }
 
     final indicator = SizedBox(
       width: widget.size,
       height: widget.size,
-      // RepaintBoundary：把逐帧重绘隔离在这一层。
-      // 否则 60fps 的重绘会一路冒泡到最近的重绘边界（通常就是整页）
       child: RepaintBoundary(
         child: AnimatedBuilder(
           animation: _controller,
-          builder: (context, child) => CustomPaint(
-            painter: _CometLoadingPainter(
+          builder: (context, _) => CustomPaint(
+            painter: _FerrofluidPainter(
               progress: _controller.value,
-              primaryColor: primaryColor,
-              secondaryColor: secondaryColor,
-              strokeWidth: strokeWidth,
+              c1: c1,
+              c2: c2,
+              c3: c3,
+              isDark: isDark,
             ),
           ),
         ),
       ),
     );
 
-    // 紧凑态：直接返回图形，零任何额外布局包裹
     if (widget.isCompact) {
       return Center(child: indicator);
     }
@@ -163,93 +147,276 @@ class _AppLoadingState extends State<AppLoading>
   }
 }
 
-/// 极光彗星环绘制器（A1 · 轻量细尾）
+/// 磁流体有机核绘制器
 ///
-/// 只画一段渐隐彗尾：尾部完全透明 → 头部实色，圆头收笔 ——
-/// 无底轨、无内环、无彗核，是全系列里元素最少的一版。
-/// 旋转相位 = 匀速角 + 一层正弦浮动，转速在 1x 上下呼吸，长时间盯着看也不机械。
-class _CometLoadingPainter extends CustomPainter {
-  _CometLoadingPainter({
+/// 三层相位由主周期推导：外层 `t = progress`；内层取 `1 - (t × 2.6 / 2.1) % 1` 得到
+/// 反向；柔光取三角波得到往返。轮廓用 CSS 的 `h1 h2 h3 h4 / v1 v2 v3 v4`（每角独立的
+/// 水平与垂直半径），三组关键帧按 `linear` 逐角插值。
+class _FerrofluidPainter extends CustomPainter {
+  _FerrofluidPainter({
     required this.progress,
-    required this.primaryColor,
-    required this.secondaryColor,
-    required this.strokeWidth,
+    required this.c1,
+    required this.c2,
+    required this.c3,
+    required this.isDark,
   });
 
-  /// 0.0 ~ 1.0 的单圈进度（由 Ticker 驱动，1.4s 一圈）
   final double progress;
-  final Color primaryColor;
-  final Color secondaryColor;
+  final Color c1;
+  final Color c2;
+  final Color c3;
+  final bool isDark;
 
-  /// 已按尺寸自适应后的实际线宽
-  final double strokeWidth;
+  static const double _secondsOuter = 2.6;
+  static const double _secondsInner = 2.1;
+  static const double _secondsShine = 1.3;
+
+  /// 关键帧 A / B / C 的水平半径（四角，tl tr br bl，单位 %）
+  static const List<double> _hA = [62.0, 38.0, 46.0, 54.0];
+  static const List<double> _hB = [38.0, 62.0, 64.0, 36.0];
+  static const List<double> _hC = [54.0, 46.0, 35.0, 65.0];
+
+  /// 关键帧 A / B / C 的垂直半径
+  static const List<double> _vA = [60.0, 44.0, 56.0, 40.0];
+  static const List<double> _vB = [42.0, 58.0, 42.0, 58.0];
+  static const List<double> _vC = [52.0, 35.0, 65.0, 48.0];
+
+  /// 外层波浪的取样点数与波形参数
+  ///
+  /// **点数与幅度必须一起定**：点太少而幅度太大时，相邻点的径向差会接近两点间的弧长，
+  /// 平滑曲线只能朝直线塌过去，轮廓就退化成多边形。此处 16 点 + 11% 主波，径向差不到
+  /// 弧长的三分之一，平滑无虞。
+  static const int _waveSamples = 16;
+
+  /// 主波波数（鼓包个数）与幅度
+  static const double _waveNumber = 3.0;
+  static const double _waveAmplitude = 0.11;
+
+  /// 次谐波：叠加少量高频起伏，让轮廓不那么"规则"，幅度须远小于主波
+  static const double _rippleNumber = 5.0;
+  static const double _rippleAmplitude = 0.04;
 
   @override
   void paint(Canvas canvas, Size size) {
     final shortSide = math.min(size.width, size.height);
-    // 半径留出线宽与 0.5px 抗锯齿余量，保证圆头描边不被画布裁切
-    final radius = (shortSide - strokeWidth) / 2 - 0.5;
-    if (radius <= 0) return;
+    if (shortSide <= 0) return;
 
+    final k = shortSide / 68.0;
     final center = Offset(size.width / 2, size.height / 2);
-    final isSmall = shortSide < 20;
 
-    // 旋转相位：整体匀速 + 正弦调制 → 头部自 12 点方向起步并带轻微加减速
-    final cycle = progress * 2 * math.pi;
-    final headAngle = cycle + math.sin(cycle) * 0.34 - math.pi / 2;
+    // 外层：不做整体缩放，改用「沿周向传播的波浪轮廓」。
+    // 整体缩放只是「同一个形状在胀缩」，看久了就是椭圆在呼吸；波浪则是轮廓上多个
+    // 鼓包绕圈移动，形状本身在流动，才有流体起伏的观感。
+    _paintWave(
+      canvas: canvas,
+      center: center,
+      radius: 30.0 * k,
+      t: progress % 1.0,
+      from: c1,
+      to: c2,
+      opacity: 0.85,
+    );
 
-    // 弧长：大尺寸 94°、小尺寸 112°（小圆上再短就只剩一个点了）
-    final sweepAngle = (isSmall ? 112 : 94) * math.pi / 180;
-    final tailAngle = headAngle - sweepAngle;
-    final arcRect = Rect.fromCircle(center: center, radius: radius);
+    _paintBlob(
+      canvas: canvas,
+      center: center,
+      side: 54.0 * k,
+      t: 1.0 - ((progress * (_secondsOuter / _secondsInner)) % 1.0),
+      from: c2,
+      to: c3,
+      diagonalDown: false,
+      opacity: 0.75,
+      scaleRange: const [1.0, 1.06, 0.94],
+      blend: BlendMode.screen,
+    );
 
-    // 小尺寸降级：实色纯弧 —— 14px 下渐变会糊掉，纯色才够锐利
-    if (isSmall) {
-      canvas.drawArc(
-        arcRect,
-        tailAngle,
-        sweepAngle,
-        false,
-        Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = strokeWidth
-          ..strokeCap = StrokeCap.round
-          ..color = primaryColor,
-      );
-      return;
-    }
-
-    // 大尺寸：沿弧扫掠渐变，圆头收笔。
-    // stops 0.44 / 0.80 比其它版更靠后 —— 尾巴前半程几乎全透明，
-    // 弧看起来是「从无到有」地流动，这是「轻量」观感的另一半来源。
-    canvas.drawArc(
-      arcRect,
-      tailAngle,
-      sweepAngle,
-      false,
+    final shinePhase = (progress * (_secondsOuter / _secondsShine)) % 2.0;
+    final shineF = Curves.easeInOut.transform(
+      (shinePhase <= 1.0 ? shinePhase : 2.0 - shinePhase).clamp(0.0, 1.0),
+    );
+    canvas.drawCircle(
+      center,
+      9.0 * k * (0.65 + 0.55 * shineF),
       Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = strokeWidth
-        ..strokeCap = StrokeCap.round
-        ..shader = SweepGradient(
-          startAngle: tailAngle,
-          endAngle: headAngle,
-          colors: [
-            primaryColor.withValues(alpha: 0.0),
-            secondaryColor.withValues(alpha: 0.42),
-            secondaryColor,
-            primaryColor,
-          ],
-          stops: const [0.0, 0.44, 0.80, 1.0],
-        ).createShader(arcRect),
+        ..color = Colors.white.withValues(alpha: 0.45 + 0.5 * shineF)
+        ..maskFilter = MaskFilter.blur(BlurStyle.normal, 3.0 * k),
     );
   }
 
+  /// 画外层的波浪 blob（无缩放）
+  void _paintWave({
+    required Canvas canvas,
+    required Offset center,
+    required double radius,
+    required double t,
+    required Color from,
+    required Color to,
+    required double opacity,
+  }) {
+    final path = _wavePath(center: center, radius: radius, t: t);
+
+    final extent =
+        radius * (1 + _waveAmplitude + _rippleAmplitude) * 2;
+
+    final gradient = LinearGradient(
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+      colors: [
+        from.withValues(alpha: opacity),
+        to.withValues(alpha: opacity),
+      ],
+    );
+
+    canvas.drawPath(
+      path,
+      Paint()
+        ..shader = gradient.createShader(
+          Rect.fromCenter(center: center, width: extent, height: extent),
+        ),
+    );
+  }
+
+  /// 周向传播波轮廓
+  ///
+  /// 半径沿「角度与时间」做正弦调制：`r = R × (1 + A·sin(kθ − 2πt) + …)`。
+  /// 因为是 `kθ − ωt`（而非 `kθ`），波峰位置随 t 移动 —— 鼓包绕着轮廓转圈，
+  /// 这正是「波浪」与「整体缩放」的本质区别。
+  Path _wavePath({
+    required Offset center,
+    required double radius,
+    required double t,
+  }) {
+    final points = <Offset>[];
+    for (var i = 0; i < _waveSamples; i++) {
+      final theta = 2 * math.pi * i / _waveSamples;
+      final r = radius *
+          (1 +
+              _waveAmplitude *
+                  math.sin(_waveNumber * theta - 2 * math.pi * t) +
+              _rippleAmplitude *
+                  math.sin(_rippleNumber * theta + 2 * math.pi * t * 1.3));
+      points.add(
+        Offset(
+          center.dx + r * math.cos(theta),
+          center.dy + r * math.sin(theta),
+        ),
+      );
+    }
+
+    // 相邻点中点作端点、数据点作控制点做二次贝塞尔：闭合且处处平滑
+    final path = Path();
+    final last = points.last;
+    final first = points.first;
+    path.moveTo((last.dx + first.dx) / 2, (last.dy + first.dy) / 2);
+    for (var i = 0; i < points.length; i++) {
+      final p = points[i];
+      final next = points[(i + 1) % points.length];
+      path.quadraticBezierTo(
+        p.dx,
+        p.dy,
+        (p.dx + next.dx) / 2,
+        (p.dy + next.dy) / 2,
+      );
+    }
+    path.close();
+    return path;
+  }
+
+  /// 画内层磁流体 blob（沿用关键帧形变）
+  void _paintBlob({
+    required Canvas canvas,
+    required Offset center,
+    required double side,
+    required double t,
+    required Color from,
+    required Color to,
+    required bool diagonalDown,
+    required double opacity,
+    required List<double> scaleRange,
+    BlendMode? blend,
+  }) {
+    final f = t % 1.0;
+    final double scale;
+    final double rotation;
+    final List<double> h;
+    final List<double> v;
+
+    if (f <= 1.0 / 3.0) {
+      final u = f / (1.0 / 3.0);
+      h = _mix(_hA, _hB, u);
+      v = _mix(_vA, _vB, u);
+      scale = _lerp(scaleRange[0], scaleRange[1], u);
+      rotation = 120.0 * u;
+    } else if (f <= 2.0 / 3.0) {
+      final u = (f - 1.0 / 3.0) / (1.0 / 3.0);
+      h = _mix(_hB, _hC, u);
+      v = _mix(_vB, _vC, u);
+      scale = _lerp(scaleRange[1], scaleRange[2], u);
+      rotation = 120.0 + 120.0 * u;
+    } else {
+      final u = (f - 2.0 / 3.0) / (1.0 / 3.0);
+      h = _mix(_hC, _hA, u);
+      v = _mix(_vC, _vA, u);
+      scale = _lerp(scaleRange[2], scaleRange[0], u);
+      rotation = 240.0 + 120.0 * u;
+    }
+
+    canvas.save();
+    canvas.translate(center.dx, center.dy);
+    canvas.rotate(rotation * math.pi / 180.0);
+    canvas.scale(scale);
+
+    final half = side / 2;
+    final rect = Rect.fromCenter(
+      center: Offset.zero,
+      width: side,
+      height: side,
+    );
+
+    // CSS 的 `h… / v…` 语法：每个角的水平与垂直半径可以不同
+    final rrect = RRect.fromRectAndCorners(
+      rect,
+      topLeft: Radius.elliptical(half * h[0] / 50.0, half * v[0] / 50.0),
+      topRight: Radius.elliptical(half * h[1] / 50.0, half * v[1] / 50.0),
+      bottomRight: Radius.elliptical(half * h[2] / 50.0, half * v[2] / 50.0),
+      bottomLeft: Radius.elliptical(half * h[3] / 50.0, half * v[3] / 50.0),
+    );
+
+    // 透明度并入渐变色：shader 存在时 Paint.color 只当 alpha 调制用
+    final gradient = LinearGradient(
+      begin: diagonalDown ? Alignment.topLeft : Alignment.topRight,
+      end: diagonalDown ? Alignment.bottomRight : Alignment.bottomLeft,
+      colors: [
+        from.withValues(alpha: opacity),
+        to.withValues(alpha: opacity),
+      ],
+    );
+
+    canvas.drawRRect(
+      rrect,
+      Paint()
+        ..shader = gradient.createShader(rect)
+        ..blendMode = blend ?? BlendMode.srcOver,
+    );
+
+    canvas.restore();
+  }
+
+  static List<double> _mix(List<double> a, List<double> b, double f) => [
+        _lerp(a[0], b[0], f),
+        _lerp(a[1], b[1], f),
+        _lerp(a[2], b[2], f),
+        _lerp(a[3], b[3], f),
+      ];
+
+  static double _lerp(double a, double b, double f) => a + (b - a) * f;
+
   @override
-  bool shouldRepaint(covariant _CometLoadingPainter oldDelegate) {
+  bool shouldRepaint(covariant _FerrofluidPainter oldDelegate) {
     return oldDelegate.progress != progress ||
-        oldDelegate.primaryColor != primaryColor ||
-        oldDelegate.secondaryColor != secondaryColor ||
-        oldDelegate.strokeWidth != strokeWidth;
+        oldDelegate.c1 != c1 ||
+        oldDelegate.c2 != c2 ||
+        oldDelegate.c3 != c3 ||
+        oldDelegate.isDark != isDark;
   }
 }
