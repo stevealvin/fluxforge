@@ -1,17 +1,37 @@
-import 'package:fluxforge/shared/widgets/app_image.dart';
-import 'package:material_ui/material_ui.dart';
-import 'package:fluxforge/app/router/app_navigator.dart';
-import 'package:ionicons/ionicons.dart';
+﻿import 'dart:async';
 
+import 'package:flutter/services.dart';
+import 'package:ionicons/ionicons.dart';
+import 'package:material_ui/material_ui.dart';
+
+import 'package:fluxforge/app/di/di.dart';
+import 'package:fluxforge/app/router/app_navigator.dart';
 import 'package:fluxforge/app/theme/app_colors.dart';
 import 'package:fluxforge/domain/media/media_kind.dart';
-import 'package:fluxforge/domain/rule/rule.dart';
-import 'package:fluxforge/app/di/di.dart';
-import 'package:fluxforge/core/sandbox/rule_engine.dart';
-import 'package:fluxforge/shared/widgets/app_card.dart';
+import 'package:fluxforge/features/discover/controllers/discover_session.dart';
+import 'package:fluxforge/features/discover/engines/discover_aggregator.dart';
+import 'package:fluxforge/features/discover/models/discover_item.dart';
+import 'package:fluxforge/features/discover/widgets/discover_channel_bar.dart';
+import 'package:fluxforge/features/discover/widgets/discover_grid.dart';
+import 'package:fluxforge/features/discover/widgets/discover_hero_carousel.dart';
 import 'package:fluxforge/shared/widgets/app_loading.dart';
 
-/// 现代化多规则动态发现推荐流视图
+/// 发现页：跨源内容聚合（类型为主轴，规则源退到后台）
+///
+/// ### 与旧版的根本差别
+/// 旧版是「列出所有规则源、逐个切换看它的内容」—— 本质是个**规则浏览器**。
+/// 现版把导航主轴换成**媒体类型**（影视 / 小说 / 漫画 / 图集）：
+/// 进入页面即并发向多个启用源拉取内容、跨源去重后合并成一条流，
+/// 用户面对的是「一堆内容」而不是「一堆源」。
+///
+/// ### 页面结构（自上而下）
+/// 1. **沉浸式轮播**：各源推荐位各贡献一条（全出血，AppBar 透明叠在其上）；
+/// 2. **频道段**：媒体类型切换，带各频道实际条目数；
+/// 3. **频道副标题**：跨 N 个源聚合 · M 条，右侧显示聚合进度；
+/// 4. **双列网格**：当前频道的条目（与轮播互斥，同一条不会两处都出现）。
+///
+/// 轮播与网格的取值、排序、去重全部在 [DiscoverSession] 与
+/// [DiscoverAggregator] 里完成，页面只负责渲染。
 class DiscoverPage extends StatefulWidget {
   const DiscoverPage({super.key});
 
@@ -21,18 +41,8 @@ class DiscoverPage extends StatefulWidget {
 
 class _DiscoverPageState extends State<DiscoverPage>
     with AutomaticKeepAliveClientMixin {
-  Rule? _selectedRule;
-  List<dynamic> _discoveryData = [];
-  bool _loading = false;
-  String? _error;
-
-  /// 发现页全局多源内存缓存 (Key: rule.id 或 rule.name)
-  ///
-  /// 这是**静态**缓存、跨页面生命周期存活，必须设上限：
-  /// 每切换一个规则分类就会缓存一份完整列表，无上限会随浏览足迹持续膨胀。
-  /// Dart 的 Map 保持插入顺序，因此「删掉第一个 key」就是淘汰最久未用的一项。
-  static final Map<String, List<dynamic>> _discoveryCache = {};
-  static const int _discoveryCacheCapacity = 8;
+  /// 跨源聚合会话：持有全部可变状态，页面只渲染
+  late final DiscoverSession _session;
 
   @override
   bool get wantKeepAlive => true;
@@ -40,491 +50,24 @@ class _DiscoverPageState extends State<DiscoverPage>
   @override
   void initState() {
     super.initState();
-    _initDefaultRule();
-  }
-
-  void _initDefaultRule() {
-    final enabledRules = ruleService.enabledRules;
-    if (enabledRules.isNotEmpty) {
-      _selectedRule = enabledRules.first;
-      _loadDiscovery(_selectedRule!);
-    }
-  }
-
-  String _getCacheKey(Rule rule) => rule.id?.toString() ?? rule.name;
-
-  Future<void> _loadDiscovery(Rule rule, {bool forceRefresh = false}) async {
-    final cacheKey = _getCacheKey(rule);
-
-    // 1. 命中缓存且非强制刷新时，立即秒级渲染缓存数据，彻底告别重复等待与闪烁
-    if (!forceRefresh &&
-        _discoveryCache.containsKey(cacheKey) &&
-        _discoveryCache[cacheKey]!.isNotEmpty) {
-      // LRU：命中即挪到队尾，保证容量淘汰时先丢的是最久未用的分类
-      final cached = _discoveryCache.remove(cacheKey)!;
-      _discoveryCache[cacheKey] = cached;
-      setState(() {
-        _discoveryData = cached;
-        _loading = false;
-        _error = null;
-      });
-      return;
-    }
-
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
-
-    try {
-      final result = await RuleEngine.discovery(rule);
-      final List parsed = result is List
-          ? result
-          : (result is Map && result['items'] is List
-                ? result['items'] as List
-                : const []);
-
-      // 写入内存缓存，并淘汰最久未用的一项
-      _discoveryCache[cacheKey] = parsed;
-      while (_discoveryCache.length > _discoveryCacheCapacity) {
-        _discoveryCache.remove(_discoveryCache.keys.first);
-      }
-
-      if (mounted && _selectedRule?.id == rule.id) {
-        setState(() {
-          _discoveryData = parsed;
-        });
-      }
-    } catch (e) {
-      debugPrint('[DiscoverPage] error: $e');
-      if (mounted && _selectedRule?.id == rule.id) {
-        setState(() {
-          _error = '发现内容加载失败: $e';
-        });
-      }
-    } finally {
-      if (mounted && _selectedRule?.id == rule.id) {
-        setState(() {
-          _loading = false;
-        });
-      }
-    }
-  }
-
-  /// 构建横向规则选择器（透明无底色，融合整体背景）
-  Widget _buildRuleSelector(List<Rule> enabledRules, bool isDark) {
-    return Container(
-      height: 48,
-      decoration: const BoxDecoration(
-        color: Colors.transparent, // 彻底去掉背景底色
-      ),
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-        itemCount: enabledRules.length,
-        separatorBuilder: (_, _) => const SizedBox(width: 8),
-        itemBuilder: (context, index) {
-          final rule = enabledRules[index];
-          final isSelected = _selectedRule?.id == rule.id;
-
-          return ChoiceChip(
-            label: Text(rule.name),
-            selected: isSelected,
-            showCheckmark: false,
-            backgroundColor: Colors.transparent, // 去掉未选中 tab 背景色
-            selectedColor: AppColors.primary.withValues(alpha: 0.12),
-            labelStyle: TextStyle(
-              color: isSelected
-                  ? AppColors.primary
-                  : (isDark
-                        ? AppColors.darkTextSecondary
-                        : AppColors.lightTextSecondary),
-              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-              fontSize: 13,
-            ),
-            side: BorderSide(
-              color: isSelected
-                  ? AppColors.primary
-                  : (isDark
-                        ? AppColors.darkCardBorder.withValues(alpha: 0.5)
-                        : AppColors.lightCardBorder),
-              width: isSelected ? 1.0 : 0.8,
-            ),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-            onSelected: (selected) {
-              if (selected && _selectedRule?.id != rule.id) {
-                setState(() {
-                  _selectedRule = rule;
-                });
-                _loadDiscovery(rule);
-              }
-            },
-          );
-        },
-      ),
+    _session = DiscoverSession(
+      resolveAllRules: () => ruleService.enabledRules,
     );
+    // 规则集合变化（新增 / 启用 / 停用）后重新聚合
+    ruleService.rulesNotifier.addListener(_onRulesChanged);
+    unawaited(_session.load());
   }
 
-  /// 构建未配置规则空状态
-  Widget _buildEmptyRuleState(BuildContext context, bool isDark) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 72,
-              height: 72,
-              decoration: BoxDecoration(
-                color: AppColors.primary.withValues(alpha: 0.12),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Ionicons.compassOutline,
-                size: 36,
-                color: AppColors.primary,
-              ),
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              '尚未启用任何解析规则',
-              style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              '前往规则市场探索海量公共规则，开启全新体验。',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 13, color: Colors.grey),
-            ),
-            const SizedBox(height: 20),
-            FilledButton.icon(
-              style: FilledButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 12,
-                ),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-              onPressed: () => context.pushMarket(),
-              icon: const Icon(Ionicons.storefrontOutline, size: 16),
-              label: const Text('前往规则市场'),
-            ),
-          ],
-        ),
-      ),
-    );
+  void _onRulesChanged() {
+    if (!mounted) return;
+    unawaited(_session.load());
   }
 
-  /// 是否按 16:9 横版海报排版（判定收在 domain 层，与搜索结果、规则目录同源）
-  bool _isVideoRule(Rule rule) => isVideoRuleType(rule.type);
-
-  /// 构建单个媒体海报卡片
-  Widget _buildMediaCard(Map item, Rule currentRule) {
-    final title = item['title']?.toString() ?? '';
-    final url = item['url']?.toString() ?? '';
-    final cover = item['cover']?.toString() ?? '';
-    final badge = item['badge']?.toString() ?? '';
-    final desc = item['desc']?.toString() ?? '';
-    final isVideo = _isVideoRule(currentRule);
-
-    return AppCard(
-      padding: EdgeInsets.zero,
-      borderRadius: 12,
-      onTap: () {
-        context.pushRuleDetail(
-          RuleDetailArgs(
-            url: url,
-            title: title,
-            cover: cover,
-            rule: currentRule,
-          ),
-        );
-      },
-      // 首页卡片只承担「进入详情」一件事：收藏走详情页与底部 Tab 收藏入口
-      // （此前试过卡片长按收藏，按反馈撤掉了 —— 长按留给后续的多选 / 菜单规划）
-      child: isVideo
-          ? Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // 顶部 16:9 横屏封面（宽大于高）
-                AspectRatio(
-                  aspectRatio: 16 / 9,
-                  child: ClipRRect(
-                    borderRadius: const BorderRadius.vertical(
-                      top: Radius.circular(12),
-                    ),
-                    child: Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        AppImage(
-                          imageUrl: cover,
-                          // 与详情页同口径：Referer 取规则 baseUrl；发现页另带固定 UA
-                          headers: {
-                            'referer': currentRule.baseUrl,
-                            'user-agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1',
-                          },
-                        ),
-                        Positioned(
-                          left: 0,
-                          right: 0,
-                          bottom: 0,
-                          height: 28,
-                          child: DecoratedBox(
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                colors: [
-                                  Colors.transparent,
-                                  Colors.black.withValues(alpha: 0.65),
-                                ],
-                                begin: Alignment.topCenter,
-                                end: Alignment.bottomCenter,
-                              ),
-                            ),
-                          ),
-                        ),
-                        if (badge.isNotEmpty)
-                          Positioned(
-                            right: 6,
-                            bottom: 5,
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 5,
-                                vertical: 1.5,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Colors.black.withValues(alpha: 0.75),
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              child: Text(
-                                badge,
-                                style: const TextStyle(
-                                  fontSize: 9.5,
-                                  fontWeight: FontWeight.w600,
-                                  color: Colors.white,
-                                ),
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                ),
-                // 底部标题与描述
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          title,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontSize: 12.5,
-                            fontWeight: FontWeight.w600,
-                            height: 1.25,
-                          ),
-                        ),
-                        if (desc.isNotEmpty && desc != badge)
-                          Text(
-                            desc,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontSize: 10.5,
-                              color: Colors.grey,
-                            ),
-                          )
-                        else
-                          const SizedBox.shrink(),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            )
-          : Stack(
-              fit: StackFit.expand,
-              children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: AppImage(
-                    imageUrl: cover,
-                    // 与详情页同口径：Referer 取规则 baseUrl；发现页另带固定 UA
-                    headers: {
-                      'referer': currentRule.baseUrl,
-                      'user-agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1',
-                    },
-                  ),
-                ),
-                Positioned.fill(
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(12),
-                      gradient: LinearGradient(
-                        colors: [
-                          Colors.transparent,
-                          Colors.black.withValues(alpha: 0.85),
-                        ],
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        stops: const [0.55, 1.0],
-                      ),
-                    ),
-                  ),
-                ),
-                if (badge.isNotEmpty)
-                  Positioned(
-                    top: 8,
-                    right: 8,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 6,
-                        vertical: 2,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppColors.primary.withValues(alpha: 0.9),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Text(
-                        badge,
-                        style: const TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ),
-                  ),
-
-                Positioned(
-                  left: 8,
-                  right: 8,
-                  bottom: 8,
-                  child: Text(
-                    title,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-    );
-  }
-
-  /// 构建瀑布流与媒体网格 (用于嵌套专区)
-  Widget _buildCategoryGrid(List items, Rule currentRule) {
-    final isVideo = _isVideoRule(currentRule);
-    return GridView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      itemCount: items.length,
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        childAspectRatio: isVideo ? 1.12 : 0.72,
-        crossAxisSpacing: 12,
-        mainAxisSpacing: 12,
-      ),
-      itemBuilder: (BuildContext context, int index) {
-        final item = items[index];
-        if (item is! Map) return const SizedBox.shrink();
-        return _buildMediaCard(item, currentRule);
-      },
-    );
-  }
-
-  /// 构建 Sliver 内容区域 (自适应分组与扁平列表)
-  List<Widget> _buildSliverContent(List<dynamic> data, Rule currentRule) {
-    final isGrouped =
-        data.isNotEmpty &&
-        data.first is Map &&
-        data.first.containsKey('items') &&
-        data.first['items'] is List;
-    final isVideo = _isVideoRule(currentRule);
-
-    if (isGrouped) {
-      return [
-        SliverList(
-          delegate: SliverChildBuilderDelegate((context, index) {
-            final section = data[index];
-            if (section is Map &&
-                section.containsKey('items') &&
-                section['items'] is List) {
-              final title = section['title']?.toString() ?? '推荐专区';
-              final items = section['items'] as List;
-
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-                      child: Row(
-                        children: [
-                          Container(
-                            width: 4,
-                            height: 16,
-                            decoration: BoxDecoration(
-                              color: AppColors.primary,
-                              borderRadius: BorderRadius.circular(2),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            title,
-                            style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    _buildCategoryGrid(items, currentRule),
-                  ],
-                ),
-              );
-            }
-            return const SizedBox.shrink();
-          }, childCount: data.length),
-        ),
-      ];
-    } else {
-      return [
-        SliverPadding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-          sliver: SliverGrid(
-            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
-              childAspectRatio: isVideo ? 1.12 : 0.72,
-              crossAxisSpacing: 12,
-              mainAxisSpacing: 12,
-            ),
-            delegate: SliverChildBuilderDelegate((context, index) {
-              final item = data[index];
-              if (item is! Map) return const SizedBox.shrink();
-              return _buildMediaCard(item, currentRule);
-            }, childCount: data.length),
-          ),
-        ),
-      ];
-    }
+  @override
+  void dispose() {
+    ruleService.rulesNotifier.removeListener(_onRulesChanged);
+    _session.dispose();
+    super.dispose();
   }
 
   @override
@@ -533,15 +76,23 @@ class _DiscoverPageState extends State<DiscoverPage>
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
+      // 轮播全出血，AppBar 透明叠在其上（顶部暗色渐变保证浅色图标可读）
+      extendBodyBehindAppBar: true,
+      backgroundColor: isDark ? AppColors.darkBg : AppColors.lightBg,
       appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        systemOverlayStyle: SystemUiOverlayStyle.light,
+        titleSpacing: 0,
         title: Row(
           children: [
             Hero(
               tag: 'logo',
               child: Image.asset(
                 'assets/icon/icon.png',
-                width: 32,
-                height: 32,
+                width: 30,
+                height: 30,
                 errorBuilder: (_, _, _) =>
                     const Icon(Ionicons.flashOutline, color: AppColors.primary),
               ),
@@ -549,114 +100,205 @@ class _DiscoverPageState extends State<DiscoverPage>
             const SizedBox(width: 8),
             const Text(
               'FluxForge',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 18,
+                color: Colors.white,
+              ),
             ),
           ],
         ),
         actions: [
-          // 收藏入口已移至底部导航栏的「收藏」Tab：同一份数据不设两个入口，
-          // 「有新更新」的红点也随入口一起迁到那个 Tab 上。
+          // 收藏入口在底部导航栏的「收藏」Tab，不在此重复设置
           IconButton(
             tooltip: '搜索',
-            icon: const Icon(Ionicons.searchOutline),
+            icon: const Icon(Ionicons.searchOutline, color: Colors.white),
             onPressed: () => context.pushSearch(),
           ),
           IconButton(
             tooltip: '规则市场',
-            icon: const Icon(Ionicons.storefrontOutline),
+            icon: const Icon(Ionicons.storefrontOutline, color: Colors.white),
             onPressed: () => context.pushMarket(),
           ),
+          const SizedBox(width: 4),
         ],
       ),
-      body: ValueListenableBuilder<List<Rule>>(
-        valueListenable: ruleService.rulesNotifier,
-        builder: (context, allRules, _) {
-          final enabledRules = allRules.where((r) => r.enabled).toList();
-
-          if (enabledRules.isEmpty) {
-            return _buildEmptyRuleState(context, isDark);
+      body: AnimatedBuilder(
+        animation: _session,
+        builder: (context, _) {
+          if (ruleService.enabledRules.isEmpty) {
+            return _buildEmptyRuleState(isDark);
           }
-
-          if (_selectedRule == null ||
-              !enabledRules.any((r) => r.id == _selectedRule!.id)) {
-            _selectedRule = enabledRules.first;
-            _loadDiscovery(_selectedRule!);
-          }
-
           return Column(
             children: [
-              // 顶部固定规则选择栏 (固定在顶部，不随下方列表滑动)
-              _buildRuleSelector(enabledRules, isDark),
+              // 1. 沉浸式轮播（延伸到 AppBar 后面）
+              DiscoverHeroCarousel(
+                isDark: isDark,
+                items: _session.heroPool,
+                onItemTap: _openDetail,
+              ),
 
-              // 下方独立滚动的媒体发现流
+              // 2. 频道切换
+              const SizedBox(height: 12),
+              DiscoverChannelBar(
+                isDark: isDark,
+                selected: _session.selectedKind,
+                onSelected: _session.selectKind,
+                counts: _channelCounts(),
+              ),
+
+              // 3. 频道副标题 + 聚合进度
+              _buildChannelHeader(isDark),
+
+              // 4. 当前频道的网格
               Expanded(
                 child: RefreshIndicator(
                   color: AppColors.primary,
-                  onRefresh: () async {
-                    if (_selectedRule != null) {
-                      await _loadDiscovery(_selectedRule!, forceRefresh: true);
-                    }
-                  },
-                  child: CustomScrollView(
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    slivers: [
-                      if (_loading)
-                        const SliverFillRemaining(
-                          child: Center(
-                            child: AppLoading(message: '正在调用沙箱加载发现内容...'),
-                          ),
-                        )
-                      else if (_error != null)
-                        SliverFillRemaining(
-                          child: Center(
-                            child: Padding(
-                              padding: const EdgeInsets.all(24),
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  const Icon(
-                                    Icons.error_outline_rounded,
-                                    size: 40,
-                                    color: Colors.orange,
-                                  ),
-                                  const SizedBox(height: 12),
-                                  Text(
-                                    _error!,
-                                    textAlign: TextAlign.center,
-                                    style: const TextStyle(color: Colors.grey),
-                                  ),
-                                  const SizedBox(height: 16),
-                                  FilledButton.tonal(
-                                    onPressed: () =>
-                                        _loadDiscovery(_selectedRule!),
-                                    child: const Text('重试'),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        )
-                      else if (_discoveryData.isEmpty)
-                        const SliverFillRemaining(
-                          child: Center(
-                            child: Text(
-                              '当前规则暂无推荐内容',
-                              style: TextStyle(color: Colors.grey),
-                            ),
-                          ),
-                        )
-                      else
-                        ..._buildSliverContent(_discoveryData, _selectedRule!),
-
-                      // 底部避让毛玻璃导航栏
-                      const SliverToBoxAdapter(child: SizedBox(height: 96)),
-                    ],
+                  onRefresh: () => _session.load(),
+                  child: DiscoverGrid(
+                    isDark: isDark,
+                    items: _session.channelItems,
+                    onItemTap: _openDetail,
                   ),
                 ),
               ),
             ],
           );
         },
+      ),
+    );
+  }
+
+  /// 各频道的条目数（供频道胶囊上的数字展示）
+  Map<MediaKind, int> _channelCounts() {
+    final grouped = DiscoverAggregator.groupByKind(_session.allItems);
+    return {
+      for (final kind in MediaKind.values)
+        kind: kind == MediaKind.all
+            ? _session.allItems.length
+            : (grouped[kind]?.length ?? 0),
+    };
+  }
+
+  /// 频道副标题：跨 N 个源聚合 · M 条，右侧显示聚合进度
+  Widget _buildChannelHeader(bool isDark) {
+    final title = _session.selectedKind == MediaKind.all
+        ? '全部'
+        : _session.selectedKind.label;
+    final sourceCount = _session.statusMap.length;
+    final itemCount = _session.channelItems.length;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 6),
+      child: Row(
+        children: [
+          Text(
+            title,
+            style: TextStyle(
+              fontSize: 13.5,
+              fontWeight: FontWeight.w800,
+              letterSpacing: -0.2,
+              color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
+            ),
+          ),
+          const SizedBox(width: 7),
+          Flexible(
+            child: Text(
+              sourceCount > 0
+                  ? '跨 $sourceCount 个源聚合 · $itemCount 条'
+                  : '正在准备内容源…',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 11,
+                color: isDark
+                    ? AppColors.darkTextMuted
+                    : AppColors.lightTextMuted,
+              ),
+            ),
+          ),
+          const Spacer(),
+          if (_session.loading && _session.sourceCount > 0) ...[
+            SizedBox(
+              width: 12,
+              height: 12,
+              child: const AppLoading.compact(size: 12, strokeWidth: 1.5),
+            ),
+            const SizedBox(width: 6),
+            Text(
+              '${_session.finishedCount}/${_session.sourceCount}',
+              style: TextStyle(
+                fontSize: 10.5,
+                fontWeight: FontWeight.w600,
+                color: isDark
+                    ? AppColors.darkTextMuted
+                    : AppColors.lightTextMuted,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// 打开内容详情
+  void _openDetail(DiscoverItem item) {
+    context.pushRuleDetail(
+      RuleDetailArgs(
+        url: item.url,
+        title: item.title,
+        cover: item.cover,
+        rule: item.source,
+      ),
+    );
+  }
+
+  /// 无可用规则源时的空态：引导去规则市场
+  Widget _buildEmptyRuleState(bool isDark) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Ionicons.compassOutline,
+              size: 44,
+              color: isDark
+                  ? AppColors.darkTextTertiary
+                  : AppColors.lightTextTertiary,
+            ),
+            const SizedBox(height: 14),
+            Text(
+              '还没有启用的规则源',
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w700,
+                color: isDark
+                    ? AppColors.darkTextPrimary
+                    : AppColors.lightTextPrimary,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              '规则源是内容的来源。添加并启用一个源，就能开始浏览聚合内容。',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 12,
+                height: 1.6,
+                color: isDark
+                    ? AppColors.darkTextMuted
+                    : AppColors.lightTextMuted,
+              ),
+            ),
+            const SizedBox(height: 18),
+            FilledButton.icon(
+              onPressed: () => context.pushMarket(),
+              icon: const Icon(Ionicons.storefrontOutline, size: 16),
+              label: const Text('前往规则市场'),
+            ),
+          ],
+        ),
       ),
     );
   }
