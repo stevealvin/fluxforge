@@ -14,12 +14,13 @@ dependencies:
     sdk: flutter
 
   # 官方 Material UI 解耦组件库 (Flutter 3.47+)
-  material_ui: ^1.3.0
+  material_ui: ^1.8.0
+  cupertino_icons: ^2.0.0
   animations: ^3.0.0
   # 路由
-  go_router: ^18.0.1
+  go_router: ^18.1.1
   # js引擎 QuickJS-NG (全平台统一引擎，支持现代 ES2020+)
-  quickjs_engine: ^0.1.5
+  quickjs_engine: ^0.1.6
   # 网络与 Cookie 自动持久化管理
   dio: ^5.11.1
   dio_cookie_manager: ^3.5.0
@@ -32,16 +33,16 @@ dependencies:
   path: ^1.9.1
   path_provider: ^2.1.6
   # 存储
-  hive_ce: ^2.15.0
-  hive_ce_flutter: ^2.3.3
+  hive_ce: ^2.22.0
+  hive_ce_flutter: ^2.5.0
   # 权限
   permission_handler: ^12.0.3
   # 获取appx信息
-  package_info_plus: ^10.2.1
+  package_info_plus: ^10.2.2
   # 设备信息
-  device_info_plus: ^13.2.0
+  device_info_plus: ^13.3.0
   # 分享
-  share_plus: ^13.3.0
+  share_plus: ^13.3.1
   # 画中画
   floating: ^6.0.0
   logger: ^2.8.0
@@ -52,17 +53,17 @@ dependencies:
   # React 钩子在 Flutter 上的实现
   flutter_hooks: ^0.21.3+1
   # 依赖管理
-  get_it: ^9.2.0
+  get_it: ^9.3.0
   # 图标
   ionicons: ^0.2.3
   # 保持屏幕唤醒
-  wakelock_plus: ^1.8.0
-  url_launcher: ^6.3.2
+  wakelock_plus: ^1.8.1
+  url_launcher: ^6.3.3
   # 状态管理
   signals_flutter: ^7.1.0
   # 持久化存储
-  shared_preferences: ^2.5.5
-  video_player: ^2.14.0
+  shared_preferences: ^2.5.6
+  video_player: ^2.14.1
   # 播放器手势：屏幕亮度（应用级，零权限，随应用生命周期自动重置）
   screen_brightness: ^2.1.11
   # 播放器手势：系统音量读写
@@ -70,16 +71,16 @@ dependencies:
   # 视频离线下载：调用 FFmpeg 完成 HLS 分片拉取 / 解密 / 合并 / MP4 封装
   # 注意：主包为 Full+GPL 变体，README 标注实际等效 GPL v3.0（含 x264/x265 等），
   # 若需规避 GPL 传染性，可换成 ffmpeg_kit_flutter_new_https 等子包并同步调整 import。
-  ffmpeg_kit_flutter_new: ^4.6.2
+  ffmpeg_kit_flutter_new: ^4.6.7
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
 
   flutter_lints: ^6.0.0
-  flutter_launcher_icons: ^0.14.3
-  build_runner: ^2.16.1
-  json_serializable: ^6.14.1
+  flutter_launcher_icons: ^0.14.4
+  build_runner: ^2.17.1
+  json_serializable: ^6.15.2
 
 flutter:
   uses-material-design: true
