@@ -28,14 +28,14 @@ class DiscoverChannelBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 40,
+      height: 34,
       child: ListView(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 16),
         children: [
           for (final kind in MediaKind.values)
             Padding(
-              padding: const EdgeInsets.only(right: 8),
+              padding: const EdgeInsets.only(right: 6),
               child: _buildChip(kind),
             ),
         ],
@@ -62,18 +62,23 @@ class DiscoverChannelBar extends StatelessWidget {
       onTap: isEnabled && !isSelected ? () => onSelected(kind) : null,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
-        padding: const EdgeInsets.symmetric(horizontal: 14),
+        padding: const EdgeInsets.symmetric(horizontal: 10),
         alignment: Alignment.center,
         decoration: BoxDecoration(
+          // 选中态从「主色实底 + 白字」改为「主色淡底 + 主色文字」：
+          // 实底胶囊在这一排里太重，淡底更像筛选而不是操作按钮
           color: isSelected
-              ? AppColors.primary
-              : (isDark ? AppColors.darkCard : AppColors.lightSurfaceVariant),
-          borderRadius: BorderRadius.circular(20),
+              ? AppColors.primary.withValues(alpha: 0.16)
+              : (isDark
+                    ? Colors.white.withValues(alpha: 0.05)
+                    : Colors.black.withValues(alpha: 0.045)),
+          borderRadius: BorderRadius.circular(16),
+          // 描边始终存在（未选中用透明占位），切换时尺寸不跳
           border: Border.all(
             color: isSelected
-                ? AppColors.primary
-                : (isDark ? AppColors.darkBorder : AppColors.lightBorder),
-            width: 0.8,
+                ? AppColors.primary.withValues(alpha: 0.55)
+                : Colors.transparent,
+            width: 1,
           ),
         ),
         child: Row(
@@ -82,21 +87,21 @@ class DiscoverChannelBar extends StatelessWidget {
             Text(
               kind.label,
               style: TextStyle(
-                fontSize: 12.5,
-                fontWeight: isSelected ? FontWeight.w700 : FontWeight.normal,
-                color: fg,
+                fontSize: 11.5,
+                fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                color: isSelected ? AppColors.primary : fg,
               ),
             ),
             if (count > 0) ...[
-              const SizedBox(width: 5),
+              const SizedBox(width: 4),
               Text(
                 '$count',
                 style: TextStyle(
-                  fontSize: 11,
+                  fontSize: 10,
                   fontWeight: FontWeight.w600,
                   color: isSelected
-                      ? Colors.white.withValues(alpha: 0.85)
-                      : fg.withValues(alpha: 0.65),
+                      ? AppColors.primary.withValues(alpha: 0.7)
+                      : fg.withValues(alpha: 0.6),
                 ),
               ),
             ],

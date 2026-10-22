@@ -85,40 +85,12 @@ class _DiscoverPageState extends State<DiscoverPage>
         scrolledUnderElevation: 0,
         systemOverlayStyle: SystemUiOverlayStyle.light,
         titleSpacing: 0,
-        title: Row(
-          children: [
-            Hero(
-              tag: 'logo',
-              child: Image.asset(
-                'assets/icon/icon.png',
-                width: 30,
-                height: 30,
-                errorBuilder: (_, _, _) =>
-                    const Icon(Ionicons.flashOutline, color: AppColors.primary),
-              ),
-            ),
-            const SizedBox(width: 8),
-            const Text(
-              'FluxForge',
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 18,
-                color: Colors.white,
-              ),
-            ),
-          ],
-        ),
         actions: [
           // 收藏入口在底部导航栏的「收藏」Tab，不在此重复设置
           IconButton(
             tooltip: '搜索',
             icon: const Icon(Ionicons.searchOutline, color: Colors.white),
             onPressed: () => context.pushSearch(),
-          ),
-          IconButton(
-            tooltip: '规则市场',
-            icon: const Icon(Ionicons.storefrontOutline, color: Colors.white),
-            onPressed: () => context.pushMarket(),
           ),
           const SizedBox(width: 4),
         ],
