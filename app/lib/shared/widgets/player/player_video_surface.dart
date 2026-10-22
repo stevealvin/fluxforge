@@ -45,6 +45,9 @@ class PlayerVideoSurface extends StatelessWidget {
           imageUrl: coverUrl!,
           fit: BoxFit.cover,
           autoCacheWidth: true,
+          // 封面加载中不再叠一个指示器：播放器外层已有 PlayerStateOverlay 的加载
+          // 动画，两者同时转就是「一屏两圈」。这一层静默即可。
+          placeholder: const SizedBox.shrink(),
           errorWidget: const SizedBox.shrink(),
         );
       }
