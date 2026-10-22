@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>FluxForge · 发现页 v3（沉浸轮播 + 频道化）</title>
+<!--
+  设计预览稿 v3：把 X（沉浸全屏流）压缩成顶部轮播，与 Y（频道化）叠加。
+  四个变体的差异集中在三个维度：
+    1) 轮播形态：全出血 vs 卡片圆角
+    2) 轮播与频道：独立 vs 联动
+    3) 频道内排布：网格 vs 横滑轨道 vs 错落栅格
+-->
+<style>
+  :root {
+    --page-bg: #EEF1F6; --page-fg: #0F172A; --page-sub: #64748B;
+    --card: #FFFFFF; --line: #E2E8F0; --brand: #059669;
+    --phone-body: #0B0F17; --shadow: 0 18px 44px rgba(15,23,42,.16);
+  }
+  body.dark {
+    --page-bg: #070A10; --page-fg: #F8FAFC; --page-sub: #94A3B8;
+    --card: #151C2C; --line: #1E293B; --brand: #34D399;
+    --phone-body: #000; --shadow: 0 18px 44px rgba(0,0,0,.6);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 26px 20px 60px; background: var(--page-bg); color: var(--page-fg);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased; transition: background .25s ease, color .25s ease;
+  }
+  header { max-width: 1460px; margin: 0 auto 22px; display: flex; gap: 14px; align-items: flex-end; justify-content: space-between; flex-wrap: wrap; }
+  h1 { font-size: 20px; margin: 0 0 8px; letter-spacing: -.3px; }
+  .hint { font-size: 12.5px; color: var(--page-sub); line-height: 1.75; margin: 0; max-width: 940px; }
+  .hint b { color: var(--brand); }
+  .hint code { background: var(--card); color: var(--brand); padding: 1px 5px; border-radius: 5px; font-size: 11.5px; }
+  .theme-btn { appearance: none; border: 1px solid var(--line); background: var(--card); color: var(--page-fg); font-size: 12.5px; padding: 9px 16px; border-radius: 10px; cursor: pointer; }
+  .theme-btn:hover { border-color: var(--brand); }
+
+  .stage { max-width: 1460px; margin: 0 auto; display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start; }
+  .col { width: 330px; }
+  .col-title { font-size: 13.5px; font-weight: 700; margin: 0 0 4px; }
+  .col-title .tag { font-size: 10px; font-weight: 500; color: var(--brand); border: 1px solid var(--brand); border-radius: 6px; padding: 1px 6px; margin-left: 6px; vertical-align: 1px; }
+  .col-note { font-size: 11.5px; color: var(--page-sub); line-height: 1.62; margin: 0 0 10px; min-height: 132px; }
+  .col-note b { color: var(--brand); font-weight: 600; }
+
+  .phone { width: 330px; height: 596px; border-radius: 30px; padding: 7px; background: var(--phone-body); box-shadow: var(--shadow); position: relative; }
+  .screen {
+    width: 100%; height: 100%; border-radius: 23px; overflow: hidden; background: #F8FAFC;
+    position: relative; display: flex; flex-direction: column;
+    --fg: #0F172A; --sub: #64748B; --weak: #94A3B8;
+    --surface: #FFFFFF; --bg: #F8FAFC; --border: #E2E8F0; --chip: #F1F5F9;
+  }
+  .phone.dark-mode .screen {
+    background: #0A0D14;
+    --fg: #F8FAFC; --sub: #94A3B8; --weak: #64748B;
+    --surface: #151C2C; --bg: #0A0D14; --border: #1E293B; --chip: #1B2436;
+  }
+  .statusbar { height: 30px; flex: 0 0 30px; display: flex; align-items: center; justify-content: space-between; padding: 0 20px; font-size: 10.5px; font-weight: 600; color: var(--fg); position: relative; z-index: 20; }
+  .statusbar.on-img { position: absolute; top: 0; left: 0; right: 0; color: #fff; }
+
+  .g1 { background: linear-gradient(150deg, #667eea, #764ba2); }
+  .g2 { background: linear-gradient(150deg, #f093fb, #f5576c); }
+  .g3 { background: linear-gradient(150deg, #4facfe, #00f2fe); }
+  .g4 { background: linear-gradient(150deg, #43e97b, #38f9d7); }
+  .g5 { background: linear-gradient(150deg, #fa709a, #fee140); }
+  .g6 { background: linear-gradient(150deg, #30cfd0, #330867); }
+  .g7 { background: linear-gradient(150deg, #a18cd1, #fbc2eb); }
+
+  /* ── 全出血轮播 ── */
+  .bleed { position: relative; height: 214px; overflow: hidden; flex: 0 0 214px; }
+  .bleed .bg { position: absolute; inset: 0; }
+  .bleed .veil { position: absolute; left: 0; right: 0; bottom: 0; padding: 46px 15px 12px; background: linear-gradient(to top, rgba(0,0,0,.88) 40%, transparent); }
+  .bleed .veil .t { color: #fff; font-size: 17px; font-weight: 800; letter-spacing: -.4px; }
+  .bleed .veil .m { color: rgba(255,255,255,.82); font-size: 10.5px; margin-top: 3px; }
+  .bleed .veil .btn { display: inline-block; margin-top: 9px; padding: 6px 14px; border-radius: 10px; background: var(--brand); color: #fff; font-size: 11px; font-weight: 700; }
+  .bleed .dots { position: absolute; right: 14px; bottom: 12px; display: flex; gap: 4px; }
+  .bleed .dots i { width: 5px; height: 5px; border-radius: 50%; background: rgba(255,255,255,.45); }
+  .bleed .dots i.on { background: #fff; width: 13px; border-radius: 3px; }
+
+  /* ── 卡片圆角轮播 ── */
+  .cardroll { padding: 10px 14px 4px; }
+  .croll { position: relative; border-radius: 15px; overflow: hidden; aspect-ratio: 16/9; }
+  .croll .bg { position: absolute; inset: 0; }
+  .croll .veil { position: absolute; left: 0; right: 0; bottom: 0; padding: 34px 12px 10px; background: linear-gradient(to top, rgba(0,0,0,.86) 40%, transparent); }
+  .croll .veil .t { color: #fff; font-size: 15px; font-weight: 800; }
+  .croll .veil .m { color: rgba(255,255,255,.8); font-size: 10px; margin-top: 2px; }
+  .croll .veil .btn { display: inline-block; margin-top: 7px; padding: 5px 12px; border-radius: 9px; background: var(--brand); color: #fff; font-size: 10.5px; font-weight: 700; }
+  .croll .dots { position: absolute; right: 12px; bottom: 10px; display: flex; gap: 4px; }
+  .croll .dots i { width: 5px; height: 5px; border-radius: 50%; background: rgba(255,255,255,.45); }
+  .croll .dots i.on { background: #fff; width: 13px; border-radius: 3px; }
+  .crollhint { text-align: center; font-size: 9.5px; color: var(--weak); padding-top: 7px; }
+
+  /* ── 频道段 ── */
+  .chanbar { display: flex; gap: 6px; padding: 10px 14px 8px; }
+  .chanbar .ch { font-size: 11.5px; padding: 5px 12px; border-radius: 14px; color: var(--sub); background: var(--chip); white-space: nowrap; }
+  .chanbar .ch.on { background: var(--brand); color: #fff; font-weight: 700; }
+  .chanhead { display: flex; align-items: baseline; gap: 7px; padding: 0 14px 8px; }
+  .chanhead .t { font-size: 13.5px; font-weight: 800; color: var(--fg); }
+  .chanhead .c { font-size: 10px; color: var(--weak); }
+  .chanhead .m { margin-left: auto; font-size: 10px; color: var(--brand); }
+
+  /* ── 网格 ── */
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 0 14px; }
+  .it .p { border-radius: 10px; overflow: hidden; position: relative; aspect-ratio: 16/10; }
+  .it .p .bg { position: absolute; inset: 0; }
+  .it .p .tt { position: absolute; left: 0; right: 0; bottom: 0; padding: 16px 6px 5px; background: linear-gradient(to top, rgba(0,0,0,.82), transparent); color: #fff; font-size: 9.5px; font-weight: 700; }
+  .it .p .ty { position: absolute; top: 5px; left: 5px; font-size: 8px; font-weight: 700; color: #fff; background: rgba(0,0,0,.5); padding: 1.5px 4px; border-radius: 4px; }
+  .it .nm { font-size: 10.5px; font-weight: 600; color: var(--fg); margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .it .sb { font-size: 9.5px; color: var(--weak); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* ── 横滑轨道 ── */
+  .rail { display: flex; gap: 9px; padding: 0 14px; overflow: hidden; }
+  .rail .r { width: 116px; flex: 0 0 116px; }
+  .rail .r .p { border-radius: 9px; overflow: hidden; position: relative; aspect-ratio: 3/4; }
+  .rail .r .p .bg { position: absolute; inset: 0; }
+  .rail .r .p .tt { position: absolute; left: 0; right: 0; bottom: 0; padding: 16px 6px 5px; background: linear-gradient(to top, rgba(0,0,0,.82), transparent); color: #fff; font-size: 9px; font-weight: 700; }
+  .rail .r .p .ty { position: absolute; top: 5px; left: 5px; font-size: 8px; font-weight: 700; color: #fff; background: rgba(0,0,0,.5); padding: 1.5px 4px; border-radius: 4px; }
+  .rail .r .nm { font-size: 10px; font-weight: 600; color: var(--fg); margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* ── 错落栅格 ── */
+  .mgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; padding: 0 14px; }
+  .mgrid .big { grid-column: span 2; }
+  .mgrid .p { border-radius: 11px; overflow: hidden; position: relative; }
+  .mgrid .big .p { aspect-ratio: 16/9; }
+  .mgrid .sm .p { aspect-ratio: 3/4; }
+  .mgrid .p .bg { position: absolute; inset: 0; }
+  .mgrid .p .tt { position: absolute; left: 0; right: 0; bottom: 0; padding: 18px 7px 6px; background: linear-gradient(to top, rgba(0,0,0,.84), transparent); color: #fff; font-size: 10px; font-weight: 700; }
+  .mgrid .p .ty { position: absolute; top: 6px; left: 6px; font-size: 8px; font-weight: 700; color: #fff; background: rgba(0,0,0,.5); padding: 1.5px 4px; border-radius: 4px; }
+  .mgrid .nm { font-size: 10.5px; font-weight: 600; color: var(--fg); margin-top: 4px; }
+
+  .appbar { display: flex; align-items: center; gap: 8px; padding: 2px 14px 8px; }
+  .appbar .logo { width: 26px; height: 26px; border-radius: 8px; background: linear-gradient(140deg, #10B981, #059669); }
+  .appbar .nm { font-size: 16px; font-weight: 800; color: var(--fg); letter-spacing: -.3px; flex: 1; }
+  .appbar .ic { width: 28px; height: 28px; border-radius: 9px; display: grid; place-items: center; background: var(--chip); border: 1px solid var(--border); color: var(--sub); font-size: 12px; }
+
+  .legend { max-width: 1460px; margin: 26px auto 0; }
+  .legend .tbl { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; }
+  .legend h3 { font-size: 13px; margin: 0 0 12px; }
+  .legend table { width: 100%; border-collapse: collapse; font-size: 11.5px; }
+  .legend th, .legend td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  .legend th { color: var(--page-sub); font-weight: 600; font-size: 10.5px; text-transform: uppercase; letter-spacing: .4px; }
+  .legend td b { color: var(--page-fg); }
+  .legend td:first-child { white-space: nowrap; font-weight: 700; }
+  .legend .v { color: var(--page-sub); }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>发现页 v3 · 沉浸轮播 + 频道化</h1>
+    <p class="hint">
+      把 <b>X（沉浸全屏流）压缩成顶部轮播</b>，下面接 <b>Y（频道化）</b> —— 上沉浸负责「吸引」，下高效负责「筛选与挑选」，两种形态各取所长。<br />
+      四个变体的差异集中在三个维度：<b>轮播形态</b>（全出血 / 卡片圆角）、<b>轮播与频道是否联动</b>、<b>频道内排布</b>（网格 / 横滑轨道 / 错落栅格）。<br />
+      数据约束不变：轮播内容只能取自<b>各源推荐位</b>（无热度字段），因此卡上一律标注「来自 XX 源」而非编造「精选」。
+    </p>
+  </div>
+  <button class="theme-btn" id="themeBtn">切换到深色主题</button>
+</header>
+
+<main class="stage" id="stage"></main>
+
+<section class="legend">
+  <div class="tbl">
+    <h3>变体对照</h3>
+    <table>
+      <thead><tr><th>变体</th><th>轮播形态</th><th>与频道</th><th>频道内</th><th>取舍</th></tr></thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  </div>
+</section>
+
+<script>
+const ITEMS = [
+  { g: 'g1', n: '星海拾遗', s: '更新至 12 集', t: '影视' },
+  { g: 'g2', n: '深海回声', s: '本周更新',   t: '影视' },
+  { g: 'g6', n: '暗河',     s: '4K 修复',    t: '影视' },
+  { g: 'g3', n: '第九座城', s: '本周更新',   t: '影视' },
+  { g: 'g4', n: '春山可望', s: '连载 112 章', t: '小说' },
+  { g: 'g7', n: '星海漫游指南', s: '完结 328 章', t: '小说' },
+  { g: 'g5', n: '雾都列车', s: '全 24 话',   t: '漫画' },
+];
+
+const hero = (g, t, m, src) => `
+  <div class="bg ${g}"></div>
+  <div class="veil">
+    <div class="t">${t}</div>
+    <div class="m">${m} · ${src}</div>
+    <span class="btn">立即观看</span>
+  </div>
+  <div class="dots"><i class="on"></i><i></i><i></i><i></i></div>`;
+
+const chanbar = (labels, active) => `
+  <div class="chanbar">${labels.map((l, i) => `<span class="ch ${i === active ? 'on' : ''}">${l}</span>`).join('')}</div>`;
+
+const chanhead = (t, c) => `
+  <div class="chanhead"><span class="t">${t}</span><span class="c">${c}</span><span class="m">全部 ›</span></div>`;
+
+const gridItems = (list, ratio = '16/10') => `
+  <div class="grid">${list.map((it) => `
+    <div class="it">
+      <div class="p" style="aspect-ratio:${ratio}">
+        <div class="bg ${it.g}"></div>
+        <span class="ty">${it.t}</span>
+        <div class="tt">${it.n}</div>
+      </div>
+      <div class="nm">${it.n}</div>
+      <div class="sb">${it.s}</div>
+    </div>`).join('')}</div>`;
+
+const railItems = (list) => `
+  <div class="rail">${list.map((it) => `
+    <div class="r">
+      <div class="p"><div class="bg ${it.g}"></div><span class="ty">${it.t}</span><div class="tt">${it.n}</div></div>
+      <div class="nm">${it.n}</div>
+    </div>`).join('')}</div>`;
+
+/* ① 全出血轮播 + 独立频道网格 */
+const V1 = `
+  <div class="statusbar on-img"><span>9:41</span><span>▮▮▮ ⌁ 100%</span></div>
+  <div class="bleed">${hero('g1', '星海拾遗', '电视剧 · 更新至 12 集', '极光影视')}</div>
+  ${chanbar(['影视', '小说', '漫画', '图集'], 0)}
+  ${chanhead('影视', '跨 4 个源聚合 · 68 条')}
+  ${gridItems(ITEMS.slice(0, 4))}`;
+
+/* ② 卡片圆角轮播 + 独立频道网格 */
+const V2 = `
+  <div class="statusbar"><span>9:41</span><span>▮▮▮ ⌁ 100%</span></div>
+  <div class="appbar"><div class="logo"></div><div class="nm">FluxForge</div><div class="ic">⌕</div><div class="ic">⌂</div></div>
+  <div class="cardroll">
+    <div class="croll">${hero('g6', '星海拾遗', '电视剧 · 更新至 12 集', '极光影视')}</div>
+    <div class="crollhint">左右滑动切换 · 来自各源推荐位</div>
+  </div>
+  ${chanbar(['影视', '小说', '漫画', '图集'], 0)}
+  ${chanhead('影视', '跨 4 个源聚合 · 68 条')}
+  ${gridItems(ITEMS.slice(0, 4))}`;
+
+/* ③ 轮播跟随频道联动 */
+const V3 = `
+  <div class="statusbar on-img"><span>9:41</span><span>▮▮▮ ⌁ 100%</span></div>
+  <div class="bleed">${hero('g4', '春山可望', '小说 · 连载 112 章', '星辰书库')}</div>
+  ${chanbar(['影视', '小说', '漫画', '图集'], 1)}
+  ${chanhead('小说', '跨 2 个源聚合 · 31 条')}
+  ${gridItems(ITEMS.filter((i) => i.t === '小说'))}
+  ${gridItems([{ g: 'g7', n: '星海漫游指南', s: '完结 328 章', t: '小说' }])}`;
+
+/* ④ 卡片轮播 + 频道内错落栅格 */
+const V4 = `
+  <div class="statusbar"><span>9:41</span><span>▮▮▮ ⌁ 100%</span></div>
+  <div class="appbar"><div class="logo"></div><div class="nm">FluxForge</div><div class="ic">⌕</div><div class="ic">⌂</div></div>
+  <div class="cardroll">
+    <div class="croll">${hero('g3', '深海回声', '电视剧 · 本周更新', '星光视频')}</div>
+  </div>
+  ${chanbar(['影视', '小说', '漫画', '图集'], 0)}
+  ${chanhead('影视', '跨 4 个源聚合 · 68 条')}
+  <div class="mgrid">
+    <div class="big">
+      <div class="p"><div class="bg g2"></div><span class="ty">影视</span><div class="tt">深海回声 · 本周更新</div></div>
+      <div class="nm">深海回声</div>
+    </div>
+    <div class="sm"><div class="p"><div class="bg g1"></div><span class="ty">影视</span><div class="tt">星海拾遗</div></div><div class="nm">星海拾遗</div></div>
+    <div class="sm"><div class="p"><div class="bg g6"></div><span class="ty">影视</span><div class="tt">暗河</div></div><div class="nm">暗河</div></div>
+  </div>`;
+
+const VARIANTS = [
+  {
+    title: '变体 1 · 全出血轮播 + 频道网格',
+    tag: '冲击力最强',
+    note: '轮播直接顶天立地（AppBar 透明叠在大图上），第一屏就是一张海报大小的内容。频道网格在下方承接筛选。<b>优点</b>：视觉冲击最强、沉浸感足；<b>代价</b>：顶部被占掉约 36% 屏高，且 AppBar 透明化后在浅色封面上文字对比度难保证（要加暗色遮罩）。',
+    html: V1,
+  },
+  {
+    title: '变体 2 · 卡片圆角轮播 + 频道网格',
+    tag: '最稳（推荐起点）',
+    note: '轮播做成大圆角卡片（16:9），下面留出正常 AppBar 与频道段。<b>优点</b>：与项目现有的卡片语言一致（圆角 + 阴影），不与 AppBar 打架，浅色封面上的文字对比度天然可控；<b>代价</b>：冲击力比全出血弱一档，首屏要滚动才看到更多内容。',
+    html: V2,
+  },
+  {
+    title: '变体 3 · 轮播跟随频道联动',
+    tag: '上下文一致',
+    note: '切到「小说」频道时，<b>轮播内容也换成小说类的推荐位</b>。避免了「上面轮播是影视、下面网格是小说」的割裂感，用户始终在一个题材里浏览。<b>代价</b>：切频道要重新拉数据（多一轮请求），且轮播池变小（某类型可能只有 1~2 条 → 轮播形同虚设）。',
+    html: V3,
+  },
+  {
+    title: '变体 4 · 卡片轮播 + 频道错落栅格',
+    tag: '杂志感',
+    note: '频道内不做规整双列，而是<b>大卡 + 小卡错落</b>（像杂志排版），首条占满整行。<b>优点</b>：视觉有节奏、不单调；<b>代价</b>：小屏上错落容易显乱，实现与测试成本明显更高，且「每条内容的比例不一致」会放大规则源封面参差的问题。',
+    html: V4,
+  },
+];
+
+const ROWS = [
+  ['<b>1 全出血 + 网格</b>', '顶天立地大图', '独立', '双列网格', '冲击力最强；AppBar 需透明化，首屏被占 36%'],
+  ['<b>2 圆角卡片 + 网格</b>', '大圆角卡片', '独立', '双列网格', '<b>最稳</b>：与现有卡片语言一致，不与 AppBar 打架'],
+  ['<b>3 轮播联动频道</b>', '顶天立地大图', '<b>跟随频道</b>', '双列网格', '上下文一致；切频道多一轮请求，轮播池可能过小'],
+  ['<b>4 圆角 + 错落栅格</b>', '大圆角卡片', '独立', '<b>错落栅格</b>', '杂志感；小屏易乱、放大封面参差问题'],
+];
+
+function render() {
+  const dark = document.body.classList.contains('dark');
+  document.getElementById('stage').innerHTML = VARIANTS.map((v) => `
+    <div class="col">
+      <h2 class="col-title">${v.title}<span class="tag">${v.tag}</span></h2>
+      <p class="col-note">${v.note}</p>
+      <div class="phone ${dark ? 'dark-mode' : ''}"><div class="screen">${v.html}</div></div>
+    </div>`).join('');
+  document.getElementById('tbody').innerHTML = ROWS.map((r) => `
+    <tr><td>${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td><td>${r[3]}</td><td class="v">${r[4]}</td></tr>`).join('');
+}
+render();
+
+const themeBtn = document.getElementById('themeBtn');
+themeBtn.addEventListener('click', () => {
+  const dark = !document.body.classList.contains('dark');
+  document.body.classList.toggle('dark', dark);
+  render();
+  themeBtn.textContent = dark ? '切换到浅色主题' : '切换到深色主题';
+});
+</script>
+</body>
+</html>
