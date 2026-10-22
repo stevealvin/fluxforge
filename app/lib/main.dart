@@ -122,15 +122,23 @@ class MyApp extends StatelessWidget {
           darkTheme: AppTheme.darkTheme,
           // 响应式主题模式 (跟随系统/浅色/深色)
           themeMode: currentThemeMode,
+          // 状态栏图标按主题自适应：有 AppBar 的页面由 AppBarTheme 处理，
+          // 这层兜住「没有 AppBar 的自定义顶栏页面」（如详情页）
           builder: (context, child) {
-            return GestureDetector(
-              behavior: HitTestBehavior.translucent,
-              onTap: () {
-                FocusManager.instance.primaryFocus?.unfocus();
-              },
-              child: Material(
-                clipBehavior: Clip.hardEdge,
-                child: child!,
+            final isDark = Theme.of(context).brightness == Brightness.dark;
+            return AnnotatedRegion<SystemUiOverlayStyle>(
+              value: isDark
+                  ? SystemUiOverlayStyle.light
+                  : SystemUiOverlayStyle.dark,
+              child: GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onTap: () {
+                  FocusManager.instance.primaryFocus?.unfocus();
+                },
+                child: Material(
+                  clipBehavior: Clip.hardEdge,
+                  child: child!,
+                ),
               ),
             );
           },
