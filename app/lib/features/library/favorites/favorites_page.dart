@@ -40,12 +40,12 @@ const double _coverWidth = 160;
 
 /// 封面区高度 —— **它同时就是整张卡片的高度**
 ///
-/// 108 是信息区最满时（两行标题 + 进度 + 更新至）排下来的高度：封面是标尺，
+/// 100 是信息区最满时（两行标题 + 进度 + 更新至）排下来的高度：封面是标尺，
 /// 信息区只能在这块地方里排版，不许反过来把文字撑高卡片。
 ///
 /// 这里**故意不把封面框锁成 16:9**：宽图按 16:9 完整显示（160×90）后，上下
 /// 各 9px 的余量交给模糊版补；竖图则铺满高度、左右补 —— 两种封面都不裁。
-const double _coverHeight = 108;
+const double _coverHeight = 100;
 
 /// 模糊补边层的解码宽度：只贡献色彩与层次，解小图即可
 const int _coverBlurCacheWidth = 168;
@@ -303,7 +303,8 @@ class _FavoritesPageState extends State<FavoritesPage> {
     final hasUpdate = item.hasUpdate;
 
     return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
+      // 卡片间距同步收小：高度压低后仍用 10 会让列表显得松
+      padding: const EdgeInsets.only(bottom: 8),
       child: AppCard(
         // 封面贴边：卡片自己不留内边距，封面直接吃满左侧与上下沿
         // （内边距由右侧信息区自己控制）
@@ -324,11 +325,11 @@ class _FavoritesPageState extends State<FavoritesPage> {
             // 也就不存在"花底压字"的对比度问题。
             Expanded(
               child: Padding(
-                // 纵向留白略小于横向：卡片高度由封面（108）决定，这两像素是从
-                // 纵向抠出来给"两行标题 + 更新行"的最满排版的，横向不必让
+                // 纵向留白收得比横向小：卡片高度由封面（100）决定，信息区必须
+                // 装得下「两行标题 + 进度 + 更新至」而不反过来把卡片撑高
                 padding: const EdgeInsets.symmetric(
                   horizontal: 12,
-                  vertical: 10,
+                  vertical: 6,
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,

@@ -257,7 +257,7 @@ void main() {
     expect((bar.center.dx - appBar.center.dx).abs(), lessThan(60));
   });
 
-  testWidgets('封面区：贴卡片左上、160×108，且卡片高度等于封面区高度', (WidgetTester tester) async {
+  testWidgets('封面区：贴卡片左上、160×100，且卡片高度等于封面区高度', (WidgetTester tester) async {
     await favoriteService.addFavorite(
       // 最坏情况：标题占满两行 + 更新行也在，信息区仍不许把卡片撑高
       _item(
@@ -283,7 +283,7 @@ void main() {
       reason: '卡片不留内边距，封面直接贴左上',
     );
     expect(cover.width, closeTo(160, 0.5), reason: '左列封面宽度');
-    expect(cover.height, closeTo(108, 0.5), reason: '封面区高度 = 卡片高度');
+    expect(cover.height, closeTo(100, 0.5), reason: '封面区高度 = 卡片高度');
 
     // 高度契约：封面是标尺，信息区只能在这 108 里排版，不许把卡片撑高
     expect(
