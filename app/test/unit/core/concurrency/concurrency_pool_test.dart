@@ -2,13 +2,13 @@ import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:fluxforge/features/search/engines/search_concurrency_pool.dart';
+import 'package:fluxforge/core/concurrency/concurrency_pool.dart';
 
 void main() {
-  group('SearchConcurrencyPool.run', () {
+  group('ConcurrencyPool.run', () {
     test('空任务列表直接返回，不启动任何 Worker', () async {
       var invoked = 0;
-      await SearchConcurrencyPool.run<int>(
+      await ConcurrencyPool.run<int>(
         const [],
         action: (_) async => invoked++,
         shouldAbort: () => false,
@@ -18,7 +18,7 @@ void main() {
 
     test('全部任务都被执行，且执行顺序与入参一致', () async {
       final done = <int>[];
-      await SearchConcurrencyPool.run<int>(
+      await ConcurrencyPool.run<int>(
         [1, 2, 3, 4, 5],
         action: (t) async => done.add(t),
         shouldAbort: () => false,
@@ -32,7 +32,7 @@ void main() {
       var peak = 0;
       final completer = Completer<void>();
 
-      final future = SearchConcurrencyPool.run<int>(
+      final future = ConcurrencyPool.run<int>(
         List.generate(10, (i) => i),
         action: (t) async {
           running++;
@@ -56,7 +56,7 @@ void main() {
       var executed = 0;
       var aborted = false;
 
-      await SearchConcurrencyPool.run<int>(
+      await ConcurrencyPool.run<int>(
         List.generate(10, (i) => i),
         action: (t) async {
           executed++;
@@ -72,7 +72,7 @@ void main() {
 
     test('单个任务抛异常时向上传播，不静默吞掉', () async {
       expect(
-        () => SearchConcurrencyPool.run<int>(
+        () => ConcurrencyPool.run<int>(
           [1],
           action: (_) async => throw StateError('boom'),
           shouldAbort: () => false,

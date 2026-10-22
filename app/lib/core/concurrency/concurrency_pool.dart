@@ -2,8 +2,12 @@
 ///
 /// 开源阅读同款流式调度思路：不让 N 个规则源同时唤醒沙箱，
 /// 而是维持固定数量的 Worker 依次取任务，避免瞬时内存与网络峰值。
-class SearchConcurrencyPool {
-  const SearchConcurrencyPool._();
+///
+/// 之所以放在 `core/` 而不是某个 feature 下：搜索页与发现页都需要它，
+/// 而架构约定 **feature 之间不得互相依赖** —— 放在任一 feature 下，
+/// 另一个 feature 就得跨 feature 引用。
+class ConcurrencyPool {
+  const ConcurrencyPool._();
 
   /// 默认并发度
   static const int defaultConcurrency = 3;

@@ -1,9 +1,9 @@
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fluxforge/core/concurrency/concurrency_pool.dart';
 import 'package:fluxforge/core/sandbox/rule_engine.dart';
 import 'package:fluxforge/domain/rule/rule.dart';
 import 'package:fluxforge/features/search/engines/search_aggregator.dart';
-import 'package:fluxforge/features/search/engines/search_concurrency_pool.dart';
 import 'package:fluxforge/features/search/models/rule_search_status.dart';
 import 'package:fluxforge/features/search/models/search_result.dart';
 
@@ -17,7 +17,7 @@ import 'package:fluxforge/features/search/models/search_result.dart';
 class SearchSession extends ChangeNotifier {
   SearchSession({
     required this.resolveRules,
-    this.maxConcurrency = SearchConcurrencyPool.defaultConcurrency,
+    this.maxConcurrency = ConcurrencyPool.defaultConcurrency,
   });
 
   /// 解析当前应参与检索的规则源（单源模式与全网模式由页面注入决定）
@@ -142,7 +142,7 @@ class SearchSession extends ChangeNotifier {
     await Future<void>.delayed(const Duration(milliseconds: 30));
     if (_isStale(thisEpoch)) return;
 
-    await SearchConcurrencyPool.run<Rule>(
+    await ConcurrencyPool.run<Rule>(
       rules,
       maxConcurrency: maxConcurrency,
       shouldAbort: () => _isStale(thisEpoch),
