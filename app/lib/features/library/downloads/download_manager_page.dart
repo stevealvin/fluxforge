@@ -32,6 +32,19 @@ class _DownloadManagerPageState extends State<DownloadManagerPage> {
   /// 各任务已落盘的体积（字节，按任务 id 索引）
   final Map<String, int> _taskBytes = {};
 
+  /// 待落盘删除的任务 id：撤销窗口期内先从界面移除，提示关闭后才真正删
+  final Set<String> _pendingDelete = <String>{};
+
+  @override
+  void dispose() {
+    // 页面在撤销窗口内被销毁：待删除项必须落盘，不能「提示关了但数据还在」
+    for (final id in _pendingDelete) {
+      unawaited(downloadService.remove(id));
+    }
+    _pendingDelete.clear();
+    super.dispose();
+  }
+
   @override
   void initState() {
     super.initState();
@@ -100,20 +113,37 @@ class _DownloadManagerPageState extends State<DownloadManagerPage> {
     showDeleteSnackBar(context, message: '已清空全部离线下载内容');
   }
 
-  /// 删除单个任务（连带本地文件）
+  /// 删除单个任务：立即从界面移除，撤销窗口结束后才真正删除本地文件
+  ///
+  /// 本地文件删了无法还原，所以「先删后撤」不可行 —— 只能先从界面移除、
+  /// 等提示关闭后再落盘；撤销则完全不动磁盘。
   Future<void> _removeTask(DownloadTask task) async {
-    final confirmed = await showAppConfirmDialog(
-      context,
-      title: '删除《${task.title}》离线内容',
-      message: '将删除该书已下载的本地文件，该操作不可撤销。',
-      confirmText: '删除',
-    );
-    if (!confirmed) return;
+    final id = task.id;
+    setState(() => _pendingDelete.add(id));
 
-    await downloadService.remove(task.id);
+    final controller = showDeleteSnackBar(
+      context,
+      message: '已删除《${task.title}》离线内容',
+      onUndo: () => _undoRemove(id),
+    );
+
+    final reason = await controller.closed;
+    if (reason == SnackBarClosedReason.action) {
+      // 点了撤销：恢复界面，磁盘始终没动过
+      if (mounted) setState(() => _pendingDelete.remove(id));
+      return;
+    }
+
+    // 超时 / 划走 / 被下一条提示顶掉：这时才真正落盘
+    if (mounted) setState(() => _pendingDelete.remove(id));
+    await downloadService.remove(id);
     await _refreshSize();
+  }
+
+  /// 撤销删除：把条目放回列表
+  void _undoRemove(String id) {
     if (!mounted) return;
-    showDeleteSnackBar(context, message: '已删除该书离线内容');
+    setState(() => _pendingDelete.remove(id));
   }
 
   @override
@@ -150,7 +180,11 @@ class _DownloadManagerPageState extends State<DownloadManagerPage> {
       body: ValueListenableBuilder<List<DownloadTask>>(
         valueListenable: downloadService.tasksNotifier,
         builder: (context, tasks, _) {
-          if (tasks.isEmpty) {
+          // 待落盘删除的条目在撤销窗口内不出现在列表与统计里
+          final visible = tasks
+              .where((t) => !_pendingDelete.contains(t.id))
+              .toList();
+          if (visible.isEmpty) {
             return const AppEmptyState(
               icon: Ionicons.cloudDownloadOutline,
               title: '暂无离线下载',
@@ -161,9 +195,9 @@ class _DownloadManagerPageState extends State<DownloadManagerPage> {
           return ListView(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
             children: [
-              _buildSummaryCard(tasks, isDark),
+              _buildSummaryCard(visible, isDark),
               const SizedBox(height: 14),
-              ...tasks.map((task) => _buildTaskCard(task, isDark)),
+              ...visible.map((task) => _buildTaskCard(task, isDark)),
             ],
           );
         },
