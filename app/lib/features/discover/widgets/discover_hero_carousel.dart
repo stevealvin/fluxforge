@@ -1,4 +1,6 @@
-﻿import 'package:material_ui/material_ui.dart';
+import 'dart:async';
+
+import 'package:material_ui/material_ui.dart';
 
 import 'package:fluxforge/app/theme/app_colors.dart';
 import 'package:fluxforge/features/discover/models/discover_item.dart';
@@ -42,10 +44,86 @@ class _DiscoverHeroCarouselState extends State<DiscoverHeroCarousel> {
   final PageController _controller = PageController();
   int _index = 0;
 
+  /// 自动轮播计时器（仅在有多张且未开启「减少动画」时存在）
+  Timer? _autoPlayTimer;
+
+  /// 手指是否正按在轮播上
+  bool _isPressing = false;
+
+  /// 系统是否要求减少动画
+  bool _reduceMotion = false;
+
+  static const Duration _autoPlayInterval = Duration(seconds: 4);
+  static const Duration _slideDuration = Duration(milliseconds: 400);
+
+  @override
+  void initState() {
+    super.initState();
+    _restartAutoPlay();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final reduceMotion =
+        MediaQuery.maybeOf(context)?.disableAnimations ?? false;
+    if (reduceMotion != _reduceMotion) {
+      _reduceMotion = reduceMotion;
+      _restartAutoPlay();
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant DiscoverHeroCarousel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // 轮播池随聚合结果变化：数量变了要重建计时器（可能是 0→N 或 N→0）
+    if (oldWidget.items.length != widget.items.length) {
+      _restartAutoPlay();
+    }
+  }
+
   @override
   void dispose() {
+    _autoPlayTimer?.cancel();
     _controller.dispose();
     super.dispose();
+  }
+
+  /// 自动轮播是否应当运行
+  bool get _autoPlayEnabled =>
+      widget.items.length > 1 && !_reduceMotion && !_isPressing;
+
+  /// 停止并重建计时器
+  ///
+  /// 每次重建都相当于把倒计时归零 —— 手动翻页、手指抬起、数据刷新后都靠它重新计时，
+  /// 否则刚滑到某一张就可能立刻被推走。
+  void _restartAutoPlay() {
+    _autoPlayTimer?.cancel();
+    _autoPlayTimer = null;
+    if (!_autoPlayEnabled) return;
+
+    _autoPlayTimer = Timer.periodic(_autoPlayInterval, (_) {
+      if (!mounted || !_autoPlayEnabled) return;
+      if (!_controller.hasClients) return;
+      final next = (_index + 1) % widget.items.length;
+      _controller.animateToPage(
+        next,
+        duration: _slideDuration,
+        curve: Curves.easeOutCubic,
+      );
+    });
+  }
+
+  void _onPointerDown(PointerDownEvent _) {
+    _isPressing = true;
+    _autoPlayTimer?.cancel();
+    _autoPlayTimer = null;
+  }
+
+  void _onPointerRelease() {
+    if (!_isPressing) return;
+    _isPressing = false;
+    _restartAutoPlay();
   }
 
   @override
@@ -57,49 +135,53 @@ class _DiscoverHeroCarouselState extends State<DiscoverHeroCarousel> {
     // 轮播池随聚合结果增长而变长；越界时由 PageView 自身处理，无需额外兜底
     return SizedBox(
       height: widget.height,
-      child: Stack(
-        children: [
-          PageView.builder(
-            controller: _controller,
-            itemCount: widget.items.length,
-            onPageChanged: (i) {
-              if (mounted) setState(() => _index = i);
-            },
-            itemBuilder: (context, index) =>
-                _buildPage(context, widget.items[index]),
-          ),
+      // Listener 而非 GestureDetector：后者会参与手势竞技场、与 PageView 的滑动抢事件
+      child: Listener(
+        onPointerDown: _onPointerDown,
+        onPointerUp: (_) => _onPointerRelease(),
+        onPointerCancel: (_) => _onPointerRelease(),
+        child: Stack(
+          children: [
+            PageView.builder(
+              controller: _controller,
+              itemCount: widget.items.length,
+              onPageChanged: (i) {
+                if (mounted) setState(() => _index = i);
+                // 手动翻页后重新计时
+                _restartAutoPlay();
+              },
+              itemBuilder: (context, index) =>
+                  _buildPage(context, widget.items[index]),
+            ),
 
-          // 顶部暗色渐变：保证透明 AppBar 上的浅色图标与状态栏文字可读
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            height: 116,
-            child: IgnorePointer(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Colors.black.withValues(alpha: 0.55),
-                      Colors.black.withValues(alpha: 0.18),
-                      Colors.transparent,
-                    ],
-                    stops: const [0, 0.55, 1],
+            // 顶部暗色渐变：保证透明 AppBar 上的浅色图标与状态栏文字可读
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              height: 116,
+              child: IgnorePointer(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Colors.black.withValues(alpha: 0.55),
+                        Colors.black.withValues(alpha: 0.18),
+                        Colors.transparent,
+                      ],
+                      stops: const [0, 0.55, 1],
+                    ),
                   ),
                 ),
               ),
             ),
-          ),
 
-          // 指示器：选中项拉长成短条（比圆点更易读当前位置）
-          Positioned(
-            right: 14,
-            bottom: 12,
-            child: _buildIndicator(),
-          ),
-        ],
+            // 指示器：选中项拉长成短条（比圆点更易读当前位置）
+            Positioned(right: 14, bottom: 12, child: _buildIndicator()),
+          ],
+        ),
       ),
     );
   }
@@ -139,8 +221,7 @@ class _DiscoverHeroCarouselState extends State<DiscoverHeroCarousel> {
             // 与详情页 / 旧发现页同口径：Referer 取规则 baseUrl，并固定移动端 UA
             headers: {
               'referer': item.source.baseUrl,
-              'user-agent':
-                  'Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1',
+              'user-agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1',
             },
           ),
 
@@ -188,10 +269,7 @@ class _DiscoverHeroCarouselState extends State<DiscoverHeroCarousel> {
                 ),
                 const SizedBox(height: 3),
                 Text(
-                  [
-                    if (badge.isNotEmpty) badge,
-                    item.source.name,
-                  ].join(' · '),
+                  [if (badge.isNotEmpty) badge, item.source.name].join(' · '),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
@@ -239,7 +317,10 @@ class _DiscoverHeroCarouselState extends State<DiscoverHeroCarousel> {
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.18),
         borderRadius: BorderRadius.circular(11),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.3), width: 0.8),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.3),
+          width: 0.8,
+        ),
       ),
       child: const Text(
         '加入追更',
